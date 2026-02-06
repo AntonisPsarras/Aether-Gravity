@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aether Gravity</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar { width: 4px; }
+      ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
+      ::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, 0.2); border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(34, 211, 238, 0.4); }
+      
+      body { background-color: #050505; color: white; overflow: hidden; }
+      input[type="range"] { -webkit-appearance: none; background: transparent; cursor: pointer; }
+      input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #334155; }
+      input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #22d3ee; margin-top: -4px; box-shadow: 0 0 10px rgba(34,211,238,0.5); }
+    </style>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root" class="w-full h-full"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
