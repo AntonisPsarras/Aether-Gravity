@@ -63,7 +63,7 @@ const PortfolioPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                 <div className="bg-slate-800/50 p-5 rounded-xl border border-white/5">
                                     <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Cpu size={16} className="text-indigo-400" /> The Project</h3>
                                     <p className="text-sm text-slate-400 leading-relaxed">
-                                        Aether Gravity started as an experiment to visualize N-body problems. Using <span className="text-indigo-300">Google AI Studio</span>, I optimized the vector math to allow for real-time interaction in the browser, bridging the gap between textbook physics and interactive simulation.
+                                        Aether Gravity started as an experiment to visualize N-body problems. I optimized the vector math to allow for real-time interaction in the browser, bridging the gap between textbook physics and interactive simulation.
                                     </p>
                                 </div>
                             </div>

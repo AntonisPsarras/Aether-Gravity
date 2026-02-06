@@ -59,13 +59,7 @@ Aether Gravity is an immersive, interactive space simulation designed for creati
     npm install
     ```
 
-3.  **Set the API Key:**
-    Create a `.env.local` file and add your GEMINI_API_KEY (if using AI features):
-    ```env
-    GEMINI_API_KEY=your_key_here
-    ```
-
-4.  **Run the application:**
+3.  **Run the application:**
     ```bash
     npm run dev
     ```
