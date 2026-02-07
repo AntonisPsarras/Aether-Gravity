@@ -3,6 +3,7 @@ import { Plus, Info, Sparkles, Globe2, Play, Pencil, Trash2, Check, X, Calendar,
 import { WorldMeta, FolderMeta } from '../types';
 import { getWorldList, createWorld, deleteWorld, renameWorld, getFolderList, createFolder, deleteFolder, renameFolder, moveWorldToFolder } from '../utils/worldStorage';
 import PortfolioPanel from './PortfolioPanel';
+import TutorialOverlay from './TutorialOverlay';
 
 const formatDate = (timestamp: number): string => {
     const date = new Date(timestamp);
@@ -190,6 +191,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const [worlds, setWorlds] = useState<WorldMeta[]>([]);
     const [folders, setFolders] = useState<FolderMeta[]>([]);
     const [showCredits, setShowCredits] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(false);
     const [isCreating, setIsCreating] = useState<'world' | 'folder' | null>(null);
     const [newWorldName, setNewWorldName] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -249,7 +251,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const handleDeleteFolder = (id: string) => { deleteFolder(id); setFolders(getFolderList()); setWorlds(getWorldList()); };
 
     return (
-        <div className="min-h-screen bg-black text-white overflow-auto">
+        <div className="min-h-screen bg-black text-white overflow-auto relative">
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-[100px]" />
                 <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-500/5 rounded-full blur-[100px]" />
@@ -339,11 +341,15 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                         </div>
                     )}
                 </div>
-                <div className="text-center pt-8 border-t border-white/5">
+                <div className="flex justify-center gap-4 pt-8 border-t border-white/5">
+                    <button onClick={() => setShowTutorial(true)} className="inline-flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-cyan-400 hover:bg-white/5 rounded-lg transition-colors group">
+                        <Sparkles size={16} className="group-hover:text-cyan-400" /><span className="text-sm">Tutorial</span>
+                    </button>
                     <button onClick={() => setShowCredits(true)} className="inline-flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"><Info size={16} /><span className="text-sm">Credits & Support</span></button>
                 </div>
             </div>
             {showCredits && <PortfolioPanel onClose={() => setShowCredits(false)} />}
+            <TutorialOverlay isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
         </div>
     );
 };

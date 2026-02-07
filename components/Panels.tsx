@@ -5,7 +5,7 @@ import { useStore } from '../utils/store';
 import {
   Play, Pause, RotateCcw, Trash2, Thermometer,
   Focus, Hexagon, Sun, Globe, CircleDot, MousePointer2, Sparkles,
-  Aperture, AlertTriangle, X, Flame, Snowflake, Zap, ChevronUp, ChevronDown, Settings, Home, Sliders, Layers, Scale, Weight, Wind, Orbit, Disc, Microscope, Timer, Lock, Activity, List
+  Aperture, AlertTriangle, X, Flame, Snowflake, Zap, ChevronUp, ChevronDown, Settings, Home, Sliders, Layers, Scale, Weight, Wind, Orbit, Disc, Microscope, Timer, Lock, Activity, List, HelpCircle
 } from 'lucide-react';
 import { calculateESI, calculateRSI, kelvinToRgb, rgbToHex, getSpectralType, calculatePlanetaryPhysics, calculateTidalLockTime, findDominantParent } from '../utils/physicsUtils';
 import { TEXTURE_TYPES } from '../constants';
@@ -320,7 +320,7 @@ export const InspectorPanel: React.FC = () => {
   if (!selectedBody) return null;
 
   return (
-    <div className="fixed md:absolute z-30 bottom-0 left-0 w-full rounded-t-2xl border-t border-white/10 md:top-4 md:right-4 md:bottom-auto md:left-auto md:w-80 md:rounded-xl md:border bg-slate-900/90 backdrop-blur-xl md:backdrop-blur-md text-slate-100 shadow-2xl max-h-[85vh] overflow-y-auto scrollbar-custom animate-in slide-in-from-bottom-10 md:slide-in-from-right-10 fade-in duration-500 flex flex-col ring-1 ring-white/5">
+    <div className="fixed md:absolute z-30 bottom-0 left-0 w-full rounded-t-2xl border-t border-white/10 md:top-20 md:right-4 md:bottom-auto md:left-auto md:w-80 md:rounded-xl md:border bg-slate-900/90 backdrop-blur-xl md:backdrop-blur-md text-slate-100 shadow-2xl max-h-[85vh] overflow-y-auto scrollbar-custom animate-in slide-in-from-bottom-10 md:slide-in-from-right-10 fade-in duration-500 flex flex-col ring-1 ring-white/5">
       <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md p-5 pb-0 border-b border-white/10">
         <div className="w-12 h-1.5 bg-slate-700/50 rounded-full mx-auto mb-4 md:hidden"></div>
         <div className="flex justify-between items-start mb-4">
@@ -584,7 +584,7 @@ export const InspectorPanel: React.FC = () => {
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 };
 
@@ -624,11 +624,9 @@ export const ControlBar: React.FC<{ onReturnToMenu: () => void, onUndo: () => vo
           <button onClick={toggleDust} className={`p-1.5 md:p-2 rounded-full ${showDust ? 'text-blue-400 bg-white/10' : 'text-slate-500'}`}><Sparkles size={16} className="md:w-[18px] md:h-[18px]" /></button>
           <button onClick={toggleHabitable} className={`p-1.5 md:p-2 rounded-full ${showHabitable ? 'text-emerald-400 bg-white/10' : 'text-slate-500'}`}><Globe size={16} className="md:w-[18px] md:h-[18px]" /></button>
           <button onClick={() => setCameraLock(cameraLockedId ? null : selectedId)} className={`p-1.5 md:p-2 rounded-full ${cameraLockedId ? 'text-red-400 bg-white/10' : 'text-slate-500'}`}><Focus size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          <div className="h-4 md:h-6 w-px bg-white/10 mx-1"></div>
           {onReturnToMenu && (
-            <>
-              <div className="h-4 md:h-6 w-px bg-white/10 mx-1"></div>
-              <button onClick={onReturnToMenu} className="p-1.5 md:p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>
-            </>
+            <button onClick={onReturnToMenu} className="p-1.5 md:p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>
           )}
         </div>
       </div>
