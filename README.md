@@ -50,7 +50,7 @@ Aether Gravity is an immersive, interactive space simulation designed for creati
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/aether-gravity.git
+    git clone https://github.com/AntonisPsarras/aether-gravity.git
     cd aether-gravity
     ```
 
