@@ -292,10 +292,10 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                         </div>
                     ) : (
                         <div className="flex gap-4">
-                            <button onClick={() => setIsCreating('world')} className="flex-[2] py-5 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 hover:from-cyan-500/20 hover:to-blue-500/20 border border-cyan-500/30 hover:border-cyan-500/50 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all group">
+                            <button onClick={() => setIsCreating('world')} className="flex-[2] py-3 md:py-5 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 hover:from-cyan-500/20 hover:to-blue-500/20 border border-cyan-500/30 hover:border-cyan-500/50 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all group">
                                 <Plus size={24} className="text-cyan-400 group-hover:rotate-90 transition-transform duration-300" /><span className="text-white">New Universe</span>
                             </button>
-                            <button onClick={() => setIsCreating('folder')} className="flex-1 py-5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all group">
+                            <button onClick={() => setIsCreating('folder')} className="flex-1 py-3 md:py-5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all group">
                                 <Folder size={22} className="text-slate-400 group-hover:scale-110 transition-transform" /><span className="text-slate-300">New Folder</span>
                             </button>
                         </div>
