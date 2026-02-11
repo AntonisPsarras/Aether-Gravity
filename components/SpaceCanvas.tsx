@@ -430,11 +430,15 @@ const ObjectCreator = ({ creationMode, setCreationMode, onBodyCreate, floatingOf
       const absPos = dragStart.clone().add(floatingOffset.current);
       const config = (BODY_CONFIGS as any)[creationMode] || BODY_CONFIGS['Planet'];
       const velocity = dragStart.clone().sub(worldPos).multiplyScalar(0.15);
+      const getNextNumber = useStore.getState().getNextNumber;
+      const number = getNextNumber(creationMode);
+
       const newBody: CelestialBody = {
         id: `created-${creationMode}-${Date.now()}`, type: creationMode, position: absPos, velocity,
         mass: config.massRange[0] + Math.random() * (config.massRange[1] - config.massRange[0]),
         radius: config.radiusRange[0] + Math.random() * (config.radiusRange[1] - config.radiusRange[0]),
-        color: config.defaultColor, temperature: 300, habitability: 'N/A', population: 0, name: `${creationMode} ${Math.floor(Math.random() * 99)}`,
+        color: config.defaultColor, temperature: 300, habitability: 'N/A', population: 0,
+        name: `${creationMode} ${number}`,
         texture: config.visualType === 'rocky' ? 'rock' : 'solid', trailColor: config.defaultColor,
         properties: { rotationPeriod: 24.0, isTidallyLocked: false }
       };
@@ -608,7 +612,7 @@ const BodyMesh = ({ data, onSelect, creationMode, floatingOffset, isSelected, bo
 
       {/* Invisible Hitbox for easier selection */}
       <mesh onPointerDown={(e) => { e.stopPropagation(); if (!creationMode) onSelect(data.id); }}>
-        <sphereGeometry args={[visualRadius * 2.0, 16, 16]} />
+        <sphereGeometry args={[visualRadius * 1.5, 16, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
@@ -665,7 +669,7 @@ const SpaceCanvas: React.FC<any> = ({ creationMode, setCreationMode, onBodyCreat
   }, [bodies.length, historyVersion]);
 
   return (
-    <Canvas camera={{ position: [0, 150, 250], fov: 45, far: 100000000 }} gl={{ logarithmicDepthBuffer: true, antialias: true }} onPointerMissed={() => selectBody(null)}>
+    <Canvas camera={{ position: [0, 150, 250], fov: 45, far: 100000000 }} gl={{ logarithmicDepthBuffer: true, antialias: true } as any} onPointerMissed={() => selectBody(null)}>
       <color attach="background" args={['#050505']} />
       <ambientLight intensity={0.2} />
       <directionalLight position={[100, 100, 100]} intensity={1.5} />

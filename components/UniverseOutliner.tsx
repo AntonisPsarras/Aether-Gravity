@@ -179,7 +179,7 @@ const UniverseOutliner: React.FC = () => {
     if (!showOutliner) return null;
 
     return (
-        <div className="fixed top-20 left-4 z-20 w-64 max-h-[60vh] flex flex-col bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl ring-1 ring-white/5 overflow-hidden">
+        <div className="fixed top-32 left-4 z-20 w-64 max-h-[60vh] flex flex-col bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl ring-1 ring-white/5 overflow-hidden">
             {/* Header */}
             <div
                 className="flex items-center justify-between p-3 border-b border-white/10 cursor-pointer hover:bg-white/5 transition-colors"

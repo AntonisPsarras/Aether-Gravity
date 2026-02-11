@@ -187,7 +187,7 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
         </div>
       </div>
 
-      <div className={`fixed z-20 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] bottom-0 left-0 w-full p-2 pb-4 flex flex-col justify-end ${mobileHidden ? 'translate-y-[120%]' : 'translate-y-0'} md:absolute md:bottom-6 md:left-6 md:w-auto md:p-0 md:translate-y-0 md:items-start`}>
+      <div className={`fixed z-20 transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] bottom-0 left-0 w-full p-2 pb-10 flex flex-col justify-end ${mobileHidden ? 'translate-y-[120%]' : 'translate-y-0'} md:absolute md:bottom-6 md:left-6 md:w-auto md:p-0 md:translate-y-0 md:items-start`}>
         {!isExpanded && (
           <button onClick={() => setIsExpanded(true)} className="md:hidden p-3 rounded-xl bg-slate-900/90 backdrop-blur-md border border-white/10 text-cyan-400 shadow-2xl active:scale-90 transition-all shrink-0 h-12 w-12 flex items-center justify-center ring-1 ring-white/5">
             <ChevronUp size={24} />
@@ -593,7 +593,7 @@ export const ControlBar: React.FC<{ onReturnToMenu: () => void, onUndo: () => vo
   const { setPaused, setSpeed, toggleGrid, toggleDust, toggleHabitable, toggleStability, toggleOutliner, setCameraLock } = useStore();
 
   return (
-    <div className="fixed z-40 md:bottom-6 bottom-auto top-4 md:top-auto left-1/2 -translate-x-1/2 flex flex-col md:flex-row items-center gap-3 w-[95%] md:w-auto max-w-full">
+    <div className="fixed z-40 md:bottom-6 bottom-auto top-12 md:top-auto left-1/2 -translate-x-1/2 flex flex-col md:flex-row items-center gap-3 w-[95%] md:w-auto max-w-full">
       <div className="bg-slate-900/90 backdrop-blur-md border border-white/10 shadow-2xl rounded-full p-1.5 px-3 md:px-6 py-2 flex items-center justify-between md:justify-start gap-2 md:gap-6 ring-1 ring-white/5 w-full md:w-auto overflow-x-auto scrollbar-hide">
 
         {/* Undo/Redo & Playback Group */}

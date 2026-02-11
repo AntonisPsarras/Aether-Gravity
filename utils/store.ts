@@ -44,6 +44,10 @@ interface AppState {
 
   // Helpers
   getSelectedBody: () => CelestialBody | undefined;
+
+  // Numbering
+  typeCounts: Record<string, number>;
+  getNextNumber: (type: BodyType) => number;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -60,6 +64,18 @@ export const useStore = create<AppState>((set, get) => ({
   showStability: false,
   showOutliner: true,
   historyVersion: 0,
+
+  typeCounts: {},
+
+  getNextNumber: (type) => {
+    const s = get();
+    const currentCount = s.typeCounts[type] || 0;
+    const nextCount = currentCount + 1;
+    set(state => ({
+      typeCounts: { ...state.typeCounts, [type]: nextCount }
+    }));
+    return nextCount;
+  },
 
   setBodies: (bodiesOrFn) => set((state) => {
     const newBodies = typeof bodiesOrFn === 'function' ? bodiesOrFn(state.bodies) : bodiesOrFn;
@@ -148,7 +164,29 @@ export const useStore = create<AppState>((set, get) => ({
   toggleStability: () => set((state) => ({ showStability: !state.showStability })),
   toggleOutliner: () => set((state) => ({ showOutliner: !state.showOutliner })),
 
-  generateNewSystem: () => set({ bodies: generateSystem(), selectedId: null, cameraLockedId: null }),
+  generateNewSystem: () => {
+    const bodies = generateSystem();
+
+    // Recalculate type counts from generated system
+    const counts: Record<string, number> = {};
+    bodies.forEach(b => {
+      // Attempt to parse number from name "Type X"
+      const match = b.name.match(/(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1]);
+        if (!counts[b.type] || num > counts[b.type]) {
+          counts[b.type] = num;
+        }
+      }
+    });
+
+    set({
+      bodies,
+      selectedId: null,
+      cameraLockedId: null,
+      typeCounts: counts
+    });
+  },
 
   loadWorld: (data) => {
     // Need to deserialize vector data
@@ -158,6 +196,19 @@ export const useStore = create<AppState>((set, get) => ({
       velocity: new THREE.Vector3(b.velocity.x, b.velocity.y, b.velocity.z),
     }));
 
+    // Recalculate type counts from loaded bodies
+    const counts: Record<string, number> = {};
+    loadedBodies.forEach(b => {
+      // Attempt to parse number from name "Type X"
+      const match = b.name.match(/(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1]);
+        if (!counts[b.type] || num > counts[b.type]) {
+          counts[b.type] = num;
+        }
+      }
+    });
+
     set({
       worldId: data.id,
       bodies: loadedBodies,
@@ -165,7 +216,8 @@ export const useStore = create<AppState>((set, get) => ({
       showGrid: data.settings.showGrid,
       showDust: data.settings.showDust,
       showHabitable: data.settings.showHabitable,
-      showStability: data.settings.showStability
+      showStability: data.settings.showStability,
+      typeCounts: counts
     });
   },
 

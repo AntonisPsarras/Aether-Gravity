@@ -6,21 +6,21 @@ declare global {
   namespace JSX {
     interface IntrinsicElements extends R3FThreeElements {
       // Custom elements with permissive props for uniforms
-      gravityGridMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      starSurfaceMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      planetSurfaceMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      planetAtmosphereMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      shockwaveMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      supernovaMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      neutronStarMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      pulsarJetMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      relativisticDiskMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      kerrEventHorizonMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      ergosphereMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      selectionHaloMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      planetTerrainMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      gPGPUBodyMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      habitableZoneMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
+      gravityGridMaterial: any;
+      starSurfaceMaterial: any;
+      planetSurfaceMaterial: any;
+      planetAtmosphereMaterial: any;
+      shockwaveMaterial: any;
+      supernovaMaterial: any;
+      neutronStarMaterial: any;
+      pulsarJetMaterial: any;
+      relativisticDiskMaterial: any;
+      kerrEventHorizonMaterial: any;
+      ergosphereMaterial: any;
+      selectionHaloMaterial: any;
+      planetTerrainMaterial: any;
+      gPGPUBodyMaterial: any;
+      habitableZoneMaterial: any;
     }
   }
 }
@@ -28,21 +28,21 @@ declare global {
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements extends R3FThreeElements {
-      gravityGridMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      starSurfaceMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      planetSurfaceMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      planetAtmosphereMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      shockwaveMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      supernovaMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      neutronStarMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      pulsarJetMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      relativisticDiskMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      kerrEventHorizonMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      ergosphereMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      selectionHaloMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      planetTerrainMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      gPGPUBodyMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
-      habitableZoneMaterial: R3FThreeElements['shaderMaterial'] & { [key: string]: any };
+      gravityGridMaterial: any;
+      starSurfaceMaterial: any;
+      planetSurfaceMaterial: any;
+      planetAtmosphereMaterial: any;
+      shockwaveMaterial: any;
+      supernovaMaterial: any;
+      neutronStarMaterial: any;
+      pulsarJetMaterial: any;
+      relativisticDiskMaterial: any;
+      kerrEventHorizonMaterial: any;
+      ergosphereMaterial: any;
+      selectionHaloMaterial: any;
+      planetTerrainMaterial: any;
+      gPGPUBodyMaterial: any;
+      habitableZoneMaterial: any;
     }
   }
 }

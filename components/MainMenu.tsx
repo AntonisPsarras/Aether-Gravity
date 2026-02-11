@@ -257,7 +257,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                 <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-500/5 rounded-full blur-[100px]" />
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,black_70%)]" />
             </div>
-            <div className="relative z-10 max-w-4xl mx-auto px-4 py-12 md:py-20">
+            <div className="relative z-10 max-w-4xl mx-auto px-4 py-12 md:py-20 flex flex-col justify-center min-h-screen">
                 <div className="text-center mb-16">
                     <div className="inline-flex items-center gap-3 mb-4"><Globe2 size={40} className="text-cyan-400" /></div>
                     <h1 className="text-4xl md:text-6xl font-bold tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-4">AETHER</h1>

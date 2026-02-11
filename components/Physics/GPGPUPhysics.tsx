@@ -67,8 +67,7 @@ const GPGPUPhysics = ({ bodies, count, speed, paused, floatingOffset }: GPGPUPhy
 
     useEffect(() => {
         const texSize = Math.ceil(Math.sqrt(count));
-        // @ts-ignore
-        const gpu = new GPUComputationRenderer(texSize, texSize, gl);
+        const gpu = new GPUComputationRenderer(texSize, texSize, gl as any);
 
         // Manually create DataTextures to avoid type definition issues with gpu.createTexture()
         const dtPositionData = new Float32Array(texSize * texSize * 4);

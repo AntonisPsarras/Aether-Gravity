@@ -78,7 +78,6 @@ const GPGPUBodyVisualizer = ({ count, texturePos, floatingOffset }: any) => {
         <bufferAttribute attach="attributes-position" count={count} array={new Float32Array(count * 3)} itemSize={3} />
         <bufferAttribute attach="attributes-reference" count={count} array={references} itemSize={2} />
       </bufferGeometry>
-      {/* @ts-ignore */}
       <gPGPUBodyMaterial ref={materialRef} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
     </points>
   );
