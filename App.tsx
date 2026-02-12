@@ -6,6 +6,9 @@ import MainMenu from './components/MainMenu';
 import UniverseOutliner from './components/UniverseOutliner';
 import { getWorld, saveWorld, serializeBodies, markWorldOpened } from './utils/worldStorage';
 import { useStore } from './utils/store';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { SplashScreen } from '@capacitor/splash-screen';
 
 const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu }) => {
   const {
@@ -73,6 +76,37 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 const App: React.FC = () => {
   const [activeWorldId, setActiveWorldId] = useState<string | null>(null);
   const { loadWorld, setBodies, generateNewSystem } = useStore();
+
+  // Mobile/Capacitor initialization
+  useEffect(() => {
+    const initMobile = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          // Configure status bar
+          await StatusBar.setStyle({ style: Style.Dark });
+          await StatusBar.setBackgroundColor({ color: '#050505' });
+
+          // Hide splash screen after app is ready
+          await SplashScreen.hide();
+        } catch (error) {
+          console.warn('Mobile initialization error:', error);
+        }
+      }
+
+      // Prevent default touch behaviors (pinch zoom, pull-to-refresh)
+      document.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+
+      document.addEventListener('gesturestart', (e) => {
+        e.preventDefault();
+      });
+    };
+
+    initMobile();
+  }, []);
 
   const handleOpenWorld = (id: string) => {
     const data = getWorld(id);

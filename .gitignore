@@ -39,3 +39,14 @@ Thumbs.db
 .vercel
 .next
 .turbo
+
+# Android
+android/build
+android/app/build
+android/.gradle
+android/local.properties
+android/app/google-services.json
+android/app/keystore.properties
+*.keystore
+*.jks
+
