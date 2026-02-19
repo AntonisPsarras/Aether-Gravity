@@ -17,6 +17,7 @@ The following has been configured for you:
 ✅ Mobile optimizations added
 ✅ Android manifest configured with necessary permissions
 ✅ Build configuration optimized for mobile
+✅ **Automated ProGuard Fix:** A script now automatically fixes the Capacitor plugin build issues after `npm install`.
 
 ## Building the Android App
 

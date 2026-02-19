@@ -1,23 +1,22 @@
 # Fix for Capacitor Plugins ProGuard Error
 
-If you encounter the ProGuard error again after running `npm install`, you can fix it with these commands:
+If you encounter the ProGuard error again after running `npm install`, you don't need to do anything manually!
 
-## Quick Fix (PowerShell)
+## Automated Fix
 
-Run these commands in your project root to fix all three Capacitor plugins:
+I have added a `postinstall` script to `package.json` that automatically patches the affected Capacitor plugins whenever you run `npm install`.
 
-```powershell
-# Fix Keyboard plugin
-(Get-Content "node_modules\@capacitor\keyboard\android\build.gradle") -replace "proguard-android\.txt", "proguard-android-optimize.txt" | Set-Content "node_modules\@capacitor\keyboard\android\build.gradle"
+The script is located at `scripts/fix-proguard.js`.
 
-# Fix Splash Screen plugin
-(Get-Content "node_modules\@capacitor\splash-screen\android\build.gradle") -replace "proguard-android\.txt", "proguard-android-optimize.txt" | Set-Content "node_modules\@capacitor\splash-screen\android\build.gradle"
+## Manual Fix (Fallback)
 
-# Fix Status Bar plugin
-(Get-Content "node_modules\@capacitor\status-bar\android\build.gradle") -replace "proguard-android\.txt", "proguard-android-optimize.txt" | Set-Content "node_modules\@capacitor\status-bar\android\build.gradle"
+If for some reason the automated script fails, you can run it manually:
+
+```bash
+node scripts/fix-proguard.js
 ```
 
-## Manual Fix
+Or you can revert to the manual method described below:
 
 Edit the following files and change line ~45-46 in each:
 
@@ -38,10 +37,3 @@ proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard
 ## Why This Happens
 
 The Capacitor plugins (v8.0.0) use an outdated ProGuard configuration. This will be fixed in future releases. Once Capacitor releases new versions, this workaround won't be needed.
-
-## Status
-
-✅ **Already fixed** - All three plugin files have been patched for you. You can now build your APK.
-
-If you reinstall dependencies (`npm install`), you'll need to apply these fixes again.
-
