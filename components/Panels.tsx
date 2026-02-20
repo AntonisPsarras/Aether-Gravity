@@ -172,17 +172,13 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
 
   return (
     <>
-      <div className={`fixed z-20 transition-all duration-300 ease-in-out pointer-events-none top-20 left-1/2 -translate-x-1/2 w-64 md:top-auto md:bottom-6 md:left-[220px] md:translate-x-0 ${mode ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'}`}>
-        <div className="bg-slate-900/90 backdrop-blur-md border border-white/10 text-slate-200 p-4 rounded-xl shadow-2xl pointer-events-auto ring-1 ring-white/5">
-          <div className="font-bold text-sm text-cyan-400 mb-3 uppercase tracking-wider flex items-center gap-2 border-b border-white/10 pb-2">
-            {mode} Selected
+      <div className={`fixed z-20 transition-all duration-300 ease-in-out pointer-events-none bottom-[140px] md:bottom-6 md:top-auto left-1/2 -translate-x-1/2 md:left-[220px] md:translate-x-0 ${mode ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'}`}>
+        <div className="bg-slate-900/90 backdrop-blur-md border border-white/10 text-slate-200 px-4 py-2.5 rounded-full shadow-2xl pointer-events-auto ring-1 ring-white/5 flex items-center gap-3">
+          <div className="font-bold text-[11px] md:text-sm text-cyan-400 uppercase tracking-wider flex items-center gap-2 border-r border-white/10 pr-3">
+            {mode}
           </div>
-          <div className="text-xs space-y-2 font-mono">
-            <div className="flex items-center gap-3 text-slate-300"><div className="w-6 h-6 rounded bg-white/10 flex items-center justify-center text-white"><MousePointer2 size={14} /></div><span>Drag to Launch</span></div>
-            <button onClick={() => setMode(null)} className="flex items-center gap-3 text-slate-500 pt-1 hover:text-red-400 transition-colors w-full text-left group active:scale-95">
-              <div className="w-6 h-6 rounded bg-white/5 group-hover:bg-red-500/20 group-hover:text-red-400 flex items-center justify-center transition-colors border border-transparent group-hover:border-red-500/30"><X size={14} /></div>
-              <span>Cancel (Tap or ESC)</span>
-            </button>
+          <div className="text-[10px] md:text-xs font-mono flex items-center gap-2 text-slate-300 whitespace-nowrap">
+            <MousePointer2 size={12} className="w-[12px] h-[12px] md:w-[14px] md:h-[14px]" /> Drag to Launch
           </div>
         </div>
       </div>
@@ -230,6 +226,50 @@ export const InspectorPanel: React.FC = () => {
   const selectedBody = useStore(state => state.bodies.find(b => b.id === state.selectedId));
 
   const [activeTab, setActiveTab] = useState<'props' | 'orbit' | 'analysis'>('props');
+
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMobile) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.currentTarget.dataset.startY = e.clientY.toString();
+    e.currentTarget.dataset.dragging = "true";
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.dataset.dragging === "true") {
+      const startY = parseFloat(e.currentTarget.dataset.startY!);
+      const delta = e.clientY - startY;
+      if (!isMinimized && delta > 0) {
+        setDragOffset(delta);
+      } else if (isMinimized && delta < 0) {
+        setDragOffset(delta);
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.dataset.dragging === "true") {
+      e.currentTarget.dataset.dragging = "false";
+      if (!isMinimized && dragOffset > 50) {
+        setIsMinimized(true);
+      } else if (isMinimized && dragOffset < -50) {
+        setIsMinimized(false);
+      } else if (dragOffset === 0 && isMinimized) {
+        setIsMinimized(false);
+      }
+      setDragOffset(0);
+    }
+  };
   const [esi, setEsi] = useState(0);
   const [rsi, setRsi] = useState(0);
   const [timeToLock, setTimeToLock] = useState<string>('∞');
@@ -320,8 +360,22 @@ export const InspectorPanel: React.FC = () => {
   if (!selectedBody) return null;
 
   return (
-    <div className="fixed md:absolute z-30 bottom-0 left-0 w-full rounded-t-2xl border-t border-white/10 md:top-20 md:right-4 md:bottom-auto md:left-auto md:w-80 md:rounded-xl md:border bg-slate-900/90 backdrop-blur-xl md:backdrop-blur-md text-slate-100 shadow-2xl max-h-[85vh] overflow-y-auto scrollbar-custom animate-in slide-in-from-bottom-10 md:slide-in-from-right-10 fade-in duration-500 flex flex-col ring-1 ring-white/5">
-      <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md p-5 pb-0 border-b border-white/10">
+    <div
+      className="fixed md:absolute z-30 bottom-0 left-0 w-full rounded-t-2xl border-t border-white/10 md:top-20 md:right-4 md:bottom-auto md:left-auto md:w-80 md:rounded-xl md:border bg-slate-900/90 backdrop-blur-xl md:backdrop-blur-md text-slate-100 shadow-2xl max-h-[85vh] flex flex-col ring-1 ring-white/5 animate-in slide-in-from-bottom-full md:slide-in-from-right-10 fade-in duration-500"
+      style={isMobile ? {
+        transform: isMinimized
+          ? dragOffset < 0 ? `translateY(calc(100% - 90px + ${dragOffset}px))` : `translateY(calc(100% - 90px))`
+          : dragOffset > 0 ? `translateY(${dragOffset}px)` : `translateY(0px)`,
+        transition: dragOffset === 0 ? 'transform 0.4s cubic-bezier(0.32, 0.72, 0, 1)' : 'none'
+      } : {}}
+    >
+      <div
+        className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md p-5 pb-0 border-b border-white/10 shrink-0 touch-none cursor-grab active:cursor-grabbing"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
         <div className="w-12 h-1.5 bg-slate-700/50 rounded-full mx-auto mb-4 md:hidden"></div>
         <div className="flex justify-between items-start mb-4">
           <div>
@@ -343,7 +397,7 @@ export const InspectorPanel: React.FC = () => {
         </div>
       </div>
 
-      <div className="p-5 space-y-6">
+      <div className="p-5 space-y-6 overflow-y-auto scrollbar-custom flex-1 pb-12">
         {/* PROPERTIES TAB */}
         {activeTab === 'props' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
