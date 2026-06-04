@@ -6,6 +6,9 @@ import {
   waitForSimulationReady,
 } from './helpers';
 
+/** Headless CI runners advance physics much slower than local dev machines. */
+const motionSettleMs = process.env.CI ? 5000 : 1500;
+
 test.describe('Simulation controls', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(e2eUrl(FIXTURE_MINIMAL));
@@ -17,7 +20,7 @@ test.describe('Simulation controls', () => {
     expect(await readStore(page)).toMatchObject({ paused: true });
 
     const atPause = await page.evaluate(() => window.__AETHER_TEST__!.getPhysicsSnapshot());
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(motionSettleMs);
     const afterPause = await page.evaluate(() => window.__AETHER_TEST__!.getPhysicsSnapshot());
 
     const planetIdx = 1;
@@ -29,7 +32,7 @@ test.describe('Simulation controls', () => {
     await page.getByTestId('control-pause').click();
     expect(await readStore(page)).toMatchObject({ paused: false });
 
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(motionSettleMs);
 
     const afterResume = await page.evaluate(() => window.__AETHER_TEST__!.getPhysicsSnapshot());
     const driftAfterResume =

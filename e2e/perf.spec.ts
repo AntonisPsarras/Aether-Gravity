@@ -44,6 +44,7 @@ test.describe('Performance soak', () => {
 
     expect(report.sampleCount).toBeGreaterThan(10);
     expect(report.contextLostCount).toBe(0);
+    // CI VMs use software WebGL; MIN_FPS is lowered via workflow env (see playwright.yml).
     expect(report.fps.avg).toBeGreaterThan(MIN_FPS);
 
     test.info().attach('perf-minimal.json', {

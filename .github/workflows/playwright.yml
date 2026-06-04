@@ -20,6 +20,10 @@ jobs:
 
     env:
       CI: true
+      # GitHub-hosted runners use software WebGL (~2–15 FPS). Keep smoke/sim regression strict;
+      # perf soak only asserts the sim stays alive, not desktop-class frame rates.
+      PERF_MIN_FPS: 1
+      PERF_LOW_TIER_MIN_FPS: 1
 
     steps:
       - name: Checkout repository
