@@ -2,6 +2,11 @@
 import { GPUComputationRenderer } from 'three-stdlib';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
+/**
+ * Decorative GPU particle field — NOT wired into gameplay physics.
+ * SpaceCanvas uses CPU Velocity-Verlet (physicsSoA) for celestial bodies.
+ * Keep count low if this component is mounted; it is unused in the main sim loop.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { CelestialBody } from '../../types';
 import GPGPUBodyVisualizer from './GPGPUVisualizer';
@@ -66,7 +71,7 @@ const GPGPUPhysics = ({ bodies, count, speed, paused, floatingOffset }: GPGPUPhy
     const [texturePos, setTexturePos] = useState<THREE.Texture | null>(null);
 
     useEffect(() => {
-        const texSize = Math.ceil(Math.sqrt(count));
+        const texSize = THREE.MathUtils.ceilPowerOfTwo(Math.ceil(Math.sqrt(count)));
         const gpu = new GPUComputationRenderer(texSize, texSize, gl as any);
 
         // Manually create DataTextures to avoid type definition issues with gpu.createTexture()
@@ -116,6 +121,14 @@ const GPGPUPhysics = ({ bodies, count, speed, paused, floatingOffset }: GPGPUPhy
         variables.current = { velocity: velVar, position: posVar };
         setTexturePos(gpu.getCurrentRenderTarget(posVar).texture);
 
+        return () => {
+            dtPosition.dispose();
+            dtVelocity.dispose();
+            gpu.dispose();
+            gpuCompute.current = null;
+            variables.current = null;
+            setTexturePos(null);
+        };
     }, [count, gl, bodies.current.length]); // Re-init if body count changes substantially
 
     useFrame((state, delta) => {
@@ -128,8 +141,7 @@ const GPGPUPhysics = ({ bodies, count, speed, paused, floatingOffset }: GPGPUPhy
         variables.current.position.material.uniforms.delta.value = dt;
 
         compute.compute();
-        const currentTexture = compute.getCurrentRenderTarget(variables.current.position).texture;
-        if (currentTexture !== texturePos) setTexturePos(currentTexture);
+        // Texture handle is stable after init; avoid React setState in the rAF loop.
     });
 
     return <GPGPUBodyVisualizer count={count} texturePos={texturePos} floatingOffset={floatingOffset} />;

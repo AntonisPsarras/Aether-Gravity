@@ -1,14 +1,40 @@
 import { create } from 'zustand';
 import { CelestialBody, BodyType, WorldData } from '../types';
 import * as THREE from 'three';
-import { generateSystem, calculatePlanetaryPhysics, findDominantParent } from './physicsUtils';
+import {
+  generateSystem,
+  calculatePlanetaryPhysics,
+  findDominantParent,
+  densityFromMassAndRadius,
+  derivedPropertiesFromMassRadius,
+  deriveStarProperties,
+  findPrimaryStar,
+  reconcileBodyDerivedState,
+} from './physicsUtils';
+import { patchPhysicsBody, replacePhysicsBodies, appendPhysicsBody } from './physicsBridge';
 import { PRESETS, G_CONSTANT } from '../constants';
-import { serializeBodies } from './worldStorage';
+import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
+import {
+  clampMass,
+  clampRadius,
+  clampSpeed,
+  clampStarTemperature,
+  clampPositionVector,
+  clampVelocityVector,
+  sanitizeCelestialBodies,
+  sanitizeCelestialBody,
+  sanitizeProperties,
+} from './physicsBounds';
+
+let uiInteractionSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
 interface AppState {
   // World State
   bodies: CelestialBody[];
+  /** Highlighted body (3D halo + outliner); does not open the inspector. */
   selectedId: string | null;
+  /** Body shown in the properties panel (long-press or explicit open). */
+  inspectorBodyId: string | null;
   cameraLockedId: string | null;
   worldId: string | null;
 
@@ -19,14 +45,28 @@ interface AppState {
   showDust: boolean;
   showHabitable: boolean;
   showStability: boolean;
-  showOutliner: boolean;
   historyVersion: number;
+  /** Bumped when the camera should snap to the primary star (e.g. after generate). */
+  cameraRecenterNonce: number;
+  /** Dev-only: energy-drift HUD on the simulation canvas */
+  isDebugMode: boolean;
+  /** Per-body inspector fields protected from physics→store overwrites while editing */
+  inspectorLocks: Record<string, string[]>;
+  /** True while the user is actively interacting with a UI slider / input.
+   *  Used to disable OrbitControls so panel sliders don't also rotate the camera. */
+  isInteractingWithUI: boolean;
+  /** User-visible notice when localStorage save fails (quota, etc.). */
+  storageNotice: string | null;
 
   // Actions
   setBodies: (bodies: CelestialBody[] | ((prev: CelestialBody[]) => CelestialBody[])) => void;
+  /** Append one body to the live physics array without reverting evolved positions. */
+  appendBody: (body: CelestialBody) => void;
   updateBody: (id: string, updates: Partial<CelestialBody>) => void;
   removeBody: (id: string) => void;
   selectBody: (id: string | null) => void;
+  openInspector: (id: string | null) => void;
+  closeInspector: () => void;
   setCameraLock: (id: string | null) => void;
 
   // Simulation Controls
@@ -36,11 +76,18 @@ interface AppState {
   toggleDust: () => void;
   toggleHabitable: () => void;
   toggleStability: () => void;
-  toggleOutliner: () => void;
+  toggleDebugMode: () => void;
+  lockInspectorFields: (bodyId: string, fields: string[]) => void;
+  unlockInspectorFields: (bodyId: string, fields?: string[]) => void;
+  setInteractingWithUI: (v: boolean) => void;
+  setStorageNotice: (msg: string | null) => void;
+  syncBodiesFromPhysics: (physicsBodies: CelestialBody[]) => void;
 
   // System Actions
   generateNewSystem: () => void;
   loadWorld: (data: WorldData) => void;
+  /** Clears selection, camera lock, and inspector locks (e.g. when leaving a world). */
+  resetSessionUiState: () => void;
 
   // Helpers
   getSelectedBody: () => CelestialBody | undefined;
@@ -53,6 +100,7 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   bodies: [],
   selectedId: null,
+  inspectorBodyId: null,
   cameraLockedId: null,
   worldId: null,
 
@@ -62,10 +110,89 @@ export const useStore = create<AppState>((set, get) => ({
   showDust: true,
   showHabitable: false,
   showStability: false,
-  showOutliner: true,
   historyVersion: 0,
+  cameraRecenterNonce: 0,
+  isDebugMode: false,
+  inspectorLocks: {},
+  isInteractingWithUI: false,
+  storageNotice: null,
 
   typeCounts: {},
+
+  lockInspectorFields: (bodyId, fields) => set((state) => {
+    const prev = state.inspectorLocks[bodyId] || [];
+    const merged = Array.from(new Set([...prev, ...fields]));
+    return { inspectorLocks: { ...state.inspectorLocks, [bodyId]: merged } };
+  }),
+
+  unlockInspectorFields: (bodyId, fields) => set((state) => {
+    if (!fields || fields.length === 0) {
+      const next = { ...state.inspectorLocks };
+      delete next[bodyId];
+      return { inspectorLocks: next };
+    }
+    const prev = state.inspectorLocks[bodyId] || [];
+    const remaining = prev.filter((f) => !fields.includes(f));
+    const next = { ...state.inspectorLocks };
+    if (remaining.length === 0) delete next[bodyId];
+    else next[bodyId] = remaining;
+    return { inspectorLocks: next };
+  }),
+
+  syncBodiesFromPhysics: (physicsBodies) => set((state) => {
+    const locks = state.inspectorLocks;
+    const merged = physicsBodies.map((pb) => {
+      const storeBody = state.bodies.find((b) => b.id === pb.id);
+      if (!storeBody) {
+        return sanitizeCelestialBody({
+          ...pb,
+          position: pb.position.clone(),
+          velocity: pb.velocity.clone(),
+        });
+      }
+      const locked = locks[pb.id];
+      if (!locked?.length) {
+        return sanitizeCelestialBody({
+          ...pb,
+          position: pb.position.clone(),
+          velocity: pb.velocity.clone(),
+        });
+      }
+      const out: CelestialBody = {
+        ...pb,
+        position: pb.position.clone(),
+        velocity: pb.velocity.clone(),
+      };
+      if (locked.includes('mass')) out.mass = storeBody.mass;
+      if (locked.includes('radius')) out.radius = storeBody.radius;
+      if (locked.includes('temperature')) {
+        out.temperature = storeBody.temperature;
+        out.color = storeBody.color;
+      }
+      if (locked.includes('properties') || locked.includes('composition')) {
+        out.properties = { ...storeBody.properties };
+      }
+      return sanitizeCelestialBody(out);
+    });
+    return { bodies: merged };
+  }),
+
+  toggleDebugMode: () => set((state) => ({ isDebugMode: !state.isDebugMode })),
+  setInteractingWithUI: (v) => {
+    if (uiInteractionSafetyTimer) {
+      clearTimeout(uiInteractionSafetyTimer);
+      uiInteractionSafetyTimer = null;
+    }
+    set({ isInteractingWithUI: v });
+    if (v) {
+      // Mobile browsers may miss pointerup/cancel when gestures are interrupted.
+      // Auto-clear the interaction lock so camera controls cannot get stuck off.
+      uiInteractionSafetyTimer = setTimeout(() => {
+        set({ isInteractingWithUI: false });
+        uiInteractionSafetyTimer = null;
+      }, 1500);
+    }
+  },
 
   getNextNumber: (type) => {
     const s = get();
@@ -77,45 +204,131 @@ export const useStore = create<AppState>((set, get) => ({
     return nextCount;
   },
 
-  setBodies: (bodiesOrFn) => set((state) => {
-    const newBodies = typeof bodiesOrFn === 'function' ? bodiesOrFn(state.bodies) : bodiesOrFn;
-    return { bodies: newBodies };
-  }),
+  setBodies: (bodiesOrFn) => {
+    const state = get();
+    const raw = typeof bodiesOrFn === 'function' ? bodiesOrFn(state.bodies) : bodiesOrFn;
+    const newBodies = sanitizeCelestialBodies(raw);
+    set({ bodies: newBodies });
+    replacePhysicsBodies(newBodies);
+  },
 
-  updateBody: (id, updates) => set((state) => {
+  appendBody: (body) => {
+    const sanitized = sanitizeCelestialBody({
+      ...body,
+      position: body.position.clone(),
+      velocity: body.velocity.clone(),
+    });
+    const next = appendPhysicsBody(sanitized);
+    set({
+      bodies: next.map((b) => ({
+        ...b,
+        position: b.position.clone(),
+        velocity: b.velocity.clone(),
+      })),
+    });
+  },
+
+  updateBody: (id, updates) => {
+    // Clamp physics-critical scalars before they enter the store so no code
+    // path can introduce NaN, Infinity, or non-positive mass/radius.
+    if (updates.mass !== undefined) {
+      updates = { ...updates, mass: clampMass(updates.mass) };
+    }
+    if (updates.radius !== undefined) {
+      updates = { ...updates, radius: clampRadius(updates.radius) };
+    }
+    if (updates.temperature !== undefined) {
+      updates = { ...updates, temperature: clampStarTemperature(updates.temperature) };
+    }
+    if (updates.position !== undefined) {
+      updates = {
+        ...updates,
+        position: clampPositionVector(updates.position.clone()),
+      };
+    }
+    if (updates.velocity !== undefined) {
+      updates = {
+        ...updates,
+        velocity: clampVelocityVector(updates.velocity.clone()),
+      };
+    }
+    const touchedPosVel = updates.position !== undefined || updates.velocity !== undefined;
+    set((state) => {
     const oldBodies = state.bodies;
     const bodyIndex = oldBodies.findIndex(b => b.id === id);
     if (bodyIndex === -1) return {};
 
     const body = oldBodies[bodyIndex];
-    const newBody = { ...body, ...updates };
+    const mergedProps = updates.properties
+      ? sanitizeProperties({ ...body.properties, ...updates.properties })
+      : body.properties;
+    let newBody: CelestialBody = {
+      ...body,
+      ...updates,
+      properties: mergedProps,
+    };
+
+    const isTerrestrial = ['Planet', 'Dwarf', 'Ice Giant'].includes(body.type);
+    const bodyProps = newBody.properties || {};
+
+    // Manual radius: keep mass, recalculate bulk density + surface properties
+    if (
+      isTerrestrial &&
+      updates.radius !== undefined &&
+      updates.radius !== body.radius &&
+      updates.mass === undefined
+    ) {
+      const bulkDensity = densityFromMassAndRadius(body.mass, updates.radius);
+      const derived = derivedPropertiesFromMassRadius(body.mass, updates.radius, bulkDensity);
+      newBody.properties = {
+        ...bodyProps,
+        manualRadius: true,
+        bulkDensity: derived.bulkDensity,
+        surfaceGravity: derived.surfaceGravity,
+        escapeVelocity: derived.escapeVelocity,
+      };
+    }
 
     // Cascading Updates Logic
     if (updates.mass !== undefined && updates.mass !== body.mass) {
-      // 1. Update Radius based on density if not manually set (simplified assumption for now)
-      // Actually, we usually want to keep composition and update radius
-      if (['Planet', 'Dwarf', 'Ice Giant'].includes(body.type)) {
-        const props = body.properties || {};
-        const physics = calculatePlanetaryPhysics(
-          updates.mass,
-          props.compositionIron || 0.3,
-          props.compositionSilicates || 0.6,
-          props.compositionWater || 0.1
-        );
-        newBody.radius = physics.radius;
+      if (isTerrestrial) {
+        const props = newBody.properties || {};
+        if (props.manualRadius) {
+          const bulkDensity = densityFromMassAndRadius(updates.mass, newBody.radius);
+          const derived = derivedPropertiesFromMassRadius(updates.mass, newBody.radius, bulkDensity);
+          newBody.properties = {
+            ...props,
+            bulkDensity: derived.bulkDensity,
+            surfaceGravity: derived.surfaceGravity,
+            escapeVelocity: derived.escapeVelocity,
+          };
+        } else {
+          const physics = calculatePlanetaryPhysics(
+            updates.mass,
+            props.compositionIron || 0.3,
+            props.compositionSilicates || 0.6,
+            props.compositionWater || 0.1
+          );
+          newBody.radius = clampRadius(physics.radius);
+          newBody.properties = {
+            ...props,
+            bulkDensity: physics.bulkDensity,
+            surfaceGravity: physics.surfaceGravity,
+            escapeVelocity: physics.escapeVelocity,
+          };
+        }
+      } else if (body.type === 'Star' || body.type === 'Red Giant') {
+        const star = deriveStarProperties(updates.mass);
+        newBody.radius = clampRadius(star.radius);
+        newBody.temperature = star.temperature;
+        newBody.color = star.color;
         newBody.properties = {
-          ...newBody.properties,
-          bulkDensity: physics.bulkDensity,
-          surfaceGravity: physics.surfaceGravity,
-          escapeVelocity: physics.escapeVelocity
+          ...mergedProps,
+          luminositySolar: star.luminositySolar,
         };
-      } else if (body.type === 'Star') {
-        // Simplistic mass-radius relation for main sequence: R ~ M^0.8
-        const ratio = updates.mass / body.mass;
-        newBody.radius = body.radius * Math.pow(ratio, 0.8);
       }
 
-      // 2. Maintain Orbital Stability of Children
+      // Maintain Orbital Stability of Children
       // If we change this body's mass, its children (satellites) need their velocity adjusted 
       // to maintain their current orbit shape, OR we accept they will spiral.
       // The user prompt asked for "changes in one property (like mass) automatically cascade".
@@ -124,6 +337,7 @@ export const useStore = create<AppState>((set, get) => ({
       const massRatio = Math.sqrt(updates.mass / body.mass);
 
       // We need to update OTHER bodies in the array
+      newBody = sanitizeCelestialBody(newBody);
       const updatedBodies = [...oldBodies];
       updatedBodies[bodyIndex] = newBody;
 
@@ -131,41 +345,91 @@ export const useStore = create<AppState>((set, get) => ({
         if (idx === bodyIndex) return;
         const parent = findDominantParent(other, updatedBodies);
         if (parent && parent.id === body.id) {
-          // This is a child of the modified body
-          // Adjust velocity relative to parent to maintain orbit
           const relVel = other.velocity.clone().sub(body.velocity);
           relVel.multiplyScalar(massRatio);
           other.velocity.copy(body.velocity).add(relVel);
+          clampVelocityVector(other.velocity);
         }
       });
 
-      return { bodies: updatedBodies };
+      return { bodies: updatedBodies.map((b) => sanitizeCelestialBody(b)) };
     }
 
+    newBody = sanitizeCelestialBody(newBody);
     const newBodies = [...oldBodies];
     newBodies[bodyIndex] = newBody;
     return { bodies: newBodies };
-  }),
+    });
 
-  removeBody: (id) => set((state) => ({
-    bodies: state.bodies.filter(b => b.id !== id),
-    selectedId: state.selectedId === id ? null : state.selectedId,
-    cameraLockedId: state.cameraLockedId === id ? null : state.cameraLockedId
-  })),
+    const final = get().bodies.find((b) => b.id === id);
+    if (!final) return;
+    const patch: Partial<CelestialBody> = {
+      mass: final.mass,
+      radius: final.radius,
+      temperature: final.temperature,
+      color: final.color,
+      texture: final.texture,
+      properties: final.properties,
+    };
+    if (touchedPosVel) {
+      patch.position = final.position;
+      patch.velocity = final.velocity;
+    }
+    patchPhysicsBody(id, patch);
+
+    if (updates.mass !== undefined) {
+      get().bodies.forEach((other) => {
+        if (other.id === id) return;
+        const dom = findDominantParent(other, get().bodies);
+        if (dom?.id === id) patchPhysicsBody(other.id, { velocity: other.velocity });
+      });
+    }
+  },
+
+  removeBody: (id) => {
+    set((state) => ({
+      bodies: state.bodies.filter((b) => b.id !== id),
+      selectedId: state.selectedId === id ? null : state.selectedId,
+      inspectorBodyId: state.inspectorBodyId === id ? null : state.inspectorBodyId,
+      cameraLockedId: state.cameraLockedId === id ? null : state.cameraLockedId,
+      inspectorLocks: (() => {
+        if (!state.inspectorLocks[id]) return state.inspectorLocks;
+        const next = { ...state.inspectorLocks };
+        delete next[id];
+        return next;
+      })(),
+    }));
+    replacePhysicsBodies(get().bodies);
+  },
+
+  resetSessionUiState: () =>
+    set({
+      selectedId: null,
+      inspectorBodyId: null,
+      cameraLockedId: null,
+      inspectorLocks: {},
+      worldId: null,
+      isInteractingWithUI: false,
+      storageNotice: null,
+    }),
+
+  setStorageNotice: (msg) => set({ storageNotice: msg }),
 
   selectBody: (id) => set({ selectedId: id }),
+  openInspector: (id) => set({ inspectorBodyId: id }),
+  closeInspector: () => set({ inspectorBodyId: null }),
   setCameraLock: (id) => set({ cameraLockedId: id }),
 
   setPaused: (paused) => set({ paused }),
-  setSpeed: (speed) => set({ speed }),
+  setSpeed: (speed) => set({ speed: clampSpeed(speed) }),
   toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
   toggleDust: () => set((state) => ({ showDust: !state.showDust })),
   toggleHabitable: () => set((state) => ({ showHabitable: !state.showHabitable })),
   toggleStability: () => set((state) => ({ showStability: !state.showStability })),
-  toggleOutliner: () => set((state) => ({ showOutliner: !state.showOutliner })),
 
   generateNewSystem: () => {
     const bodies = generateSystem();
+    const star = findPrimaryStar(bodies);
 
     // Recalculate type counts from generated system
     const counts: Record<string, number> = {};
@@ -180,26 +444,25 @@ export const useStore = create<AppState>((set, get) => ({
       }
     });
 
+    const state = get();
     set({
-      bodies,
+      bodies: sanitizeCelestialBodies(bodies),
       selectedId: null,
-      cameraLockedId: null,
-      typeCounts: counts
+      inspectorBodyId: null,
+      cameraLockedId: star?.id ?? null,
+      typeCounts: counts,
+      historyVersion: state.historyVersion + 1,
+      cameraRecenterNonce: state.cameraRecenterNonce + 1,
     });
   },
 
   loadWorld: (data) => {
-    // Need to deserialize vector data
-    const loadedBodies = data.bodies.map(b => ({
-      ...b,
-      position: new THREE.Vector3(b.position.x, b.position.y, b.position.z),
-      velocity: new THREE.Vector3(b.velocity.x, b.velocity.y, b.velocity.z),
-    }));
+    const loadedBodies = deserializeBodies(data.bodies);
+    loadedBodies.forEach((body) => reconcileBodyDerivedState(body));
 
     // Recalculate type counts from loaded bodies
     const counts: Record<string, number> = {};
     loadedBodies.forEach(b => {
-      // Attempt to parse number from name "Type X"
       const match = b.name.match(/(\d+)$/);
       if (match) {
         const num = parseInt(match[1]);
@@ -209,15 +472,32 @@ export const useStore = create<AppState>((set, get) => ({
       }
     });
 
+    const state = get();
+    const star =
+      loadedBodies.find((b) => b.type === 'Star' || b.type === 'Red Giant') ??
+      loadedBodies[0];
+    const keepSelection =
+      state.selectedId != null &&
+      loadedBodies.some((b) => b.id === state.selectedId);
+
+    const settings = sanitizeWorldSettings(data.settings);
+
     set({
       worldId: data.id,
       bodies: loadedBodies,
-      speed: data.settings.speed,
-      showGrid: data.settings.showGrid,
-      showDust: data.settings.showDust,
-      showHabitable: data.settings.showHabitable,
-      showStability: data.settings.showStability,
-      typeCounts: counts
+      selectedId: keepSelection ? state.selectedId : star?.id ?? null,
+      cameraLockedId:
+        state.cameraLockedId != null &&
+        loadedBodies.some((b) => b.id === state.cameraLockedId)
+          ? state.cameraLockedId
+          : null,
+      inspectorLocks: {},
+      speed: settings.speed,
+      showGrid: settings.showGrid,
+      showDust: settings.showDust,
+      showHabitable: settings.showHabitable,
+      showStability: settings.showStability,
+      typeCounts: counts,
     });
   },
 

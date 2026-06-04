@@ -1,0 +1,83 @@
+{
+  "id": "e2e-minimal-3body",
+  "version": 1,
+  "bodies": [
+    {
+      "id": "star-1",
+      "type": "Star",
+      "mass": 1200,
+      "radius": 12,
+      "position": { "x": 0, "y": 0, "z": 0 },
+      "velocity": { "x": 0, "y": 0, "z": 0 },
+      "color": "#ffcc66",
+      "texture": "star",
+      "trailColor": "#ffaa44",
+      "temperature": 5800,
+      "habitability": "STELLAR",
+      "population": 0,
+      "name": "Star 1",
+      "properties": {
+        "metallicity": 0.02,
+        "luminositySolar": 1,
+        "oblateness": 0.02,
+        "convectionScale": 3
+      }
+    },
+    {
+      "id": "planet-1",
+      "type": "Planet",
+      "mass": 10,
+      "radius": 2.5,
+      "position": { "x": 80, "y": 0, "z": 0 },
+      "velocity": { "x": 0, "y": 0, "z": 3.464 },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 280,
+      "habitability": "HABITABLE",
+      "population": 0,
+      "name": "Planet 1",
+      "properties": {
+        "compositionIron": 0.3,
+        "compositionSilicates": 0.6,
+        "compositionWater": 0.1,
+        "bulkDensity": 5.5,
+        "surfaceGravity": 9.8,
+        "escapeVelocity": 11.2,
+        "atmosphere": 0.4,
+        "waterLevel": 0.5
+      }
+    },
+    {
+      "id": "planet-2",
+      "type": "Planet",
+      "mass": 8,
+      "radius": 2.2,
+      "position": { "x": -100, "y": 0, "z": 0 },
+      "velocity": { "x": 0, "y": 0, "z": -3.098 },
+      "color": "#cc6644",
+      "texture": "mars",
+      "trailColor": "#aa4422",
+      "temperature": 220,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 2",
+      "properties": {
+        "compositionIron": 0.4,
+        "compositionSilicates": 0.55,
+        "compositionWater": 0.05,
+        "bulkDensity": 4.2,
+        "surfaceGravity": 7.5,
+        "escapeVelocity": 9.5,
+        "atmosphere": 0.1
+      }
+    }
+  ],
+  "settings": {
+    "speed": 1,
+    "showGrid": true,
+    "showDust": false,
+    "showHabitable": false,
+    "showStability": false
+  }
+}

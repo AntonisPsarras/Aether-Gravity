@@ -164,6 +164,7 @@ export const PlanetAtmosphereMaterial = shaderMaterial(
   }
   `,
     `
+  precision highp float;
   uniform vec3 uColor;
   uniform float uBoundingRadius;
   uniform float uPlanetRadius;
@@ -218,20 +219,21 @@ export const PlanetAtmosphereMaterial = shaderMaterial(
           
           float lightAngle = dot(normalize(pos), uSunDirection);
           float rayleighPhase = 0.75 * (1.0 + lightAngle * lightAngle);
-          float g = 0.8;
-          float miePhase = (1.0 - g*g) / (4.0 * 3.14159 * pow(1.0 + g*g - 2.0*g*lightAngle, 1.5));
-          miePhase *= uHaze * 10.0;
+          float g = 0.76;
+          float mieDenom = max(0.02, pow(1.0 + g * g - 2.0 * g * lightAngle, 1.5));
+          float miePhase = ((1.0 - g * g) / (4.0 * 3.14159 * mieDenom)) * uHaze * 1.8;
           
-          vec3 colorContribution = uColor * rayleighPhase + vec3(1.0) * miePhase;
+          vec3 colorContribution = uColor * rayleighPhase * 0.55 + uColor * miePhase * 0.35;
           scatter += colorContribution * d * stepSize;
           pos += rayDir * stepSize;
       }
       
       float transmittance = exp(-opticalDepth * 2.0);
-      vec3 finalColor = scatter * (1.0 - transmittance) * 2.0;
-      float alpha = smoothstep(0.0, 0.2, opticalDepth);
+      vec3 finalColor = scatter * (1.0 - transmittance) * 0.65;
+      float alpha = smoothstep(0.0, 0.25, opticalDepth);
+      float densityAlpha = clamp(uDensity, 0.0, 0.55) * 0.75;
       
-      gl_FragColor = vec4(finalColor, alpha * clamp(uDensity + 0.2, 0.0, 1.0));
+      gl_FragColor = vec4(clamp(finalColor, 0.0, 1.2), alpha * densityAlpha);
   }
   `
 );
@@ -250,6 +252,7 @@ export const SelectionHaloMaterial = shaderMaterial(
   }
   `,
     `
+  precision highp float;
   uniform vec3 uColor;
   uniform float uTime;
   varying vec3 vNormal;
@@ -365,8 +368,8 @@ void main() {
       surfaceColor += vec3(1.0) * flare * uFlareActivity * 5.0;
   }
   
-  float limbDarkening = pow(NdotV, 0.6);
-  surfaceColor *= limbDarkening;
+  float limbDarkening = pow(NdotV, 0.48);
+  surfaceColor *= limbDarkening * 1.12;
   
   float alpha = 1.0;
   if (uLuminosityClass > 0.5) {
@@ -397,7 +400,11 @@ export const PlanetSurfaceMaterial = shaderMaterial(
         uTemperature: 300.0,
         uRadius: 10.0,
         uOblateness: 0.0,
-        uMass: 10.0
+        uMass: 10.0,
+        uState: 0,
+        uEmissiveStrength: 0.12,
+        uNorthPole: new THREE.Vector3(0, 1, 0),
+        uSunDirection: new THREE.Vector3(1, 0.5, 0.5).normalize(),
     },
     `precision highp float;
 #include <common>
@@ -405,7 +412,11 @@ export const PlanetSurfaceMaterial = shaderMaterial(
 uniform float uOblateness;
 uniform float uMass;
 uniform int uType;
-varying vec2 vUv; varying vec3 vNormal; varying vec3 vPos;
+varying vec2 vUv;
+varying vec3 vNormal;
+varying vec3 vPos;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
 
 ${noise3DChunk}
 
@@ -445,9 +456,10 @@ void main() {
   
   n.x /= scaleXZ;
   n.z /= scaleXZ;
+  vec3 worldN = normalize(mat3(modelMatrix) * normalize(n));
   vNormal = normalize(normalMatrix * normalize(n));
-  
-  vPos = position; // Pass original for texture generation or modified? Usually modified.
+  vWorldNormal = worldN;
+  vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
   vPos = pos;
   
   gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -467,23 +479,40 @@ uniform float uMethane;
 uniform float uCloudDepth;
 uniform float uTemperature;
 uniform float uRadius;
+uniform int uState;
+uniform float uEmissiveStrength;
+uniform vec3 uNorthPole;
+uniform vec3 uSunDirection;
 
 varying vec2 vUv; 
 varying vec3 vNormal; 
 varying vec3 vPos;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
 
 ${noise3DChunk}
 
+const int STATE_HABITABLE = 1;
+const int STATE_FROZEN = 2;
+const int STATE_BURNING = 4;
+const int STATE_TOXIC = 8;
+const int STATE_VOLCANIC = 16;
+const int STATE_STERILIZED = 32;
+
 void main() {
-  vec3 normal = normalize(vNormal);
+  vec3 normal = normalize(vWorldNormal);
   vec3 finalColor = uColor1;
   float n_base = snoise(vPos * 2.0);
-  vec3 viewDir = normalize(cameraPosition - vPos);
+  vec3 viewDir = normalize(cameraPosition - vWorldPos);
   
-  // Lighting
-  vec3 lightDir = normalize(vec3(0.5, 0.5, 1.0)); 
+  vec3 lightDir = normalize(uSunDirection); 
   float diff = max(dot(normal, lightDir), 0.0);
   float spec = 0.0;
+  vec3 emissive = vec3(0.0);
+
+  float iceLine = mix(0.12, 0.88, smoothstep(200.0, 273.0, uTemperature));
+  float poleDot = dot(normal, normalize(uNorthPole));
+  float iceCap = smoothstep(iceLine - 0.1, iceLine + 0.06, poleDot);
   
   // ICE / GAS LOGIC (uType 3 is 'Ice', uType 2 is 'Gas')
   if (uType == 2 || (uType == 3 && uRadius > 4.0)) {
@@ -494,31 +523,32 @@ void main() {
       float bands = sin(vPos.y * 20.0 + zonalNoise * 2.0);
       
       if (uType == 3) {
-          // ICE GIANT Methane Scattering
-          vec3 deepBlue = vec3(0.0, 0.4, 0.8);
-          vec3 paleCyan = vec3(0.7, 0.9, 0.95);
+          // ICE GIANT — subdued albedo; avoid bloom-catching whites
+          vec3 deepBlue = vec3(0.02, 0.12, 0.28);
+          vec3 paleCyan = vec3(0.35, 0.55, 0.72);
           vec3 methaneColor = mix(paleCyan, deepBlue, uMethane);
-          finalColor = mix(methaneColor, methaneColor * 0.8, bands * 0.2 + 0.2);
+          finalColor = mix(methaneColor, methaneColor * 0.85, bands * 0.15 + 0.15);
           
           if (uCloudDepth > 0.0) {
               float clouds = fbm(vPos * 4.0 + vec3(uTime * 0.1), 4);
               float shadow = fbm(vPos * 4.0 + vec3(uTime * 0.1) + vec3(0.05), 4);
-              finalColor = mix(finalColor, finalColor * 0.5, smoothstep(0.4, 0.6, shadow));
-              finalColor = mix(finalColor, vec3(1.0), smoothstep(0.4, 0.8, clouds) * uCloudDepth);
+              finalColor = mix(finalColor, finalColor * 0.55, smoothstep(0.4, 0.6, shadow));
+              vec3 cloudTint = vec3(0.75, 0.82, 0.88);
+              finalColor = mix(finalColor, cloudTint, smoothstep(0.45, 0.75, clouds) * uCloudDepth * 0.35);
           }
       } else {
           finalColor = mix(uColor1, uColor2, bands * 0.5 + 0.5);
       }
-      spec = pow(max(dot(reflect(-lightDir, normal), viewDir), 0.0), 10.0) * 0.1;
+      spec = pow(max(dot(reflect(-lightDir, normal), viewDir), 0.0), 16.0) * (uType == 3 ? 0.03 : 0.1);
       
   } else if (uType == 3 && uRadius <= 4.0) {
       // SOLID ICE WORLD
-      vec3 freshIce = vec3(0.95, 0.98, 1.0);
-      vec3 oldIce = vec3(0.7, 0.8, 0.85);
+      vec3 freshIce = vec3(0.78, 0.84, 0.9);
+      vec3 oldIce = vec3(0.55, 0.65, 0.72);
       float surfNoise = fbm(vPos * 5.0, 3);
       finalColor = mix(oldIce, freshIce, smoothstep(0.3, 0.7, surfNoise));
       if (uTemperature > 200.0) finalColor *= vec3(0.9, 0.85, 0.8);
-      spec = pow(max(dot(reflect(-lightDir, normal), viewDir), 0.0), 40.0) * 0.8;
+      spec = pow(max(dot(reflect(-lightDir, normal), viewDir), 0.0), 40.0) * 0.25;
       
   } else if (uType == 0) {
       // SOLID / THOLINS
@@ -536,30 +566,66 @@ void main() {
       }
       
   } else if (uType == 1) { 
-      // TERRESTRIAL
       float n1 = snoise(vPos * 1.5); 
       float n2 = snoise(vPos * 4.0 + 10.0);
       float height = n1 + n2 * 0.5;
       vec3 land = mix(uColor2, uColor1, smoothstep(-0.2, 0.2, n2));
-      if (uTectonics > 0.0) {
-          float cracks = 1.0 - abs(snoise(vPos * 10.0));
-          float lava = pow(cracks, 8.0) * uTectonics;
-          land += vec3(1.0, 0.3, 0.0) * lava * 5.0;
-      }
+      float cracks = 1.0 - abs(snoise(vPos * 10.0 + uTime * 0.05));
+      float lavaMask = pow(cracks, 8.0) * uTectonics * smoothstep(600.0, 1100.0, uTemperature);
+      if ((uState & STATE_VOLCANIC) != 0) lavaMask = max(lavaMask, pow(cracks, 6.0) * 0.6);
+      land += vec3(1.0, 0.25, 0.05) * lavaMask * 0.8;
+      emissive += vec3(1.0, 0.35, 0.08) * lavaMask * 2.0 * uEmissiveStrength;
       vec3 ocean = vec3(0.05, 0.15, 0.35);
-      if (uTemperature < 273.0) ocean = vec3(0.9, 0.95, 1.0);
+      if (uTemperature < 273.0 || (uState & STATE_FROZEN) != 0) ocean = vec3(0.9, 0.95, 1.0);
       float waterMask = smoothstep(uWaterLevel * 2.0 - 1.0, (uWaterLevel * 2.0 - 1.0) + 0.05, height);
       finalColor = mix(ocean, land, waterMask);
+      vec3 capColor = vec3(0.95, 0.98, 1.0);
+      finalColor = mix(finalColor, capColor, iceCap * (1.0 - waterMask * 0.35));
+      if ((uState & STATE_HABITABLE) != 0) {
+          float veg = smoothstep(0.45, 0.75, snoise(vPos * 3.0 + 2.0)) * (1.0 - waterMask) * (1.0 - iceCap);
+          finalColor = mix(finalColor, vec3(0.15, 0.45, 0.2), veg * 0.35);
+      }
       if (waterMask < 0.5) {
           float gloss = (uTemperature < 273.0) ? 0.3 : 0.8;
           spec = pow(max(dot(reflect(-lightDir, normal), viewDir), 0.0), 32.0) * gloss;
       }
+  } else if (uType == 4) {
+      float n = fbm(vPos * 3.0 + vec3(uTime * 0.08), 4);
+      float cracks = 1.0 - abs(snoise(vPos * 12.0));
+      float lava = pow(cracks, 6.0) * (0.5 + uTectonics);
+      vec3 rock = mix(uColor2, uColor1, n);
+      vec3 molten = vec3(1.0, 0.35, 0.05);
+      finalColor = mix(rock, molten, lava * smoothstep(700.0, 1200.0, uTemperature));
+      emissive = molten * lava * 3.0 * uEmissiveStrength;
+  } else if (uType == 5) {
+      float pulse = 0.6 + 0.4 * sin(uTime * 3.0 + vPos.y * 4.0);
+      finalColor = mix(uColor1, uColor2, n_base * 0.5 + 0.5) * pulse;
+      emissive = finalColor * 0.8 * uEmissiveStrength;
+  } else if (uType == 6) {
+      float n = fbm(vPos * 8.0, 3);
+      finalColor = mix(vec3(0.15, 0.2, 0.35), vec3(0.7, 0.85, 1.0), n);
+      emissive = vec3(0.4, 0.6, 1.0) * pow(1.0 - max(dot(normal, viewDir), 0.0), 2.0) * 0.15 * uEmissiveStrength;
   } else {
       finalColor = mix(uColor1, uColor2, n_base * 0.5 + 0.5);
   }
-  
-  vec3 result = finalColor * (diff * 0.8 + 0.2) + spec; 
-  gl_FragColor = vec4(clamp(result, 0.0, 8.0), 1.0);
+
+  if ((uState & STATE_BURNING) != 0) {
+      emissive += vec3(1.0, 0.4, 0.1) * 0.4 * uEmissiveStrength;
+  }
+  if ((uState & STATE_TOXIC) != 0) {
+      finalColor = mix(finalColor, vec3(0.3, 0.7, 0.2), 0.15);
+  }
+  if ((uState & STATE_STERILIZED) != 0) {
+      finalColor *= vec3(0.75, 0.72, 0.7);
+  }
+
+  float rim = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+  float rimAtmos = (uType == 3) ? 0.05 : 0.22;
+  vec3 rimLit = uColor1 * rim * uAtmosphere * rimAtmos * (diff * 0.55 + 0.06);
+
+  vec3 lit = finalColor * (diff * 0.85 + 0.05) + spec + rimLit;
+  vec3 result = lit + emissive; 
+  gl_FragColor = vec4(clamp(result, 0.0, 2.0), 1.0);
   #include <logdepthbuf_fragment>
 } `
 );
@@ -614,6 +680,7 @@ export const PlanetTerrainMaterial = shaderMaterial(
   }
   `,
     `
+  precision highp float;
   varying float vHeight;
   varying vec3 vPosition;
   uniform vec3 uColor1;
@@ -649,6 +716,7 @@ export const NeutronStarMaterial = shaderMaterial(
     }
     `,
     `
+    precision highp float;
     uniform vec3 uColor;
     varying vec3 vNormal;
     varying vec3 vViewPosition;
@@ -674,6 +742,7 @@ export const PulsarJetMaterial = shaderMaterial(
     }
     `,
     `
+    precision highp float;
     uniform vec3 uColor;
     uniform float uTime;
     varying vec2 vUv;

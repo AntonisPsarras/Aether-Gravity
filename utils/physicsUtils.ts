@@ -1,15 +1,30 @@
 import * as THREE from 'three';
 import { CelestialBody, BodyType, PhysicsEvent, WaveEvent } from '../types';
 import { G_CONSTANT, COLLISION_PHYSICS, EVOLUTION_THRESHOLDS, BODY_CONFIGS } from '../constants';
+import {
+  albedoFromComposition,
+  equilibriumTemperatureK,
+  escapeVelocityKmsFromGame,
+  distGameToAU,
+  GAME_RADIUS_TO_EARTH,
+  luminositySolarFromGameMass,
+  massGameToEarth,
+  M_EARTH_KG,
+  R_EARTH_KM,
+  STAR_REFERENCE_MASS_GAME,
+  surfaceGravitySiFromGame,
+} from './units';
+import { scratchV2, scratchV3 } from './scratchVectors';
+import { clampMass, clampRadius } from './physicsBounds';
 
 const isValidBody = (b: CelestialBody | null | undefined): b is CelestialBody => {
   return b != null &&
     b.position != null &&
     b.velocity != null &&
     typeof b.mass === 'number' &&
-    !isNaN(b.mass) &&
+    Number.isFinite(b.mass) &&
     typeof b.radius === 'number' &&
-    !isNaN(b.radius);
+    Number.isFinite(b.radius);
 };
 
 // --- Astrophysics Helpers ---
@@ -19,25 +34,122 @@ const DENSITY_IRON = 7.8;
 const DENSITY_SILICATE = 3.3;
 const DENSITY_WATER = 1.0; 
 
-// Game Unit Scalers
-// We need to map real physics to the game's arbitrary units (Mass ~10-100, Radius ~2-5)
-const RADIUS_SCALE_FACTOR = 1.8; 
+/** Game radius of a Sun-sized star at reference mass (visual/physics scale). */
+const STAR_RADIUS_AT_REF_MASS = 12;
 
 export const calculatePlanetaryPhysics = (mass: number, compIron: number, compSil: number, compWater: number) => {
     const totalVolumeFraction = (compIron / DENSITY_IRON) + (compSil / DENSITY_SILICATE) + (compWater / DENSITY_WATER);
-    const bulkDensity = 1 / totalVolumeFraction; // g/cm^3
-    const volume = mass / bulkDensity;
-    const rawRadius = Math.pow((3 * volume) / (4 * Math.PI), 1/3);
-    const radius = rawRadius * RADIUS_SCALE_FACTOR;
-    const gravity = (G_CONSTANT * mass) / (radius * radius);
-    const escapeVel = Math.sqrt((2 * G_CONSTANT * mass) / radius);
-
+    const bulkDensity = 1 / Math.max(totalVolumeFraction, 1e-6); // g/cm³
+    const massKg = massGameToEarth(mass) * M_EARTH_KG;
+    const bulkDensityKgM3 = bulkDensity * 1000;
+    const volumeM3 = massKg / Math.max(bulkDensityKgM3, 1);
+    const radiusM = Math.cbrt((3 * volumeM3) / (4 * Math.PI));
+    const radiusGame = (radiusM / 1000) / (GAME_RADIUS_TO_EARTH * R_EARTH_KM);
+    const radius = clampRadius(Math.max(0.15, radiusGame));
     return {
         radius,
         bulkDensity,
-        surfaceGravity: gravity * 10,
-        escapeVelocity: escapeVel * 2
+        surfaceGravity: surfaceGravitySiFromGame(mass, radius),
+        escapeVelocity: escapeVelocityKmsFromGame(mass, radius),
     };
+};
+
+/** Derive bulk density (g/cm³) from game mass + radius when the user sets radius manually. */
+export const densityFromMassAndRadius = (mass: number, radius: number): number => {
+    const massKg = massGameToEarth(mass) * M_EARTH_KG;
+    const rM = radius * GAME_RADIUS_TO_EARTH * R_EARTH_KM * 1000;
+    const volumeM3 = (4 / 3) * Math.PI * Math.pow(Math.max(rM, 1), 3);
+    const bulkDensityKgM3 = massKg / Math.max(volumeM3, 1);
+    return bulkDensityKgM3 / 1000;
+};
+
+export const derivedPropertiesFromMassRadius = (mass: number, radius: number, bulkDensity: number) => ({
+    bulkDensity,
+    surfaceGravity: surfaceGravitySiFromGame(mass, radius),
+    escapeVelocity: escapeVelocityKmsFromGame(mass, radius),
+});
+
+/** Main-sequence radius, temperature, and colour from game stellar mass. */
+export const deriveStarProperties = (massGame: number) => {
+    const x = massGame / STAR_REFERENCE_MASS_GAME;
+    const rSun = x <= 0 ? 0.1 : x < 1 ? Math.pow(x, 0.8) : Math.pow(x, 0.57);
+    const radius = clampRadius(Math.max(4, Math.min(180, STAR_RADIUS_AT_REF_MASS * rSun)));
+    const L = Math.max(1e-8, luminositySolarFromGameMass(massGame));
+    const rRatio = Math.max(0.05, radius / STAR_RADIUS_AT_REF_MASS);
+    const temperature = Math.max(
+        2400,
+        Math.min(50000, 5778 * Math.pow(L / (rRatio * rRatio), 0.25)),
+    );
+    const { r, g, b } = kelvinToRgb(temperature);
+    return { radius, temperature, color: rgbToHex(r, g, b), luminositySolar: L };
+};
+
+export const deriveNeutronStarRadius = (massGame: number): number =>
+    Math.max(0.12, Math.min(0.55, 0.18 * Math.pow(massGame / 2000, 0.15)));
+
+export const deriveBlackHoleRadius = (massGame: number): number =>
+    Math.max(1.5, Math.min(80, STAR_RADIUS_AT_REF_MASS * Math.cbrt(massGame / 3000)));
+
+/** Suggest a body type from mass (M⊕) and bulk density (g/cm³); null if current type is acceptable. */
+export const suggestBodyType = (type: BodyType, massGame: number, bulkDensityGcm3: number): BodyType | null => {
+    const m = massGameToEarth(massGame);
+    if (type === 'Black Hole' || type === 'Neutron Star') return null;
+    if (m < 0.5 && type !== 'Dwarf') return 'Dwarf';
+    if (m >= 0.5 && m < 10 && bulkDensityGcm3 >= 2.5 && type !== 'Planet' && type !== 'Dwarf') return 'Planet';
+    if (m >= 10 && m < 50 && bulkDensityGcm3 >= 1 && bulkDensityGcm3 < 3 && type !== 'Ice Giant') return 'Ice Giant';
+    return null;
+};
+
+/** Refresh derived stellar/compact/terrestrial properties after load or edit. */
+/** Primary star for camera framing and hierarchy (prefers explicit selection). */
+export const findPrimaryStar = (
+  bodies: CelestialBody[],
+  selectedId?: string | null,
+): CelestialBody | null => {
+  if (!bodies?.length) return null;
+  if (selectedId) {
+    const selected = bodies.find((b) => b.id === selectedId);
+    if (selected) return selected;
+  }
+  return (
+    bodies.find((b) => b.type === 'Star' || b.type === 'Red Giant') ??
+    bodies[0] ??
+    null
+  );
+};
+
+export const reconcileBodyDerivedState = (body: CelestialBody): void => {
+    if (!body) return;
+    const props = body.properties || {};
+    if (['Planet', 'Dwarf', 'Ice Giant'].includes(body.type)) {
+        const iron = props.compositionIron ?? 0.3;
+        const sil = props.compositionSilicates ?? 0.6;
+        const water = props.compositionWater ?? 0.1;
+        if (!props.manualRadius) {
+            const phys = calculatePlanetaryPhysics(body.mass, iron, sil, water);
+            body.radius = clampRadius(phys.radius);
+            body.properties = {
+                ...props,
+                bulkDensity: phys.bulkDensity,
+                surfaceGravity: phys.surfaceGravity,
+                escapeVelocity: phys.escapeVelocity,
+            };
+        } else {
+            const rho = densityFromMassAndRadius(body.mass, body.radius);
+            const derived = derivedPropertiesFromMassRadius(body.mass, body.radius, rho);
+            body.properties = { ...props, ...derived };
+        }
+    } else if (body.type === 'Star' || body.type === 'Red Giant') {
+        const star = deriveStarProperties(body.mass);
+        body.radius = clampRadius(star.radius);
+        body.temperature = star.temperature;
+        body.color = star.color;
+        body.properties = { ...props, luminositySolar: star.luminositySolar };
+    } else if (body.type === 'Neutron Star') {
+        body.radius = clampRadius(deriveNeutronStarRadius(body.mass));
+    } else if (body.type === 'Black Hole') {
+        body.radius = clampRadius(deriveBlackHoleRadius(body.mass));
+    }
 };
 
 // --- KEPLERIAN ORBIT MECHANICS ---
@@ -46,25 +158,65 @@ export const findDominantParent = (body: CelestialBody, bodies: CelestialBody[])
     let bestParent: CelestialBody | null = null;
     let maxInfluence = 0;
 
-    for (const other of bodies) {
+    for (let i = 0; i < bodies.length; i++) {
+        const other = bodies[i];
         if (other.id === body.id) continue;
+        // A parent must be strictly more massive than the candidate, otherwise
+        // the "child" is not gravitationally dominated. Without this, two
+        // similar-mass bodies would each claim the other as parent and the
+        // hierarchy/UI logic breaks.
+        if (other.mass <= body.mass) continue;
         const distSq = body.position.distanceToSquared(other.position);
         if (distSq < 0.1) continue;
-        
-        // Influence = Mass / Dist^2 (Gravitational pull magnitude)
+        // Influence = Mass / Dist^2 (gravitational pull magnitude)
         const influence = other.mass / distSq;
-        
         if (influence > maxInfluence) {
             maxInfluence = influence;
             bestParent = other;
         }
     }
-    
-    // Threshold to prevent random weak associations in deep space
-    // Also, usually parent should be more massive
-    if (bestParent && (bestParent as CelestialBody).mass < body.mass * 0.5) return null; // Only orbit heavier things (simplified)
+
+    // Require clear gravitational dominance (approx. Hill-sphere criterion).
+    if (bestParent && bestParent.mass < body.mass * 10) return null;
 
     return bestParent;
+};
+
+/**
+ * Build an id → parent map for every body in one O(N²) pass.
+ * Hot-loop callers should reuse `map` via `fillParentMap` instead of allocating each frame.
+ */
+export const fillParentMap = (
+  bodies: CelestialBody[],
+  map: Map<string, CelestialBody | null>,
+): void => {
+  map.clear();
+  if (!bodies || bodies.length === 0) return;
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    let bestParent: CelestialBody | null = null;
+    let maxInfluence = 0;
+    for (let j = 0; j < bodies.length; j++) {
+      if (i === j) continue;
+      const other = bodies[j];
+      if (other.mass <= body.mass) continue;
+      const distSq = body.position.distanceToSquared(other.position);
+      if (distSq < 0.1) continue;
+      const influence = other.mass / distSq;
+      if (influence > maxInfluence) {
+        maxInfluence = influence;
+        bestParent = other;
+      }
+    }
+    if (bestParent && bestParent.mass < body.mass * 10) bestParent = null;
+    map.set(body.id, bestParent);
+  }
+};
+
+export const buildParentMap = (bodies: CelestialBody[]): Map<string, CelestialBody | null> => {
+  const map = new Map<string, CelestialBody | null>();
+  fillParentMap(bodies, map);
+  return map;
 };
 
 export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) => {
@@ -74,10 +226,18 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
     
     const r = rVec.length();
     const v = vVec.length();
+
+    if (r < 1e-6 || !Number.isFinite(mu) || mu <= 0) {
+      return { a: 0, e: 0, i: 0, Omega: 0, omega: 0, nu: 0 };
+    }
     
     // Angular Momentum h = r x v
     const hVec = new THREE.Vector3().crossVectors(rVec, vVec);
     const h = hVec.length();
+
+    if (h < 1e-9) {
+      return { a: r, e: 0, i: 0, Omega: 0, omega: 0, nu: 0 };
+    }
     
     // Eccentricity vector e
     // e = ( (v^2 - mu/r)*r - (r.v)*v ) / mu
@@ -148,6 +308,16 @@ export const calculateOrbitalState = (
     nuDeg: number
 ) => {
     const mu = G_CONSTANT * parent.mass;
+    const safeA = Math.max(1e-3, Math.abs(a));
+    const safeE = Math.max(0, Math.min(0.999, e));
+    const p = safeA * (1 - safeE * safeE);
+
+    if (!Number.isFinite(mu) || mu <= 0 || p <= 1e-6) {
+      return {
+        position: parent.position.clone(),
+        velocity: parent.velocity.clone(),
+      };
+    }
     
     // Convert to Radians
     const i = iDeg * (Math.PI / 180);
@@ -156,9 +326,7 @@ export const calculateOrbitalState = (
     const nu = nuDeg * (Math.PI / 180);
     
     // 1. Position/Velocity in Perifocal Frame (PQW)
-    // p = a(1-e^2)
-    const p = a * (1 - e * e);
-    const r = p / (1 + e * Math.cos(nu));
+    const r = p / (1 + safeE * Math.cos(nu));
     
     // Position in orbital plane
     // P points to periapsis, Q is 90deg in plane
@@ -169,7 +337,7 @@ export const calculateOrbitalState = (
     const vScale = Math.sqrt(mu / p);
     const vPQW = new THREE.Vector3(
         -Math.sin(nu),
-        e + Math.cos(nu),
+        safeE + Math.cos(nu),
         0
     ).multiplyScalar(vScale);
     
@@ -293,6 +461,67 @@ export const getSpectralType = (temp: number): string => {
     return 'M';                    // Red
 };
 
+// Reused acceleration buffer to avoid per-step allocations in the hot physics path.
+let gravityAccelBuffer = new Float32Array(0);
+
+const ensureGravityBufferSize = (bodyCount: number) => {
+  const required = bodyCount * 3;
+  if (gravityAccelBuffer.length < required) {
+    gravityAccelBuffer = new Float32Array(required);
+  } else {
+    gravityAccelBuffer.fill(0, 0, required);
+  }
+};
+
+export const calculateGravityInPlace = (bodies: CelestialBody[], Gt: number): CelestialBody[] => {
+  if (!bodies || bodies.length === 0) return [];
+  if (!isFinite(Gt) || Gt === 0) return bodies;
+
+  const validBodies = bodies.filter(isValidBody);
+  const len = validBodies.length;
+  if (len === 0) return validBodies;
+
+  ensureGravityBufferSize(len);
+
+  // Compute accelerations first, then apply to velocities/positions.
+  // This keeps integration stable while reusing one typed buffer per step.
+  for (let i = 0; i < len; i++) {
+    const b1 = validBodies[i];
+    const base = i * 3;
+    let ax = 0, ay = 0, az = 0;
+
+    for (let j = 0; j < len; j++) {
+      if (i === j) continue;
+      const b2 = validBodies[j];
+      const dx = b2.position.x - b1.position.x;
+      const dy = b2.position.y - b1.position.y;
+      const dz = b2.position.z - b1.position.z;
+      const distSq = dx * dx + dy * dy + dz * dz + 0.1;
+      const invDist = 1 / Math.sqrt(distSq);
+      const force = (G_CONSTANT * b2.mass) / distSq;
+
+      ax += dx * invDist * force;
+      ay += dy * invDist * force;
+      az += dz * invDist * force;
+    }
+
+    gravityAccelBuffer[base] = ax;
+    gravityAccelBuffer[base + 1] = ay;
+    gravityAccelBuffer[base + 2] = az;
+  }
+
+  for (let i = 0; i < len; i++) {
+    const b = validBodies[i];
+    const base = i * 3;
+    b.velocity.x += gravityAccelBuffer[base] * Gt;
+    b.velocity.y += gravityAccelBuffer[base + 1] * Gt;
+    b.velocity.z += gravityAccelBuffer[base + 2] * Gt;
+    b.position.addScaledVector(b.velocity, Gt);
+  }
+
+  return validBodies;
+};
+
 export const calculateGravity = (bodies: CelestialBody[],Gt: number): CelestialBody[] => {
   if (!bodies || bodies.length === 0) return [];
   if (!isFinite(Gt) || Gt === 0) return bodies;
@@ -306,142 +535,164 @@ export const calculateGravity = (bodies: CelestialBody[],Gt: number): CelestialB
       velocity: b.velocity.clone()
     }));
 
-  for (let i = 0; i < nextState.length; i++) {
-    const b1 = nextState[i];
-    let ax = 0, ay = 0, az = 0;
+  // Backward-compatible immutable wrapper for UI/state callers.
+  // The actual integration is delegated to the in-place optimized variant.
+  return calculateGravityInPlace(nextState, Gt);
+};
 
-    for (let j = 0; j < nextState.length; j++) {
-      if (i === j) continue;
-      const b2 = nextState[j];
+const _collisionRemove = new Set<string>();
+
+export const checkCollisions = (bodies: CelestialBody[], _time: number): { active: CelestialBody[], merged: boolean, events: PhysicsEvent[], waveEvents: WaveEvent[] } => {
+  if (!bodies || !Array.isArray(bodies) || bodies.length === 0) {
+    return { active: bodies || [], merged: false, events: [], waveEvents: [] };
+  }
+
+  _collisionRemove.clear();
+  const events: PhysicsEvent[] = [];
+  const waveEvents: WaveEvent[] = [];
+  let merged = false;
+
+  for (let i = 0; i < bodies.length; i++) {
+    const b1 = bodies[i];
+    if (!isValidBody(b1) || _collisionRemove.has(b1.id)) continue;
+
+    for (let j = i + 1; j < bodies.length; j++) {
+      const b2 = bodies[j];
+      if (!isValidBody(b2) || _collisionRemove.has(b2.id)) continue;
 
       const dx = b2.position.x - b1.position.x;
       const dy = b2.position.y - b1.position.y;
       const dz = b2.position.z - b1.position.z;
-
-      const distSq = dx * dx + dy * dy + dz * dz + 0.1;
-      const dist = Math.sqrt(distSq);
-      const force = (G_CONSTANT * b2.mass) / distSq;
-
-      ax += (dx / dist) * force;
-      ay += (dy / dist) * force;
-      az += (dz / dist) * force;
-    }
-
-    b1.velocity.x += ax * Gt;
-    b1.velocity.y += ay * Gt;
-    b1.velocity.z += az * Gt;
-  }
-
-  nextState.forEach(body => {
-    body.position.addScaledVector(body.velocity, Gt);
-  });
-
-  return nextState;
-};
-
-export const checkCollisions = (bodies: CelestialBody[], time: number): { active: CelestialBody[], merged: boolean, events: PhysicsEvent[], waveEvents: WaveEvent[] } => {
-  if (!bodies || !Array.isArray(bodies)) return { active: [], merged: false, events: [], waveEvents: [] };
-
-  const active = bodies.filter(isValidBody);
-  const events: PhysicsEvent[] = [];
-  const waveEvents: WaveEvent[] = [];
-  let merged = false;
-  const toRemove = new Set<string>();
-
-  for (let i = 0; i < active.length; i++) {
-    const b1 = active[i];
-    if (toRemove.has(b1.id)) continue;
-
-    for (let j = i + 1; j < active.length; j++) {
-      const b2 = active[j];
-      if (toRemove.has(b2.id)) continue;
-
-      const dist = b1.position.distanceTo(b2.position);
-      if (!isFinite(dist)) continue;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (!Number.isFinite(dist)) continue;
 
       if (dist < (b1.radius + b2.radius) * 0.8) {
         merged = true;
         const totalMass = b1.mass + b2.mass;
 
-        const combinedVel = new THREE.Vector3()
-          .addScaledVector(b1.velocity, b1.mass)
-          .addScaledVector(b2.velocity, b2.mass)
-          .multiplyScalar(1 / totalMass);
+        if (totalMass <= 0 || !Number.isFinite(totalMass)) {
+          _collisionRemove.add(b2.id);
+          continue;
+        }
 
-        const combinedPos = new THREE.Vector3()
-          .addScaledVector(b1.position, b1.mass)
+        const invTotalMass = 1 / totalMass;
+
+        scratchV2
+          .set(b1.velocity.x, b1.velocity.y, b1.velocity.z)
+          .multiplyScalar(b1.mass)
+          .addScaledVector(b2.velocity, b2.mass)
+          .multiplyScalar(invTotalMass);
+
+        scratchV3
+          .set(b1.position.x, b1.position.y, b1.position.z)
+          .multiplyScalar(b1.mass)
           .addScaledVector(b2.position, b2.mass)
-          .multiplyScalar(1 / totalMass);
+          .multiplyScalar(invTotalMass);
 
         const survivor = b1.mass >= b2.mass ? b1 : b2;
         const consumed = b1.mass >= b2.mass ? b2 : b1;
 
-        survivor.mass = totalMass * COLLISION_PHYSICS.MERGER_EFFICIENCY;
-        survivor.velocity.copy(combinedVel);
-        survivor.position.copy(combinedPos);
-        survivor.radius = Math.pow(Math.pow(b1.radius, 3) + Math.pow(b2.radius, 3), 1 / 3);
+        const mergedMass = clampMass(totalMass * COLLISION_PHYSICS.MERGER_EFFICIENCY);
+        const mergedRadius = clampRadius(
+          Math.pow(Math.pow(b1.radius, 3) + Math.pow(b2.radius, 3), 1 / 3),
+        );
+        if (
+          !Number.isFinite(mergedMass) ||
+          !Number.isFinite(scratchV2.x) ||
+          !Number.isFinite(scratchV3.x) ||
+          !Number.isFinite(mergedRadius)
+        ) {
+          _collisionRemove.add(consumed.id);
+          continue;
+        }
+        survivor.mass = mergedMass;
+        survivor.velocity.copy(scratchV2);
+        survivor.position.copy(scratchV3);
+        survivor.radius = mergedRadius;
 
-        toRemove.add(consumed.id);
-        
+        _collisionRemove.add(consumed.id);
+
         events.push({
           type: 'collision',
           mass: consumed.mass,
-          position: combinedPos.clone(),
-          velocity: combinedVel.clone(),
+          position: scratchV3.clone(),
+          velocity: scratchV2.clone(),
         });
       }
     }
   }
 
-  return {
-    active: active.filter(b => !toRemove.has(b.id)),
-    merged,
-    events,
-    waveEvents
-  };
+  if (!merged || _collisionRemove.size === 0) {
+    return { active: bodies, merged: false, events, waveEvents };
+  }
+
+  let write = 0;
+  for (let read = 0; read < bodies.length; read++) {
+    if (!_collisionRemove.has(bodies[read].id)) {
+      if (write !== read) bodies[write] = bodies[read];
+      write++;
+    }
+  }
+  bodies.length = write;
+
+  return { active: bodies, merged: true, events, waveEvents };
 };
 
 export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody[], events: PhysicsEvent[] } => {
   const events: PhysicsEvent[] = [];
-  const nextBodies = bodies.map(b => {
-    if (!b) return b;
+
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    if (!b) continue;
 
     if ((b.type === 'Planet' || b.type === 'Ice Giant') && b.mass > EVOLUTION_THRESHOLDS.PLANET_TO_STAR) {
-      const config = BODY_CONFIGS['Star'];
+      const star = deriveStarProperties(b.mass);
       events.push({ type: 'evolution', bodyType: 'Star', position: b.position.clone() });
-      return { ...b, type: 'Star' as BodyType, color: config.defaultColor, radius: config.radiusRange[0], temperature: 5500, texture: 'solid' };
+      b.type = 'Star';
+      b.color = star.color;
+      b.radius = clampRadius(star.radius);
+      b.temperature = star.temperature;
+      b.texture = 'solid';
+      b.properties = { ...b.properties, luminositySolar: star.luminositySolar };
+      continue;
     }
 
     if ((b.type === 'Star' || b.type === 'Red Giant') && b.mass > EVOLUTION_THRESHOLDS.STAR_TO_BLACK_HOLE) {
       const config = BODY_CONFIGS['Black Hole'];
+      const bhMass = clampMass(b.mass * 0.5);
       events.push({ type: 'supernova', position: b.position.clone(), radius: 50 });
-      return { ...b, type: 'Black Hole' as BodyType, color: config.defaultColor, radius: config.radiusRange[0], mass: b.mass * 0.5, texture: 'solid', trailColor: '#333' };
+      b.type = 'Black Hole';
+      b.color = config.defaultColor;
+      b.radius = clampRadius(deriveBlackHoleRadius(bhMass));
+      b.mass = bhMass;
+      b.texture = 'solid';
+      b.trailColor = '#333';
     }
+  }
 
-    return b;
-  });
-
-  return { bodies: nextBodies, events };
+  return { bodies, events };
 };
 
 export const generateSystem = (): CelestialBody[] => {
   const bodies: CelestialBody[] = [];
   const starConfig = BODY_CONFIGS['Star'];
+  const starMass = starConfig.massRange[0] + Math.random() * 500;
+  const starDerived = deriveStarProperties(starMass);
   const star: CelestialBody = {
     id: `star-${Date.now()}`,
     type: 'Star',
-    mass: starConfig.massRange[0] + Math.random() * 500,
-    radius: starConfig.radiusRange[0] + Math.random() * 2,
+    mass: starMass,
+    radius: starDerived.radius,
     position: new THREE.Vector3(0, 0, 0),
     velocity: new THREE.Vector3(0, 0, 0),
-    color: starConfig.defaultColor,
+    color: starDerived.color,
     texture: 'solid',
-    trailColor: starConfig.defaultColor,
-    temperature: 5500,
+    trailColor: starDerived.color,
+    temperature: starDerived.temperature,
     habitability: 'STELLAR',
     population: 0,
     name: 'Sol Prime',
-    properties: { rotationPeriod: 25.0 }
+    properties: { rotationPeriod: 25.0, luminositySolar: starDerived.luminositySolar },
   };
   bodies.push(star);
 
@@ -456,8 +707,11 @@ export const generateSystem = (): CelestialBody[] => {
     else if (rand < 0.2) type = 'Dwarf';
 
     const config = BODY_CONFIGS[type];
-    const radius = config.radiusRange[0] + Math.random() * (config.radiusRange[1] - config.radiusRange[0]);
     const mass = config.massRange[0] + Math.random() * (config.massRange[1] - config.massRange[0]);
+    const iron = 0.25 + Math.random() * 0.2;
+    const sil = 0.45 + Math.random() * 0.2;
+    const water = Math.max(0.05, 1 - iron - sil);
+    const planetary = calculatePlanetaryPhysics(mass, iron, sil, water);
 
     const pos = new THREE.Vector3(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
     const vel = new THREE.Vector3(-Math.sin(angle) * orbitalSpeed, 0, Math.cos(angle) * orbitalSpeed);
@@ -466,36 +720,93 @@ export const generateSystem = (): CelestialBody[] => {
       id: `gen-body-${i}-${Date.now()}`,
       type: type,
       mass: mass,
-      radius: radius,
+      radius: planetary.radius,
       position: pos,
       velocity: vel,
       color: config.defaultColor,
       texture: type === 'Ice Giant' ? 'ice' : 'rock',
       trailColor: config.defaultColor,
-      temperature: 300 - (dist * 0.5),
+      temperature: 300,
       habitability: 'N/A',
       population: 0,
       name: `${type} ${i + 1}`,
       properties: {
-          compositionIron: 0.3,
-          compositionSilicates: 0.6,
-          compositionWater: 0.1,
-          scaleHeight: 0.2 + Math.random() * 0.3,
-          haze: Math.random() * 0.5,
-          atmosphere: 0.5 + Math.random() * 0.5,
-          rotationPeriod: 24.0 + Math.random() * 24.0, // Initial random rotation
-          isTidallyLocked: false
-      }
+          compositionIron: iron,
+          compositionSilicates: sil,
+          compositionWater: water,
+          bulkDensity: planetary.bulkDensity,
+          surfaceGravity: planetary.surfaceGravity,
+          escapeVelocity: planetary.escapeVelocity,
+          scaleHeight: 0.12 + Math.random() * 0.18,
+          haze: Math.random() * 0.25,
+          atmosphere: 0.18 + Math.random() * 0.28,
+          rotationPeriod: 24.0 + Math.random() * 24.0,
+          isTidallyLocked: false,
+      },
     });
   }
+  updateEquilibriumTemperatures(bodies);
   return bodies;
 };
 
-export const analyzePlanet = (body: CelestialBody, star: CelestialBody, systemAge: number) => {
+/**
+ * Update equilibrium temperatures for every non-stellar body using
+ * Stefan-Boltzmann against the nearest sufficiently-luminous parent
+ * (Star / Red Giant / Neutron Star). Mutates `body.temperature` in place.
+ *
+ * Designed to be called at low rate (a few Hz, not per physics tick) from
+ * the engine loop. Skips bodies whose temperatures the user has overridden
+ * by giving them an explicit `body.properties.userTempOverride = true`.
+ */
+const STELLAR_TYPES: BodyType[] = ['Star', 'Red Giant', 'Neutron Star'];
+
+export const updateEquilibriumTemperatures = (bodies: CelestialBody[]): void => {
+    if (!bodies || bodies.length === 0) return;
+    const stars = bodies.filter(b => STELLAR_TYPES.includes(b.type));
+    if (stars.length === 0) return;
+
+    for (let i = 0; i < bodies.length; i++) {
+        const b = bodies[i];
+        if (!b || STELLAR_TYPES.includes(b.type) || b.type === 'Black Hole') continue;
+        if (b.properties?.userTempOverride) continue;
+
+        // Find brightest-perceived star (mass / dist²)
+        let bestStar: CelestialBody | null = null;
+        let bestFlux = 0;
+        let bestDist = 0;
+        for (let j = 0; j < stars.length; j++) {
+            const s = stars[j];
+            const d = b.position.distanceTo(s.position);
+            if (d < 0.5) continue;
+            const flux = s.mass / (d * d);
+            if (flux > bestFlux) {
+                bestFlux = flux;
+                bestStar = s;
+                bestDist = d;
+            }
+        }
+        if (!bestStar) continue;
+
+        const props = b.properties || {};
+        const albedo = albedoFromComposition(
+            props.compositionIron ?? 0.3,
+            props.compositionSilicates ?? 0.6,
+            props.compositionWater ?? 0.1,
+        );
+        const greenhouse = props.atmosphere ?? 0;
+        const T = equilibriumTemperatureK(bestStar.mass, bestDist, albedo, greenhouse);
+        // Exponential smoothing so user doesn't see instant snaps
+        b.temperature = isFinite(b.temperature)
+            ? b.temperature * 0.85 + T * 0.15
+            : T;
+    }
+};
+
+export const analyzePlanet = (body: CelestialBody, star: CelestialBody, _systemAge: number) => {
   if (!body || !star) return {};
   const dist = body.position.distanceTo(star.position);
-  const luminosity = Math.pow(star.mass / 1000.0, 3.0);
-  const distAU = Math.max(0.1, dist / 40.0);
+  const luminosity = luminositySolarFromGameMass(star.mass);
+  const distAU = Math.max(0.05, distGameToAU(dist));
   const fluxRel = luminosity / (distAU * distAU);
   const chzInner = Math.sqrt(luminosity) * 0.95 * 40;
   const chzOuter = Math.sqrt(luminosity) * 1.37 * 40;

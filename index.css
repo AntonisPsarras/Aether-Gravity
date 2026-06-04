@@ -2,16 +2,553 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+/* ─── Aether Gravity Design System ─────────────────────────────────────────── */
+:root {
+  /* Safe-area insets */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /* Control bar: safe inset + breathing room below notch / Dynamic Island */
+  --control-bar-gap: max(2.1rem, 34px);
+  --control-bar-mobile-height: 4rem;
+  --control-bar-top: calc(var(--safe-top) + var(--control-bar-gap));
+  --control-bar-bottom: max(2rem, calc(var(--safe-bottom) + 1rem));
+  /* Top edge of control bar stack (mobile overrides --control-bar-anchor-top below) */
+  --control-bar-anchor-top: var(--control-bar-top);
+  --creation-mode-hint-top: calc(
+    var(--control-bar-anchor-top) + var(--control-bar-mobile-height) + 0.375rem
+  );
+  /* Large screens: outliner sits top-left, below the creation mode hint */
+  --universe-outliner-desktop-top: calc(var(--creation-mode-hint-top) + 2.25rem);
+
+  /* Creation toolbar: home-indicator inset + extra clearance for swipe-to-home */
+  --creation-toolbar-gap: max(1.75rem, 20px);
+  --creation-toolbar-bottom-pad: calc(var(--safe-bottom) + var(--creation-toolbar-gap));
+  /* Toolbar row height (bar + container pt) — keeps mode hint above the bar */
+  --creation-toolbar-stack: 5.75rem;
+  /* Creation bar height on phone (expanded row + container padding) */
+  --creation-toolbar-height: 5.5rem;
+  /* Global HUD scale for floating UI */
+  --hud-scale: 1;
+  /* Dedicated control bar scale */
+  --control-bar-scale: 1;
+  /* Universe outliner sits above the creation toolbar on small screens */
+  --universe-outliner-mobile-bottom: calc(
+    var(--creation-toolbar-bottom-pad) + var(--creation-toolbar-height) + 0.5rem
+  );
+
+  /* Palette tokens */
+  --color-void-navy:      #10141C;
+  --color-pulsar-white:   #F4F4FB;
+  --color-nova-gold:      #F9D423;
+  --color-nebula-rust:    #B57335;
+
+  /* Panel surfaces */
+  --color-panel-bg:       rgba(45, 51, 64, 0.60);
+  --color-panel-bg-dark:  rgba(16, 20, 28, 0.95);
+  --color-panel-border:   rgba(255, 255, 255, 0.08);
+
+  /* Typography */
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* ─── Base Reset ─────────────────────────────────────────────────────────────*/
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   overflow: hidden;
-  background-color: #050505;
+  background-color: var(--color-void-navy);
+  color: var(--color-pulsar-white);
+  /* Prevent pull-to-refresh and elastic overscroll on all browsers */
+  overscroll-behavior: none;
+  overscroll-behavior-x: none;
 }
 
 canvas {
   display: block;
+  width: 100%;
+  height: 100%;
   touch-action: none;
+}
+
+/* ─── Shell ──────────────────────────────────────────────────────────────────*/
+.sim-shell {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+/* ─── Safe-area helpers ──────────────────────────────────────────────────────*/
+.safe-pad {
+  padding-top: var(--safe-top);
+  padding-right: var(--safe-right);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+}
+
+.safe-top  { top:    max(0.5rem, var(--safe-top)); }
+.safe-bottom { bottom: max(0.5rem, var(--safe-bottom)); }
+
+/* Simulation control bar — top on phone, bottom on md+ */
+.control-bar-anchor {
+  top: var(--control-bar-top);
+}
+
+.sim-toolbar {
+  transform: scale(var(--control-bar-scale));
+  transform-origin: top center;
+}
+
+.creation-toolbar-anchor > div {
+  transform: scale(var(--hud-scale));
+  transform-origin: bottom center;
+}
+
+.control-bar-hint {
+  transform: scale(var(--control-bar-scale));
+  transform-origin: top center;
+}
+
+.inspector-panel-anchor {
+  transform: scale(var(--hud-scale));
+  transform-origin: bottom center;
+  max-height: 78dvh;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --control-bar-gap: max(0.75rem, 12px);
+    --creation-toolbar-gap: max(2rem, 24px);
+    --hud-scale: clamp(0.84, calc(100vw / 430), 1);
+    --control-bar-scale: clamp(0.72, calc(100vw / 520), 0.9);
+    --control-bar-anchor-top: calc(var(--safe-top) + var(--control-bar-gap));
+  }
+
+  /* Extra clearance on very narrow phones (e.g. 360px) — outliner vs creation bar */
+  @media (max-width: 24rem) {
+    :root {
+      --hud-scale: clamp(0.8, calc(100vw / 430), 0.92);
+      --universe-outliner-mobile-bottom: calc(
+        var(--creation-toolbar-bottom-pad) + var(--creation-toolbar-height) + 0.85rem
+      );
+    }
+  }
+
+  .control-bar-anchor {
+    top: var(--control-bar-anchor-top);
+  }
+
+  .inspector-panel-anchor {
+    /* Full-bleed bottom sheet; top inset keeps room for the control bar */
+    max-height: calc(100dvh - var(--control-bar-top) - var(--control-bar-mobile-height));
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+  :root {
+    --hud-scale: 0.95;
+  }
+}
+
+@media (min-width: 768px) {
+  .control-bar-anchor {
+    top: var(--control-bar-top);
+    bottom: auto;
+  }
+}
+
+/* Creation toolbar — bottom on phone with gesture-safe padding */
+.creation-toolbar-anchor {
+  top: calc(var(--control-bar-top) + var(--control-bar-mobile-height));
+  bottom: 0;
+  padding-bottom: var(--creation-toolbar-bottom-pad);
+}
+
+@media (min-width: 768px) {
+  .creation-toolbar-anchor {
+    top: auto;
+    bottom: var(--control-bar-bottom);
+    padding-bottom: 0;
+  }
+}
+
+/* Universe outliner — above creation toolbar on phone, top-left on desktop */
+.universe-outliner-anchor {
+  bottom: var(--universe-outliner-mobile-bottom);
+  left: 0;
+  right: 0;
+  margin-left: auto;
+  margin-right: auto;
+  transform: scale(var(--hud-scale));
+  transform-origin: top center;
+  width: min(22rem, calc(100vw - 1.5rem - var(--safe-left) - var(--safe-right)));
+  max-width: min(22rem, calc(100vw - 1.5rem - var(--safe-left) - var(--safe-right)));
+  max-height: min(32vh, 13rem);
+}
+
+@media (min-width: 768px) {
+  .universe-outliner-anchor {
+    bottom: auto;
+    top: var(--universe-outliner-desktop-top);
+    left: max(1rem, var(--safe-left));
+    right: auto;
+    margin-left: 0;
+    margin-right: 0;
+    transform: scale(var(--hud-scale));
+    transform-origin: top left;
+    width: 16rem;
+    max-width: 16rem;
+    max-height: min(60vh, calc(100dvh - var(--universe-outliner-desktop-top) - 1rem));
+  }
+
+  .inspector-panel-anchor {
+    transform-origin: bottom right;
+  }
+
+}
+
+.universe-outliner-anchor:not(.is-expanded) {
+  max-height: 3.75rem;
+}
+
+/* ─── Touch targets (min 44 × 44 px per WCAG / Apple HIG) ───────────────────*/
+.touch-target {
+  min-width:  2.75rem;  /* 44px */
+  min-height: 2.75rem;
+}
+
+@media (max-width: 767px) {
+  /* Compensate HUD scale transforms so post-scale hit area stays ≥ 44px */
+  .touch-target {
+    min-width: calc(2.75rem / var(--hud-scale, 1));
+    min-height: calc(2.75rem / var(--hud-scale, 1));
+  }
+
+  .sim-toolbar .touch-target,
+  .sim-toolbar button.rounded-full {
+    min-width: calc(2.75rem / var(--control-bar-scale, 1));
+    min-height: calc(2.75rem / var(--control-bar-scale, 1));
+  }
+
+  .sim-shell.inspector-open {
+    --universe-outliner-mobile-bottom: calc(var(--safe-bottom) + 1rem);
+  }
+}
+
+/* ─── Input / form: suppress focus flash & autofill white-out ───────────────
+   On iOS/WebKit, inputs briefly flash a white native background on tap.
+   The -webkit-autofill rules replace Chrome's blue/yellow autofill overlay
+   with an inset box-shadow so the field stays on the dark surface.
+*/
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+  caret-color: var(--color-nova-gold);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 100px rgba(0, 0, 0, 0.85) inset !important;
+  -webkit-text-fill-color: var(--color-pulsar-white) !important;
+  /* Delay the browser's own background-color transition to prevent flash */
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Nova-gold text selection throughout the app */
+::selection {
+  background: rgba(249, 212, 35, 0.22);
+  color: var(--color-pulsar-white);
+}
+::-moz-selection {
+  background: rgba(249, 212, 35, 0.22);
+  color: var(--color-pulsar-white);
+}
+
+/* ─── Toolbar icon buttons: enforce equal dimensions for true circles ────────
+   .touch-target already sets min-width/min-height to 2.75rem (44px).
+   This rule makes width = height = the touch-target floor so buttons stay
+   perfectly square and round regardless of their icon size.
+*/
+.sim-toolbar button.rounded-full {
+  width: 2.75rem;   /* 44px — matches .touch-target min-width */
+  height: 2.75rem;  /* 44px — matches .touch-target min-height */
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ─── Glass panel surface ────────────────────────────────────────────────────*/
+/*
+  Primary translucent panel used by all floating UI.
+  Fallback for browsers without backdrop-filter: use a darker opaque surface.
+*/
+.panel-glass {
+  background: var(--color-panel-bg);
+  border: 1px solid var(--color-panel-border);
+  /* Fallback for no backdrop-filter support */
+  background: rgba(30, 36, 48, 0.92);
+}
+
+@supports ((-webkit-backdrop-filter: blur(12px)) or (backdrop-filter: blur(12px))) {
+  .panel-glass {
+    background: var(--color-panel-bg);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+  }
+}
+
+.panel-glass-dark {
+  background: rgba(16, 20, 28, 0.92);
+  border-bottom: 1px solid var(--color-panel-border);
+}
+
+@supports ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+  .panel-glass-dark {
+    background: var(--color-panel-bg-dark);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+}
+
+/* ─── Nova-gold accent on range inputs (all browsers) ───────────────────────*/
+input[type="range"] {
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-nova-gold);
+  margin-top: -4px; /* (track 4px - thumb 12px) / 2 */
+  padding: 0;
+  box-sizing: border-box;
+  background-clip: border-box;
+  box-shadow: 0 0 4px rgba(249, 212, 35, 0.4);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-nova-gold);
+  box-shadow: 0 0 4px rgba(249, 212, 35, 0.4);
+  cursor: pointer;
+}
+
+/* Control bar speed slider: 44px touch height on the input; thumb stays on the track */
+.sim-toolbar input[type="range"] {
+  height: 2.75rem;
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sim-toolbar input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+}
+
+.sim-toolbar input[type="range"]::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -4px; /* (track 6px - thumb 14px) / 2 */
+  padding: 0;
+  box-sizing: border-box;
+  background-clip: border-box;
+  box-shadow: 0 0 6px rgba(249, 212, 35, 0.4);
+}
+
+.sim-toolbar input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+}
+
+.sim-toolbar input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  box-sizing: border-box;
+  box-shadow: 0 0 6px rgba(249, 212, 35, 0.4);
+  cursor: pointer;
+}
+
+/* Inspector sliders: small thumb on track; touch height on the input element */
+.inspector-panel-anchor input[type="range"] {
+  height: 1.5rem;
+  min-height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: block;
+  flex-shrink: 0;
+}
+
+.inspector-panel-anchor input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.inspector-panel-anchor input[type="range"]::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  padding: 0;
+  box-sizing: border-box;
+  background-clip: border-box;
+  box-shadow: 0 0 4px rgba(249, 212, 35, 0.45);
+}
+
+.inspector-panel-anchor input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.inspector-panel-anchor input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  box-sizing: border-box;
+  box-shadow: 0 0 4px rgba(249, 212, 35, 0.45);
+  cursor: pointer;
+}
+
+@media (max-width: 767px) {
+  .inspector-panel-anchor input[type="range"] {
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+/* Star temperature slider: gradient on the native track so the thumb stays centered */
+.inspector-panel-anchor input[type="range"].inspector-temp-range {
+  height: 1.5rem;
+  min-height: 1.5rem;
+}
+
+.inspector-panel-anchor input[type="range"].inspector-temp-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #ff3300, #ffaa33, #ffffff, #99ccff, #3366ff);
+}
+
+.inspector-panel-anchor input[type="range"].inspector-temp-range::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -3px; /* (6px track - 12px thumb) / 2 */
+}
+
+.inspector-panel-anchor input[type="range"].inspector-temp-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #ff3300, #ffaa33, #ffffff, #99ccff, #3366ff);
+}
+
+.inspector-panel-anchor input[type="range"].inspector-temp-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+}
+
+@media (max-width: 767px) {
+  .inspector-panel-anchor input[type="range"].inspector-temp-range {
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+/* ─── Scrollbars: fully hidden (scroll still functional) ────────────────────
+   scrollbar-width: none  → Firefox
+   -ms-overflow-style     → IE / Legacy Edge
+   ::-webkit-scrollbar    → Chrome / Safari / WebKit
+*/
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+/* Alias retained for component class references */
+.scrollbar-custom { /* inherits global hide rule above */ }
+
+/* ─── Responsive: mobile bottom-sheet layout ─────────────────────────────────
+   On screens < 768px, side panels must sit at the bottom edge
+   to leave ~80% of viewport for the canvas.
+   Individual panels handle their own transform/animation logic;
+   these rules enforce the layout constraints.
+────────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 48rem) {
+  .sim-toolbar {
+    width: min(96vw, 42rem);
+  }
+
+  /* Any fixed bottom-sheet panel must not exceed 72dvh on mobile */
+  .bottom-sheet-mobile {
+    max-height: 72dvh;
+  }
+}
+
+/* ─── Scrollable panel containers ────────────────────────────────────────────
+   Apply to every overflow-y: auto UI container that sits above the canvas.
+   - touch-action: pan-y  →  browser owns vertical scrolling; horizontal swipes
+     and pinch pass through to our JS handlers (OrbitControls).
+   - overscroll-behavior-y: contain  →  scroll momentum stops at the boundary
+     of THIS element and does NOT leak into the canvas / trigger camera rotation.
+   - -webkit-overflow-scrolling: touch  →  native momentum scrolling on iOS.
+────────────────────────────────────────────────────────────────────────────── */
+.panel-scroll {
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Fluid UI tokens (used by panels when not relying on Tailwind classes) ──
+   Scales continuously with viewport width instead of snapping at breakpoints.
+   Reference via var(--ui-*) in inline styles or component CSS.
+────────────────────────────────────────────────────────────────────────────── */
+:root {
+  --ui-font-size:        clamp(13px, calc(11px + 0.5vw), 16px);
+  --panel-header-font:   clamp(10px, calc(9px + 0.3vw),  12px);
+  --panel-body-font:     clamp(11px, calc(10px + 0.3vw), 13px);
+  --panel-pad:           clamp(12px, calc(10px + 0.5vw), 20px);
+  --touch-target:        44px;
+  --icon-btn:            clamp(40px, calc(36px + 1vw),   48px);
 }

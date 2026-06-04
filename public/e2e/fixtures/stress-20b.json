@@ -1,0 +1,572 @@
+{
+  "id": "e2e-stress-20b",
+  "version": 1,
+  "bodies": [
+    {
+      "id": "star-1",
+      "type": "Star",
+      "mass": 1200,
+      "radius": 12,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "velocity": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "color": "#ffcc66",
+      "texture": "star",
+      "trailColor": "#ffaa44",
+      "temperature": 5800,
+      "habitability": "STELLAR",
+      "population": 0,
+      "name": "Star 1",
+      "properties": {
+        "metallicity": 0.02,
+        "luminositySolar": 1
+      }
+    },
+    {
+      "id": "planet-1",
+      "type": "Planet",
+      "mass": 6,
+      "radius": 2,
+      "position": {
+        "x": 53.91158277693617,
+        "y": 0,
+        "z": 18.50786974466696
+      },
+      "velocity": {
+        "x": -1.3325385053501813,
+        "y": 0,
+        "z": 3.8815520600549718
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 1",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-2",
+      "type": "Planet",
+      "mass": 7,
+      "radius": 2.2,
+      "position": {
+        "x": 54.45069514835116,
+        "y": 0,
+        "z": 42.38067717558708
+      },
+      "velocity": {
+        "x": -2.2910252314617665,
+        "y": 0,
+        "z": 2.94350927755739
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 2",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-3",
+      "type": "Planet",
+      "mass": 8,
+      "radius": 2.4000000000000004,
+      "position": {
+        "x": 44.30280080791658,
+        "y": 0,
+        "z": 67.81048473926481
+      },
+      "velocity": {
+        "x": -2.88207273627901,
+        "y": 0,
+        "z": 1.8829520956862047
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 3",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-4",
+      "type": "Planet",
+      "mass": 9,
+      "radius": 2.6,
+      "position": {
+        "x": 22.830150304094328,
+        "y": 0,
+        "z": 90.15422473235772
+      },
+      "velocity": {
+        "x": -3.1145641241827713,
+        "y": 0,
+        "z": 0.788714752946143
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 4",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-5",
+      "type": "Planet",
+      "mass": 10,
+      "radius": 1.8,
+      "position": {
+        "x": -8.670831274594889,
+        "y": 0,
+        "z": 104.64137176570033
+      },
+      "velocity": {
+        "x": -3.0133882616674708,
+        "y": 0,
+        "z": -0.24969647034317582
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 5",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-6",
+      "type": "Planet",
+      "mass": 11,
+      "radius": 2,
+      "position": {
+        "x": -46.9983646843974,
+        "y": 0,
+        "z": 107.14547921864173
+      },
+      "velocity": {
+        "x": -2.6231956018650355,
+        "y": 0,
+        "z": -1.1506402737103103
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 6",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-7",
+      "type": "Planet",
+      "mass": 5,
+      "radius": 2.2,
+      "position": {
+        "x": -87.36932273972057,
+        "y": 0,
+        "z": 94.90838447683399
+      },
+      "velocity": {
+        "x": -2.0070381699686246,
+        "y": 0,
+        "z": -1.8476087923056854
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 7",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-8",
+      "type": "Planet",
+      "mass": 6,
+      "radius": 2.4000000000000004,
+      "position": {
+        "x": -124.00579892011494,
+        "y": 0,
+        "z": 67.10858241822739
+      },
+      "velocity": {
+        "x": -1.2418953830987343,
+        "y": 0,
+        "z": -2.2948216697024457
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 8",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-9",
+      "type": "Planet",
+      "mass": 7,
+      "radius": 2.6,
+      "position": {
+        "x": -150.9132794206165,
+        "y": 0,
+        "z": 25.182972312952305
+      },
+      "velocity": {
+        "x": -0.4122925224600132,
+        "y": 0,
+        "z": -2.470733631908775
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 9",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-10",
+      "type": "Planet",
+      "mass": 8,
+      "radius": 1.8,
+      "position": {
+        "x": -162.7496150614492,
+        "y": 0,
+        "z": -27.158107396321075
+      },
+      "velocity": {
+        "x": 0.3970170898061612,
+        "y": 0,
+        "z": -2.3791929826274423
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 10",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-11",
+      "type": "Planet",
+      "mass": 9,
+      "radius": 2,
+      "position": {
+        "x": -155.66685396354856,
+        "y": 0,
+        "z": -84.24268856756201
+      },
+      "velocity": {
+        "x": 1.1084291427122248,
+        "y": 0,
+        "z": -2.0481976587101074
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 11",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-12",
+      "type": "Planet",
+      "mass": 10,
+      "radius": 2.2,
+      "position": {
+        "x": -128.00621703726512,
+        "y": 0,
+        "z": -139.0518191172218
+      },
+      "velocity": {
+        "x": 1.6581338490957331,
+        "y": 0,
+        "z": -1.5264197384232316
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 12",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-13",
+      "type": "Planet",
+      "mass": 11,
+      "radius": 2.4000000000000004,
+      "position": {
+        "x": -80.74078035524694,
+        "y": 0,
+        "z": -184.0704386576665
+      },
+      "velocity": {
+        "x": 2.0013616687784093,
+        "y": 0,
+        "z": -0.8778786212965749
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 13",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-14",
+      "type": "Planet",
+      "mass": 5,
+      "radius": 2.6,
+      "position": {
+        "x": -17.589400585606874,
+        "y": 0,
+        "z": -212.27249701042066
+      },
+      "velocity": {
+        "x": 2.1157285181699668,
+        "y": 0,
+        "z": -0.1753142633200244
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 14",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-15",
+      "type": "Planet",
+      "mass": 6,
+      "radius": 1.8,
+      "position": {
+        "x": 55.23423460667973,
+        "y": 0,
+        "z": -218.11505983634936
+      },
+      "velocity": {
+        "x": 2.0023845790891026,
+        "y": 0,
+        "z": 0.5070726418303619
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 15",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-16",
+      "type": "Planet",
+      "mass": 7,
+      "radius": 2,
+      "position": {
+        "x": 129.6267134750151,
+        "y": 0,
+        "z": -198.40845534821932
+      },
+      "velocity": {
+        "x": 1.6848966761863282,
+        "y": 0,
+        "z": 1.100797938755641
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 16",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-17",
+      "type": "Planet",
+      "mass": 8,
+      "radius": 2.2,
+      "position": {
+        "x": 196.49598683970194,
+        "y": 0,
+        "z": -152.93896545972734
+      },
+      "velocity": {
+        "x": 1.206020649873522,
+        "y": 0,
+        "z": 1.5494953626344403
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 17",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-18",
+      "type": "Planet",
+      "mass": 9,
+      "radius": 2.4000000000000004,
+      "position": {
+        "x": 246.85830008386563,
+        "y": 0,
+        "z": -84.74656146242245
+      },
+      "velocity": {
+        "x": 0.622725917981718,
+        "y": 0,
+        "z": 1.8139386292303432
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 18",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    },
+    {
+      "id": "planet-19",
+      "type": "Planet",
+      "mass": 10,
+      "radius": 2.6,
+      "position": {
+        "x": 273,
+        "y": 0,
+        "z": -6.686571523344548e-14
+      },
+      "velocity": {
+        "x": 4.592986198287699e-16,
+        "y": 0,
+        "z": 1.8752289237539816
+      },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 250,
+      "habitability": "FROZEN",
+      "population": 0,
+      "name": "Planet 19",
+      "properties": {
+        "bulkDensity": 5,
+        "surfaceGravity": 8,
+        "escapeVelocity": 10
+      }
+    }
+  ],
+  "settings": {
+    "speed": 1,
+    "showGrid": true,
+    "showDust": true,
+    "showHabitable": false,
+    "showStability": false
+  }
+}

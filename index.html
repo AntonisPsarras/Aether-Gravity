@@ -3,27 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#22d3ee" />
+    <!-- Void Navy as the OS chrome / PWA title bar colour -->
+    <meta name="theme-color" content="#10141C" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/manifest.json" />
     <title>Aether Gravity</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
-      /* Custom Scrollbar */
-      ::-webkit-scrollbar { width: 4px; }
-      ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
-      ::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, 0.2); border-radius: 10px; }
-      ::-webkit-scrollbar-thumb:hover { background: rgba(34, 211, 238, 0.4); }
-      
-      body { background-color: #050505; color: white; overflow: hidden; }
+      /* ── Scrollbars: hidden globally (mirrors index.css rule) ── */
+      * { scrollbar-width: none; -ms-overflow-style: none; }
+      *::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+      /* ── Base ── */
+      body {
+        background-color: #10141C;
+        color: #F4F4FB;
+      }
+
+      /* ── Range inputs — nova-gold thumb ── */
       input[type="range"] { -webkit-appearance: none; background: transparent; cursor: pointer; }
-      input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #334155; }
-      input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #22d3ee; margin-top: -4px; box-shadow: 0 0 10px rgba(34,211,238,0.5); }
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #F9D423;
+        margin-top: -8px;
+        box-shadow: 0 0 8px rgba(249, 212, 35, 0.45);
+        padding: 12px;
+        box-sizing: content-box;
+        background-clip: content-box;
+      }
     </style>
-  <link rel="stylesheet" href="/index.css">
-</head>
+
+    <link rel="stylesheet" href="/index.css">
+  </head>
   <body>
     <div id="root" class="w-full h-full"></div>
     <script type="module" src="/index.tsx"></script>

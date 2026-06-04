@@ -1,6 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { installTestBridge } from './utils/testBridge';
+
+installTestBridge();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[unhandledrejection]', event.reason);
+  });
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

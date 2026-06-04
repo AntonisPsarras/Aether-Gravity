@@ -19,8 +19,8 @@ declare global {
       ergosphereMaterial: any;
       selectionHaloMaterial: any;
       planetTerrainMaterial: any;
-      gPGPUBodyMaterial: any;
       habitableZoneMaterial: any;
+      nebulaMaterial: any;
     }
   }
 }
@@ -41,8 +41,8 @@ declare module 'react' {
       ergosphereMaterial: any;
       selectionHaloMaterial: any;
       planetTerrainMaterial: any;
-      gPGPUBodyMaterial: any;
       habitableZoneMaterial: any;
+      nebulaMaterial: any;
     }
   }
 }
@@ -82,6 +82,7 @@ export interface CelestialBody {
     metallicity?: number;      // Stars: 0-1
     oblateness?: number;       // Stars: 0-1
     convectionScale?: number;  // Stars: 1-10
+    luminositySolar?: number;  // Stars: derived L/L☉
 
     // Giant Properties
     massLoss?: number;         // Giants: 0-1
@@ -110,6 +111,10 @@ export interface CelestialBody {
     // Dynamics
     rotationPeriod?: number;   // Hours (arbitrary game units)
     isTidallyLocked?: boolean;
+
+    // Display / Engine overrides
+    userTempOverride?: boolean; // Skip Stefan-Boltzmann auto-update for this body
+    manualRadius?: boolean;     // User set radius directly; don't auto-derive from composition
   };
 }
 

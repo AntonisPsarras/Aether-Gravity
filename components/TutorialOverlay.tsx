@@ -63,37 +63,37 @@ const TutorialOverlay: React.FC<{ isOpen: boolean, onClose: () => void }> = ({ i
     };
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 p-4">
-            <div className="bg-slate-900/95 border border-white/10 rounded-2xl max-w-lg w-full shadow-2xl ring-1 ring-white/5 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-[200] safe-pad flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 p-4">
+            <div className="bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-2xl w-full max-w-[min(42rem,96vw)] max-h-[min(92dvh,44rem)] shadow-2xl ring-1 ring-white/5 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
 
                 {/* Progress Bar */}
-                <div className="h-1 bg-slate-800 w-full">
+                <div className="h-0.5 bg-white/8 w-full">
                     <div
-                        className="h-full bg-cyan-500 transition-all duration-300 ease-out"
+                        className="h-full bg-nova-gold transition-all duration-300 ease-out shadow-[0_0_8px_rgba(249,212,35,0.4)]"
                         style={{ width: `${((currentStep + 1) / TUTORIAL_STEPS.length) * 100}%` }}
                     />
                 </div>
 
-                <div className="p-8 flex-1 flex flex-col items-center text-center">
-                    <div className="mb-6 p-4 bg-white/5 rounded-full ring-1 ring-white/10 shadow-lg shadow-cyan-500/5">
+                <div className="p-5 md:p-8 flex-1 flex flex-col items-center text-center overflow-y-auto">
+                    <div className="mb-6 p-4 bg-white/5 rounded-full ring-1 ring-white/10 shadow-lg shadow-nova-gold/5">
                         {TUTORIAL_STEPS[currentStep].icon}
                     </div>
 
-                    <h2 className="text-2xl font-bold text-white mb-4 tracking-tight">
+                    <h2 className="text-2xl font-bold text-pulsar-white mb-4 tracking-tight">
                         {TUTORIAL_STEPS[currentStep].title}
                     </h2>
 
-                    <div className="text-slate-400 leading-relaxed text-sm whitespace-pre-line min-h-[5rem]">
+                    <div className="text-pulsar-white/50 leading-relaxed text-sm whitespace-pre-line min-h-[5rem]">
                         {TUTORIAL_STEPS[currentStep].content}
                     </div>
                 </div>
 
                 {/* Footer Controls */}
-                <div className="p-6 bg-black/20 border-t border-white/5 flex justify-between items-center">
+                <div className="p-4 md:p-6 bg-black/20 border-t border-white/5 flex justify-between items-center gap-2">
                     <button
                         onClick={handlePrev}
                         disabled={currentStep === 0}
-                        className={`flex items-center gap-2 text-sm font-medium transition-colors ${currentStep === 0 ? 'text-slate-600 cursor-not-allowed' : 'text-slate-400 hover:text-white'}`}
+                        className={`touch-target flex items-center gap-2 text-sm font-medium transition-colors ${currentStep === 0 ? 'text-pulsar-white/20 cursor-not-allowed' : 'text-pulsar-white/40 hover:text-pulsar-white'}`}
                     >
                         <ChevronLeft size={16} /> Back
                     </button>
@@ -102,14 +102,14 @@ const TutorialOverlay: React.FC<{ isOpen: boolean, onClose: () => void }> = ({ i
                         {TUTORIAL_STEPS.map((_, idx) => (
                             <div
                                 key={idx}
-                                className={`w-1.5 h-1.5 rounded-full transition-colors ${idx === currentStep ? 'bg-cyan-400' : 'bg-slate-700'}`}
+                                className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${idx === currentStep ? 'bg-cyan-300 scale-125' : 'bg-white/15'}`}
                             />
                         ))}
                     </div>
 
                     <button
                         onClick={handleNext}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-lg transition-all shadow-lg shadow-cyan-500/20 active:scale-95 text-sm"
+                        className="touch-target flex items-center gap-2 px-5 py-2.5 bg-nova-gold hover:bg-nova-gold/90 text-void-navy font-bold rounded-lg transition-all shadow-lg shadow-nova-gold/20 active:scale-95 text-sm"
                     >
                         {currentStep === TUTORIAL_STEPS.length - 1 ? 'Finish' : 'Next'}
                         {currentStep < TUTORIAL_STEPS.length - 1 && <ChevronRight size={16} />}
@@ -118,7 +118,7 @@ const TutorialOverlay: React.FC<{ isOpen: boolean, onClose: () => void }> = ({ i
 
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    className="touch-target absolute top-4 right-4 p-2 text-pulsar-white/30 hover:text-pulsar-white hover:bg-white/10 rounded-lg transition-colors"
                 >
                     <X size={20} />
                 </button>
