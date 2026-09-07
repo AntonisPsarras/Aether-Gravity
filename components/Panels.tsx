@@ -7,19 +7,32 @@ import {
   Focus, Hexagon, Sun, Globe, CircleDot, MousePointer2, Sparkles,
   Aperture, AlertTriangle, X, Flame, Snowflake, Zap, ChevronUp, ChevronDown, Settings, Home, Sliders, Layers, Scale, Weight, Wind, Orbit, Disc, Microscope, Timer, Lock, Activity, HelpCircle
 } from 'lucide-react';
-import { calculateESI, calculateRSI, kelvinToRgb, rgbToHex, getSpectralType, calculatePlanetaryPhysics, calculateTidalLockTime, findDominantParent, getOrbitalElements, calculateOrbitalState } from '../utils/physicsUtils';
-import { TEXTURE_TYPES } from '../constants';
+import { calculateESI, calculateRSI, kelvinToRgb, rgbToHex, getSpectralType, calculateTidalLockTime, findDominantParent, getOrbitalElements, calculateOrbitalState, calculateStabilityMetrics, bodyLuminositySolar } from '../utils/physicsUtils';
+import { TEXTURE_TYPES, BODY_CONFIGS } from '../constants';
 import {
-  fmtMass, fmtRadius, fmtRadiusEarth, fmtTemp, fmtGravity, fmtEscVel, fmtDensity,
-  fmtDistance, fmtLuminosity, massGameToEarth, radiusGameToEarth,
+  fmtMass, fmtRadiusKm, fmtRadiusRelative, fmtTemp, fmtGravity, fmtEscVel, fmtDensity,
+  fmtDistance, fmtLuminositySolar, fmtPeriod, massToEarth, radiusKmToEarth,
+  orbitalPeriodYears, distToKm,
 } from '../utils/units';
+import {
+  schwarzschildRadiusKm, kerrOuterHorizonKm, iscoRadiusKm, photonSphereRadiusKm,
+  diskEfficiency, MAX_SPIN_PARAMETER,
+} from '../utils/relativity';
 import { Group } from '@visx/group';
 import { LinePath } from '@visx/shape';
 import { curveMonotoneX } from '@visx/curve';
 import { scaleLinear } from '@visx/scale';
 import { AxisBottom, AxisLeft } from '@visx/axis';
 import { LinearGradient } from '@visx/gradient';
-import { clampStarTemperature } from '../utils/physicsBounds';
+import { clampStarTemperature, PHYSICS_LIMITS } from '../utils/physicsBounds';
+
+/** One read-only derived quantity in the Inspector. */
+const DerivedRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex justify-between items-center">
+    <span className="text-[10px] text-pulsar-white/40 uppercase tracking-wider">{label}</span>
+    <span className="text-xs font-mono text-pulsar-white/80">{value}</span>
+  </div>
+);
 
 const NumberInput = ({
   value, onChange, className, onCommit, onEditStart, onEditEnd, min, max,
@@ -465,6 +478,27 @@ export const InspectorPanel: React.FC = () => {
     [selectedBody, bodies],
   );
 
+  /**
+   * Compact objects and stars have their radius fixed by an equation of state
+   * or a mass-radius relation, so it is read-only for them; pinning a radius
+   * only makes sense where composition is the free parameter.
+   */
+  const isRadiusEditable =
+    !!selectedBody &&
+    !['Black Hole', 'Neutron Star', 'Pulsar', 'White Dwarf', 'Brown Dwarf', 'Star', 'Red Giant']
+      .includes(selectedBody.type);
+
+  /** Slider bounds: one decade either side of the type's own mass range. */
+  const massSliderRange = useMemo<[number, number]>(() => {
+    if (!selectedBody) return [PHYSICS_LIMITS.MIN_MASS, PHYSICS_LIMITS.MAX_MASS];
+    const cfg = BODY_CONFIGS[selectedBody.type];
+    if (!cfg) return [PHYSICS_LIMITS.MIN_MASS, PHYSICS_LIMITS.MAX_MASS];
+    return [
+      Math.max(PHYSICS_LIMITS.MIN_MASS, cfg.massRange[0] * 0.1),
+      Math.min(PHYSICS_LIMITS.MAX_MASS, cfg.massRange[1] * 10),
+    ];
+  }, [selectedBody?.type]);
+
   useEffect(() => {
     if (selectedBody) {
       setCompIron(selectedBody.properties?.compositionIron ?? 0.3);
@@ -583,18 +617,16 @@ export const InspectorPanel: React.FC = () => {
     setCompWater(water);
 
     if (selectedBody) {
-      const physics = calculatePlanetaryPhysics(selectedBody.mass, iron, sil, water);
+      // Composition is a primary; radius, density, gravity and escape velocity
+      // are re-derived from it by the store (utils/bodyDerivation.ts).
       updateBody(selectedBody.id, {
-        radius: physics.radius,
         properties: {
           ...props,
           manualRadius: false,
+          manualRadiusKm: undefined,
           compositionIron: iron,
           compositionSilicates: sil,
           compositionWater: water,
-          bulkDensity: physics.bulkDensity,
-          surfaceGravity: physics.surfaceGravity,
-          escapeVelocity: physics.escapeVelocity
         }
       });
     }
@@ -672,32 +704,71 @@ export const InspectorPanel: React.FC = () => {
                       onChange={(v) => updateBody(selectedBody.id, { mass: v })}
                       onEditStart={() => lockFields([...physicalLock])}
                       onEditEnd={() => unlockFields([...physicalLock])}
-                      min={0.01}
-                      max={100000}
+                      min={PHYSICS_LIMITS.MIN_MASS}
+                      max={PHYSICS_LIMITS.MAX_MASS}
                       className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm text-pulsar-white font-mono"
                     />
                   </div>
                   <div>
                     <label className="text-[10px] text-pulsar-white/50 block mb-1.5 uppercase flex items-center justify-between">
                       <span>Radius</span>
-                      <span className="text-pulsar-white/30 normal-case font-mono">{fmtRadius(selectedBody.radius)}</span>
+                      <span className="text-pulsar-white/30 normal-case font-mono">{fmtRadiusRelative(selectedBody.radiusKm)}</span>
                     </label>
-                    {['Planet', 'Dwarf', 'Ice Giant', 'Star', 'Red Giant'].includes(selectedBody.type) ? (
+                    {isRadiusEditable ? (
                       <NumberInput
-                        value={selectedBody.radius}
-                        onChange={(v) => updateBody(selectedBody.id, { radius: v })}
+                        value={selectedBody.radiusKm}
+                        onChange={(v) => updateBody(selectedBody.id, { radiusKm: v })}
                         onEditStart={() => lockFields([...physicalLock])}
                         onEditEnd={() => unlockFields([...physicalLock])}
-                        min={0.1}
-                        max={5000}
+                        min={PHYSICS_LIMITS.MIN_RADIUS_KM}
+                        max={PHYSICS_LIMITS.MAX_RADIUS_KM}
                         className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm text-pulsar-white font-mono"
                       />
                     ) : (
                       <div className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm text-pulsar-white/40 font-mono">
-                        {fmtRadiusEarth(selectedBody.radius)}
+                        {fmtRadiusKm(selectedBody.radiusKm)}
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Mass on a logarithmic scale: the admissible range now spans
+                    24 orders of magnitude, so a linear slider is unusable. */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] text-pulsar-white/50 uppercase">Mass Scale</span>
+                    <span className="text-[10px] text-pulsar-white/30 font-mono">
+                      {massToEarth(selectedBody.mass) >= 1
+                        ? `${massToEarth(selectedBody.mass).toExponential(2)} M⊕`
+                        : `${massToEarth(selectedBody.mass).toExponential(2)} M⊕`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={Math.log10(massSliderRange[0])}
+                    max={Math.log10(massSliderRange[1])}
+                    step={0.01}
+                    value={Math.log10(Math.max(selectedBody.mass, massSliderRange[0]))}
+                    onPointerDown={() => { useStore.getState().setInteractingWithUI(true); lockFields([...physicalLock]); }}
+                    onPointerUp={() => { useStore.getState().setInteractingWithUI(false); unlockFields([...physicalLock]); }}
+                    onPointerCancel={() => { useStore.getState().setInteractingWithUI(false); unlockFields([...physicalLock]); }}
+                    onChange={(e) => updateBody(selectedBody.id, { mass: Math.pow(10, parseFloat(e.target.value)) })}
+                    className="w-full rounded-lg appearance-none cursor-pointer h-1.5 bg-white/10"
+                  />
+                </div>
+
+                {/* Derived, read-only. Recomputed from the primaries above. */}
+                <div className="bg-black/30 rounded-lg p-3 border border-white/5 space-y-1.5">
+                  <div className="text-[9px] uppercase tracking-widest text-pulsar-white/30 mb-1">Derived</div>
+                  <DerivedRow label="Density" value={fmtDensity(props.bulkDensity ?? NaN)} />
+                  <DerivedRow label="Gravity" value={fmtGravity(props.surfaceGravity ?? NaN)} />
+                  <DerivedRow label="Esc. Velocity" value={fmtEscVel(props.escapeVelocity ?? NaN)} />
+                  {parentBody && (
+                    <DerivedRow
+                      label="Orbital Period"
+                      value={fmtPeriod(orbitalPeriodYears(elements.a, parentBody.mass + selectedBody.mass))}
+                    />
+                  )}
                 </div>
                 {['Planet', 'Dwarf', 'Ice Giant'].includes(selectedBody.type) && (
                   <div className="bg-black/30 rounded-lg p-3 border border-white/5 flex justify-between items-center">
@@ -731,7 +802,7 @@ export const InspectorPanel: React.FC = () => {
                     </div>
                     <div className="flex justify-between items-center pt-2 mt-2 border-t border-white/5">
                       <span className="text-[10px] text-slate-500 uppercase tracking-wider">Luminosity</span>
-                      <span className="text-xs font-mono font-bold text-nova-gold">{fmtLuminosity(selectedBody.mass)}</span>
+                      <span className="text-xs font-mono font-bold text-nova-gold">{fmtLuminositySolar(bodyLuminositySolar(selectedBody))}</span>
                     </div>
                   </div>
                 )}

@@ -11,8 +11,9 @@ import {
 const baseBody = (): CelestialBody => ({
   id: 'b1',
   type: 'Planet',
-  mass: 10,
-  radius: 2,
+  mass: 1,
+  radius: 2.5,
+  radiusKm: 6371,
   position: new THREE.Vector3(0, 0, 0),
   velocity: new THREE.Vector3(0, 0, 0),
   color: '#3b82f6',

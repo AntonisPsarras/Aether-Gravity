@@ -3,20 +3,17 @@ import { CelestialBody, BodyType, WorldData } from '../types';
 import * as THREE from 'three';
 import {
   generateSystem,
-  calculatePlanetaryPhysics,
   findDominantParent,
-  densityFromMassAndRadius,
-  derivedPropertiesFromMassRadius,
-  deriveStarProperties,
   findPrimaryStar,
   reconcileBodyDerivedState,
 } from './physicsUtils';
 import { patchPhysicsBody, replacePhysicsBodies, appendPhysicsBody } from './physicsBridge';
-import { PRESETS, G_CONSTANT } from '../constants';
+import { G_CONSTANT } from '../constants';
 import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
 import {
   clampMass,
   clampRadius,
+  clampRadiusKm,
   clampSpeed,
   clampStarTemperature,
   clampPositionVector,
@@ -268,66 +265,34 @@ export const useStore = create<AppState>((set, get) => ({
       properties: mergedProps,
     };
 
-    const isTerrestrial = ['Planet', 'Dwarf', 'Ice Giant'].includes(body.type);
-    const bodyProps = newBody.properties || {};
-
-    // Manual radius: keep mass, recalculate bulk density + surface properties
-    if (
-      isTerrestrial &&
-      updates.radius !== undefined &&
-      updates.radius !== body.radius &&
-      updates.mass === undefined
-    ) {
-      const bulkDensity = densityFromMassAndRadius(body.mass, updates.radius);
-      const derived = derivedPropertiesFromMassRadius(body.mass, updates.radius, bulkDensity);
+    // A user-supplied physical radius pins the radius; everything else is then
+    // solved from mass and that radius rather than from composition.
+    if (updates.radiusKm !== undefined && updates.radiusKm !== body.radiusKm) {
+      newBody.radiusKm = clampRadiusKm(updates.radiusKm);
       newBody.properties = {
-        ...bodyProps,
+        ...(newBody.properties || {}),
         manualRadius: true,
-        bulkDensity: derived.bulkDensity,
-        surfaceGravity: derived.surfaceGravity,
-        escapeVelocity: derived.escapeVelocity,
+        manualRadiusKm: newBody.radiusKm,
       };
+    }
+
+    // Any change to a primary re-derives every dependent quantity in one place
+    // (radius, density, gravity, escape velocity, luminosity, photospheric
+    // temperature) and re-classifies the body if its mass has left its type's
+    // physical range. See utils/bodyDerivation.ts.
+    const primaryChanged =
+      updates.mass !== undefined ||
+      updates.radiusKm !== undefined ||
+      updates.type !== undefined ||
+      updates.properties !== undefined;
+    if (primaryChanged) {
+      reconcileBodyDerivedState(newBody);
+      // A user-set temperature must survive the re-derivation.
+      if (updates.temperature !== undefined) newBody.temperature = updates.temperature;
     }
 
     // Cascading Updates Logic
     if (updates.mass !== undefined && updates.mass !== body.mass) {
-      if (isTerrestrial) {
-        const props = newBody.properties || {};
-        if (props.manualRadius) {
-          const bulkDensity = densityFromMassAndRadius(updates.mass, newBody.radius);
-          const derived = derivedPropertiesFromMassRadius(updates.mass, newBody.radius, bulkDensity);
-          newBody.properties = {
-            ...props,
-            bulkDensity: derived.bulkDensity,
-            surfaceGravity: derived.surfaceGravity,
-            escapeVelocity: derived.escapeVelocity,
-          };
-        } else {
-          const physics = calculatePlanetaryPhysics(
-            updates.mass,
-            props.compositionIron || 0.3,
-            props.compositionSilicates || 0.6,
-            props.compositionWater || 0.1
-          );
-          newBody.radius = clampRadius(physics.radius);
-          newBody.properties = {
-            ...props,
-            bulkDensity: physics.bulkDensity,
-            surfaceGravity: physics.surfaceGravity,
-            escapeVelocity: physics.escapeVelocity,
-          };
-        }
-      } else if (body.type === 'Star' || body.type === 'Red Giant') {
-        const star = deriveStarProperties(updates.mass);
-        newBody.radius = clampRadius(star.radius);
-        newBody.temperature = star.temperature;
-        newBody.color = star.color;
-        newBody.properties = {
-          ...mergedProps,
-          luminositySolar: star.luminositySolar,
-        };
-      }
-
       // Maintain Orbital Stability of Children
       // If we change this body's mass, its children (satellites) need their velocity adjusted 
       // to maintain their current orbit shape, OR we accept they will spiral.
@@ -366,6 +331,8 @@ export const useStore = create<AppState>((set, get) => ({
     const patch: Partial<CelestialBody> = {
       mass: final.mass,
       radius: final.radius,
+      radiusKm: final.radiusKm,
+      type: final.type,
       temperature: final.temperature,
       color: final.color,
       texture: final.texture,

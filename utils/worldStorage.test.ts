@@ -2,15 +2,16 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { CelestialBody } from '../types';
 import { serializeBodies, deserializeBodies, sanitizeWorldSettings, parseWorldData } from './worldStorage';
-import { clampMass, clampSpeed } from './physicsBounds';
+import { clampMass, clampSpeed, PHYSICS_LIMITS } from './physicsBounds';
 
 describe('world persistence sanitization', () => {
   it('round-trips body properties through serialize/deserialize', () => {
     const body: CelestialBody = {
       id: 'test-1',
       type: 'Planet',
-      mass: 42,
+      mass: 4.2,
       radius: 2.5,
+      radiusKm: 6371,
       position: new THREE.Vector3(1, 0, 2),
       velocity: new THREE.Vector3(0, 0, 3),
       color: '#3b82f6',
@@ -30,8 +31,8 @@ describe('world persistence sanitization', () => {
   });
 
   it('clamps corrupt save data and simulation speed', () => {
-    expect(clampMass(Number.POSITIVE_INFINITY)).toBe(100_000);
-    expect(clampMass(-5)).toBe(0.01);
+    expect(clampMass(Number.POSITIVE_INFINITY)).toBe(PHYSICS_LIMITS.MAX_MASS);
+    expect(clampMass(-5)).toBe(PHYSICS_LIMITS.MIN_MASS);
     expect(clampSpeed(Number.NaN)).toBe(1);
     expect(sanitizeWorldSettings({ speed: 99, showGrid: true, showDust: true, showHabitable: false, showStability: false }).speed).toBe(4);
   });

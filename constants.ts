@@ -1,15 +1,55 @@
-export const G_CONSTANT = 0.8;
-export const SPEED_OF_LIGHT = 60.0; 
+import type { BodyType } from './types';
+import {
+  C_AETHER,
+  G_AETHER,
+  M_JUPITER_IN_EARTH,
+  M_SUN_IN_EARTH,
+} from './utils/units';
 
+/**
+ * Gravitational constant in Aether units (M⊕ / 0.025 AU / year).
+ * DERIVED from SI in `utils/units.ts` — do not tune this by hand. Changing it
+ * silently breaks the correspondence between simulated orbits and displayed
+ * masses, which is what the pre-2.0 engine got wrong.
+ */
+export const G_CONSTANT = G_AETHER;
+
+/** Speed of light in Aether units (≈ 2.53 × 10⁶ L*·T*⁻¹). */
+export const SPEED_OF_LIGHT = C_AETHER;
+
+/** Convenience aliases for authoring masses in familiar units. */
+export const M_SUN = M_SUN_IN_EARTH;       // ≈ 332 946 M⊕
+export const M_JUP = M_JUPITER_IN_EARTH;   // ≈ 317.83 M⊕
+
+/**
+ * Physically meaningful classification / evolution boundaries, all in M⊕.
+ * These replace the former arbitrary game thresholds (800 / 1200 / 3000).
+ */
 export const EVOLUTION_THRESHOLDS = {
-  PLANET_TO_STAR: 800,
-  STAR_TO_BLACK_HOLE: 3000,
-  SUPERNOVA_MASS: 1200 
-};
+  /** Deuterium burning: planets become brown dwarfs above ~13 M♃. */
+  DEUTERIUM_BURNING: 13 * M_JUPITER_IN_EARTH,          // ≈ 4 132
+  /** Sustained hydrogen fusion: the substellar/stellar boundary, ~0.075 M☉. */
+  HYDROGEN_BURNING: 0.075 * M_SUN_IN_EARTH,            // ≈ 24 971
+  /** Chandrasekhar limit: maximum white dwarf mass, 1.4 M☉. */
+  CHANDRASEKHAR: 1.4 * M_SUN_IN_EARTH,                 // ≈ 466 124
+  /**
+   * Tolman-Oppenheimer-Volkoff limit: maximum non-rotating neutron star mass.
+   * Current multimessenger + NICER constraints cluster near 2.2 M☉; above it
+   * collapse to a black hole is unavoidable.
+   */
+  TOV: 2.2 * M_SUN_IN_EARTH,                           // ≈ 732 481
+  /** Core-collapse supernova progenitor threshold, ~8 M☉. */
+  CORE_COLLAPSE: 8 * M_SUN_IN_EARTH,                   // ≈ 2 663 568
+} as const;
 
 export const COLLISION_PHYSICS = {
   FRAGMENTATION_RATIO: 1.5,
-  MERGER_EFFICIENCY: 0.95,
+  /**
+   * Fraction of combined mass retained by a merger remnant. The deficit is
+   * radiated (gravitational waves / ejecta) and is reported as an event rather
+   * than silently discarded.
+   */
+  MERGER_EFFICIENCY: 0.99,
 };
 
 export const DUST_CONFIG = {
@@ -18,65 +58,153 @@ export const DUST_CONFIG = {
   SPEED_FACTOR: 0.4
 };
 
+/** Broad behavioural family, used to collapse per-type switches. */
+export type BodyCategory = 'solid' | 'giant' | 'stellar' | 'compact' | 'singularity';
+
 export interface BodyTypeConfig {
+  /** Plausible mass range in M⊕ (used by the random generator and UI sliders). */
   massRange: [number, number];
-  radiusRange: [number, number];
   defaultColor: string;
   description: string;
   visualType: 'plasma' | 'rocky' | 'gaseous' | 'singularity' | 'neutron';
+  category: BodyCategory;
+  /** Whether this type is offered in the creation toolbar. */
+  creatable: boolean;
 }
 
-export const BODY_CONFIGS: Record<string, BodyTypeConfig> = {
+export const BODY_CONFIGS: Record<BodyType, BodyTypeConfig> = {
+  'Asteroid': {
+    massRange: [1e-9, 5e-4],
+    defaultColor: '#8b7d6b',
+    description: 'Rocky or metallic minor body; too small for hydrostatic equilibrium.',
+    visualType: 'rocky',
+    category: 'solid',
+    creatable: true,
+  },
+  'Comet': {
+    // Halley's nucleus is ~2.2 × 10¹³ kg ≈ 3.7 × 10⁻¹² M⊕.
+    massRange: [1e-13, 1e-8],
+    defaultColor: '#bfe6f5',
+    description: 'Icy nucleus on an eccentric orbit; grows a coma and tail near a star.',
+    visualType: 'rocky',
+    category: 'solid',
+    creatable: true,
+  },
+  'Moon': {
+    massRange: [1e-6, 0.05],
+    defaultColor: '#c8c8c8',
+    description: 'Natural satellite bound to a planet.',
+    visualType: 'rocky',
+    category: 'solid',
+    creatable: true,
+  },
   'Dwarf': {
-    massRange: [0.1, 5],
-    radiusRange: [0.3, 0.8],
+    // Ceres 1.57 × 10⁻⁴ M⊕ … Pluto 2.18 × 10⁻³ M⊕ … Eris 2.8 × 10⁻³ M⊕.
+    massRange: [1e-4, 0.1],
     defaultColor: '#9ca3af',
-    description: 'Small rocky or icy bodies, minimum gravity.',
-    visualType: 'rocky'
+    description: 'Dwarf planet: rounded by gravity but has not cleared its orbit.',
+    visualType: 'rocky',
+    category: 'solid',
+    creatable: true,
   },
   'Planet': {
-    massRange: [5, 150],
-    radiusRange: [1.2, 4.0],
+    massRange: [0.02, 10],
     defaultColor: '#3b82f6',
-    description: 'Terrestrial or small gas worlds.',
-    visualType: 'rocky'
+    description: 'Terrestrial world with an iron/silicate/ice interior.',
+    visualType: 'rocky',
+    category: 'solid',
+    creatable: true,
   },
   'Ice Giant': {
-    massRange: [100, 500],
-    radiusRange: [4.5, 8.0],
+    // Uranus 14.5 M⊕, Neptune 17.1 M⊕.
+    massRange: [5, 50],
     defaultColor: '#a5b4fc',
-    description: 'Cold, gaseous worlds.',
-    visualType: 'gaseous'
+    description: 'Water/ammonia/methane envelope over a rocky core.',
+    visualType: 'gaseous',
+    category: 'giant',
+    creatable: true,
+  },
+  'Gas Giant': {
+    // Saturn 95.2 M⊕, Jupiter 317.8 M⊕, up to the deuterium-burning limit.
+    massRange: [50, 13 * M_JUPITER_IN_EARTH],
+    defaultColor: '#d8a35a',
+    description: 'Hydrogen/helium dominated giant.',
+    visualType: 'gaseous',
+    category: 'giant',
+    creatable: true,
+  },
+  'Brown Dwarf': {
+    massRange: [13 * M_JUPITER_IN_EARTH, 0.075 * M_SUN_IN_EARTH],
+    defaultColor: '#8c4a3f',
+    description: 'Substellar object: burns deuterium but never hydrogen.',
+    visualType: 'plasma',
+    category: 'stellar',
+    creatable: true,
   },
   'Star': {
-    massRange: [800, 2000],
-    radiusRange: [10, 18],
+    // 0.075 M☉ (hydrogen burning limit) to 50 M☉.
+    massRange: [0.075 * M_SUN_IN_EARTH, 50 * M_SUN_IN_EARTH],
     defaultColor: '#fbbf24',
-    description: 'Main sequence stars.',
-    visualType: 'plasma'
+    description: 'Main sequence star fusing hydrogen in its core.',
+    visualType: 'plasma',
+    category: 'stellar',
+    creatable: true,
   },
   'Red Giant': {
-    massRange: [800, 3000],
-    radiusRange: [50, 120],
+    massRange: [0.3 * M_SUN_IN_EARTH, 8 * M_SUN_IN_EARTH],
     defaultColor: '#ef4444',
-    description: 'Dying stars.',
-    visualType: 'plasma'
+    description: 'Evolved star with an inflated envelope and a degenerate core.',
+    visualType: 'plasma',
+    category: 'stellar',
+    creatable: true,
+  },
+  'White Dwarf': {
+    massRange: [0.17 * M_SUN_IN_EARTH, 1.4 * M_SUN_IN_EARTH],
+    defaultColor: '#dbeafe',
+    description: 'Electron-degenerate remnant; radius shrinks as mass grows.',
+    visualType: 'plasma',
+    category: 'compact',
+    creatable: true,
   },
   'Neutron Star': {
-    massRange: [1500, 2500],
-    radiusRange: [0.15, 0.4],
+    massRange: [1.1 * M_SUN_IN_EARTH, 2.2 * M_SUN_IN_EARTH],
     defaultColor: '#60a5fa',
-    description: 'Extremely dense remnants.',
-    visualType: 'neutron'
+    description: 'Neutron-degenerate remnant, ~12 km across.',
+    visualType: 'neutron',
+    category: 'compact',
+    creatable: true,
+  },
+  'Pulsar': {
+    massRange: [1.1 * M_SUN_IN_EARTH, 2.2 * M_SUN_IN_EARTH],
+    defaultColor: '#a5f3fc',
+    description: 'Rapidly rotating, strongly magnetised neutron star.',
+    visualType: 'neutron',
+    category: 'compact',
+    creatable: true,
   },
   'Black Hole': {
-    massRange: [3000, 100000],
-    radiusRange: [2.0, 15.0],
+    // 3 M☉ (lower mass gap) up to an intermediate-mass 30 000 M☉.
+    massRange: [3 * M_SUN_IN_EARTH, 3e4 * M_SUN_IN_EARTH],
     defaultColor: '#000000',
-    description: 'Singularity.',
-    visualType: 'singularity'
-  }
+    description: 'Region bounded by an event horizon; Kerr if spinning.',
+    visualType: 'singularity',
+    category: 'singularity',
+    creatable: true,
+  },
 };
+
+/** Types that emit their own light and can heat other bodies. */
+export const LUMINOUS_TYPES: readonly BodyType[] = [
+  'Star', 'Red Giant', 'White Dwarf', 'Neutron Star', 'Pulsar', 'Brown Dwarf',
+];
+
+/** Types whose interior is modelled from an iron/silicate/water mixture. */
+export const TERRESTRIAL_TYPES: readonly BodyType[] = [
+  'Planet', 'Dwarf', 'Moon', 'Asteroid', 'Comet',
+];
+
+/** Types modelled by the giant-planet mass-radius relation. */
+export const GIANT_TYPES: readonly BodyType[] = ['Ice Giant', 'Gas Giant'];
 
 export const TEXTURE_TYPES = [
   { label: 'Rocky', value: 'rock' },
@@ -90,14 +218,4 @@ export const TEXTURE_TYPES = [
 
 export const TEXTURE_IDS: Record<string, number> = {
   'solid': 0, 'rock': 1, 'gas': 2, 'ice': 3, 'lava': 4, 'plasma': 5, 'neutron': 6
-};
-
-export const PRESETS = {
-  Solar: [
-    { type: 'Star', mass: 1000,Hz: 12, pos: [0, 0, 0], vel: [0, 0, 0], color: '#fbbf24', radius: 12 },
-    { type: 'Planet', mass: 10, radius: 2.5, pos: [60, 0, 0], vel: [0, 0, 3.8], color: '#3b82f6' },
-    { type: 'Planet', mass: 50, radius: 4.0, pos: [110, 0, 0], vel: [0, 0, 2.8], color: '#10b981' },
-    { type: 'Dwarf', mass: 0.5, radius: 0.6, pos: [35, 0, 0], vel: [0, 0, 5.0], color: '#9ca3af' },
-    { type: 'Ice Giant', mass: 150, radius: 6.5, pos: [180, 0, 0], vel: [0, 0, 2.2], color: '#a5b4fc' },
-  ]
 };

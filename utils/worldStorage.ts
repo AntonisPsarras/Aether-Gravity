@@ -11,8 +11,12 @@ import {
   sanitizeProperties,
   sanitizeCelestialBody,
   sanitizeCelestialBodies,
+  clampRadiusKm,
   PHYSICS_LIMITS,
 } from './physicsBounds';
+import { G_CONSTANT } from '../constants';
+import { M_SUN_IN_EARTH } from './units';
+import { reconcileBodyDerivedState } from './physicsUtils';
 
 const STORAGE_KEYS = {
     INDEX: 'aether:worlds:index',
@@ -20,7 +24,15 @@ const STORAGE_KEYS = {
     DATA_PREFIX: 'aether:worlds:data:',
 };
 
-const CURRENT_VERSION = 1;
+/**
+ * v1: legacy "game units" — mass 5-150 for planets, 800-2000 for stars, G = 0.8.
+ * v2: Aether units — mass in M⊕, G derived from SI, physical `radiusKm` split
+ *     from the visual `radius`.
+ */
+const CURRENT_VERSION = 2;
+
+/** Where a pre-migration copy of each world is kept, in case v2 misbehaves. */
+const V1_BACKUP_PREFIX = 'aether:worlds:v1backup:';
 
 /** Maximum character length enforced on all user-visible name fields. */
 const MAX_NAME_LENGTH = 64;
@@ -147,14 +159,24 @@ export const parseWorldData = (raw: unknown): WorldData | null => {
         showStability: false,
     };
 
+    const sourceVersion = typeof d.version === 'number' ? d.version : 1;
+
     return {
         id: d.id,
-        version: typeof d.version === 'number' ? d.version : CURRENT_VERSION,
-        bodies: deserializeBodies(Array.isArray(d.bodies) ? (d.bodies as CelestialBodyData[]) : []).map((b) => ({
+        // The bodies below have been migrated, so the returned document is v2
+        // regardless of what was on disk.
+        version: CURRENT_VERSION,
+        bodies: deserializeBodies(
+            Array.isArray(d.bodies) ? (d.bodies as CelestialBodyData[]) : [],
+            sourceVersion,
+        ).map((b) => ({
             id: b.id,
             type: b.type,
             mass: b.mass,
             radius: b.radius,
+            radiusKm: b.radiusKm,
+            parentId: b.parentId,
+            orbit: b.orbit ? { ...b.orbit } : undefined,
             position: { x: b.position.x, y: b.position.y, z: b.position.z },
             velocity: { x: b.velocity.x, y: b.velocity.y, z: b.velocity.z },
             color: b.color,
@@ -174,10 +196,25 @@ export const getWorld = (id: string): WorldData | null => {
     try {
         const raw = localStorage.getItem(STORAGE_KEYS.DATA_PREFIX + id);
         if (!raw) return null;
-        return parseWorldData(JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        // The unit-system migration is lossy and one-way, so keep a verbatim
+        // copy of the v1 document the first time a world is opened under v2.
+        const onDiskVersion = typeof parsed?.version === 'number' ? parsed.version : 1;
+        if (onDiskVersion < CURRENT_VERSION) backupV1World(id, raw);
+        return parseWorldData(parsed);
     } catch (e) {
         console.error('Failed to load world:', e);
         return null;
+    }
+};
+
+const backupV1World = (id: string, raw: string): void => {
+    try {
+        const key = V1_BACKUP_PREFIX + id;
+        if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
+    } catch {
+        // A full quota must not block opening the world; the migration is still
+        // safe, the user just loses the undo path.
     }
 };
 
@@ -274,12 +311,124 @@ export const moveWorldToFolder = (worldId: string, folderId?: string): void => {
     }
 };
 
+// ---------------------------------------------------------------------------
+// v1 → v2 migration
+// ---------------------------------------------------------------------------
+
+/** Mass ranges each body type occupied under the legacy arbitrary-unit scale. */
+const V1_MASS_RANGES: Record<string, [number, number]> = {
+    'Dwarf': [0.1, 5],
+    'Planet': [5, 150],
+    'Ice Giant': [100, 500],
+    'Star': [800, 2000],
+    'Red Giant': [800, 3000],
+    'Neutron Star': [1500, 2500],
+    'Black Hole': [3000, 100000],
+};
+
+/** Where those ranges land on the real M⊕ scale. */
+const V2_MASS_RANGES: Record<string, [number, number]> = {
+    'Dwarf': [1e-3, 0.05],
+    'Planet': [0.1, 5],
+    'Ice Giant': [10, 40],
+    'Star': [0.3 * M_SUN_IN_EARTH, 2 * M_SUN_IN_EARTH],
+    'Red Giant': [0.5 * M_SUN_IN_EARTH, 4 * M_SUN_IN_EARTH],
+    'Neutron Star': [1.2 * M_SUN_IN_EARTH, 2.1 * M_SUN_IN_EARTH],
+    'Black Hole': [5 * M_SUN_IN_EARTH, 100 * M_SUN_IN_EARTH],
+};
+
+const V1_G = 0.8;
+
+/**
+ * Map a legacy mass onto the real scale by preserving its *relative position*
+ * within its type's old range. No single multiplier can work here: the old
+ * scale compressed a 10⁶ range of real masses into a 10³ range of game numbers,
+ * and did so non-linearly across types (a "Star" at 1000 was meant to be 1 M☉,
+ * i.e. 333 000 M⊕, while a "Planet" at 10 was meant to be 1 M⊕).
+ */
+const migrateMass = (type: string, oldMass: number): number => {
+    const oldRange = V1_MASS_RANGES[type];
+    const newRange = V2_MASS_RANGES[type];
+    if (!oldRange || !newRange) return Math.max(oldMass * 0.1, 1e-6);
+    const t = Math.max(0, Math.min(1, (oldMass - oldRange[0]) / (oldRange[1] - oldRange[0])));
+    // Interpolate in log space: the new ranges span decades.
+    return Math.exp(Math.log(newRange[0]) + t * (Math.log(newRange[1]) - Math.log(newRange[0])));
+};
+
+/**
+ * Rewrite a v1 body list into v2. Masses are remapped per type, radii are
+ * discarded and re-derived (the old ones were arbitrary and used two mutually
+ * inconsistent scales), and orbital velocities are rescaled by
+ * √(G₂M₂ / G₁M₁) about each body's dominant parent so systems stay bound
+ * instead of unravelling at the new G.
+ */
+export const migrateV1Bodies = (data: CelestialBodyData[]): CelestialBodyData[] => {
+    if (!Array.isArray(data) || data.length === 0) return data;
+
+    const oldMasses = new Map<string, number>();
+    const migrated = data.map((b) => {
+        const type = sanitizeBodyType(b.type);
+        const oldMass = safeNum(b.mass, 10);
+        oldMasses.set(b.id, oldMass);
+        return { ...b, type, mass: migrateMass(type, oldMass) };
+    });
+
+    // Velocity rescale about each body's most influential heavier neighbour.
+    const velocityScaleFor = (index: number): number => {
+        const self = migrated[index];
+        let bestInfluence = 0;
+        let scale = 1;
+        for (let j = 0; j < migrated.length; j++) {
+            if (j === index) continue;
+            const other = migrated[j];
+            if (other.mass <= self.mass) continue;
+            const dx = safeNum(other.position?.x, 0) - safeNum(self.position?.x, 0);
+            const dy = safeNum(other.position?.y, 0) - safeNum(self.position?.y, 0);
+            const dz = safeNum(other.position?.z, 0) - safeNum(self.position?.z, 0);
+            const distSq = dx * dx + dy * dy + dz * dz;
+            if (!(distSq > 1e-9)) continue;
+            const influence = other.mass / distSq;
+            if (influence > bestInfluence) {
+                bestInfluence = influence;
+                const oldParentMass = oldMasses.get(other.id) ?? 1;
+                scale = Math.sqrt((G_CONSTANT * other.mass) / (V1_G * Math.max(oldParentMass, 1e-6)));
+            }
+        }
+        return scale;
+    };
+
+    // A body with no heavier neighbour (the primary itself) inherits the scale
+    // of the most massive body in the system so the barycentre stays put.
+    let heaviestIndex = 0;
+    for (let i = 1; i < migrated.length; i++) {
+        if (migrated[i].mass > migrated[heaviestIndex].mass) heaviestIndex = i;
+    }
+    const scales = migrated.map((_, i) => velocityScaleFor(i));
+    const fallbackScale = scales.find((s, i) => i !== heaviestIndex && s !== 1) ?? 1;
+
+    return migrated.map((b, i) => {
+        const scale = scales[i] !== 1 ? scales[i] : fallbackScale;
+        return {
+            ...b,
+            radiusKm: undefined,   // re-derived from mass + type on load
+            velocity: {
+                x: safeNum(b.velocity?.x, 0) * scale,
+                y: safeNum(b.velocity?.y, 0) * scale,
+                z: safeNum(b.velocity?.z, 0) * scale,
+            },
+        };
+    });
+};
+
 export const serializeBodies = (bodies: CelestialBody[]): CelestialBodyData[] => {
     return sanitizeCelestialBodies(bodies).map(b => ({
         id: b.id,
         type: b.type,
         mass: b.mass,
         radius: b.radius,
+        radiusKm: b.radiusKm,
+        parentId: b.parentId,
+        orbit: b.orbit ? { ...b.orbit } : undefined,
         position: { x: b.position.x, y: b.position.y, z: b.position.z },
         velocity: { x: b.velocity.x, y: b.velocity.y, z: b.velocity.z },
         color: b.color,
@@ -302,13 +451,17 @@ const VALID_HABITABILITY = new Set<CelestialBody['habitability']>([
     'HABITABLE', 'FROZEN', 'BURNING', 'TOXIC', 'STELLAR', 'SINGULARITY', 'STERILIZED', 'N/A',
 ]);
 
-export const deserializeBodies = (data: CelestialBodyData[]): CelestialBody[] => {
-    return data.slice(0, PHYSICS_LIMITS.MAX_BODIES).map((b) =>
+export const deserializeBodies = (data: CelestialBodyData[], version = CURRENT_VERSION): CelestialBody[] => {
+    const source = version < 2 ? migrateV1Bodies(data) : data;
+    const bodies = source.slice(0, PHYSICS_LIMITS.MAX_BODIES).map((b) =>
         sanitizeCelestialBody({
             id: typeof b.id === 'string' && b.id ? b.id : `body-${Date.now()}`,
             type: sanitizeBodyType(b.type),
-            mass: clampMass(safeNum(b.mass, 10)),
+            mass: clampMass(safeNum(b.mass, 1)),
             radius: clampRadius(safeNum(b.radius, 1)),
+            radiusKm: clampRadiusKm(safeNum(b.radiusKm, 1)),
+            parentId: typeof b.parentId === 'string' ? b.parentId : undefined,
+            orbit: sanitizeOrbit(b.orbit),
             temperature: Math.max(0, safeNum(b.temperature, 300)),
             color: typeof b.color === 'string' ? b.color : '#ffffff',
             texture: typeof b.texture === 'string' ? b.texture : 'solid',
@@ -333,6 +486,28 @@ export const deserializeBodies = (data: CelestialBodyData[]): CelestialBody[] =>
             ),
         }),
     );
+
+    // A v1 save carries no physical radius, and its visual radius came from a
+    // scale that no longer exists, so both are re-derived from mass and type.
+    if (version < 2) bodies.forEach((body) => reconcileBodyDerivedState(body));
+
+    return bodies;
+};
+
+/** Validate persisted Keplerian elements. */
+const sanitizeOrbit = (orbit: unknown): CelestialBody['orbit'] => {
+    if (!isRecord(orbit)) return undefined;
+    const a = safeNum(orbit.a, 0);
+    if (!(a > 0)) return undefined;
+    return {
+        a,
+        e: Math.max(0, Math.min(0.999, safeNum(orbit.e, 0))),
+        i: safeNum(orbit.i, 0),
+        lan: safeNum(orbit.lan, 0),
+        argp: safeNum(orbit.argp, 0),
+        m0: safeNum(orbit.m0, 0),
+        epoch: safeNum(orbit.epoch, 0),
+    };
 };
 
 /** Sanitize persisted simulation settings before applying to the store. */

@@ -22,6 +22,7 @@
 import { CelestialBody } from '../types';
 import { G_CONSTANT } from '../constants';
 import { clampBodiesInPlace } from './physicsBounds';
+import { pairSofteningSq } from './physicsUtils';
 
 const isValid = (b: CelestialBody | null | undefined): b is CelestialBody =>
   b != null &&
@@ -117,7 +118,7 @@ const computeAccelerationsInArray = (bodies: CelestialBody[], out: Float32Array)
       const dx = bj.position.x - xi;
       const dy = bj.position.y - yi;
       const dz = bj.position.z - zi;
-      const distSq = dx * dx + dy * dy + dz * dz + 0.1;
+      const distSq = dx * dx + dy * dy + dz * dz + pairSofteningSq(bi, bj);
       const invDist = 1 / Math.sqrt(distSq);
       const invR3 = invDist / distSq;
       const f = G_CONSTANT * invR3;
@@ -194,7 +195,20 @@ export const resetVerletCache = () => {
 // in FIXED_DT chunks. The accumulator is module-scope so React renders
 // don't reset it.
 
-export const FIXED_DT = 1 / 240;             // 4.17 ms per physics tick
+/**
+ * Physics tick, in simulation years — 1/1024 yr ≈ 8.5 hours.
+ *
+ * Chosen from the shortest orbit the N-body loop has to resolve: Mercury's
+ * 0.241 yr period gets ~247 steps, which keeps velocity-Verlet's per-orbit
+ * energy error (∝ (dt/P)²) below 10⁻⁴. Moons, whose periods are far shorter,
+ * are propagated analytically instead of through this loop precisely so that
+ * dt does not have to shrink further (see `utils/moonSystem.ts`).
+ *
+ * This does NOT change per-frame cost: the number of steps drained per frame is
+ * capped by MAX_CATCHUP_STEPS either way. It only sets how much simulated time
+ * passes per real second (up to ~0.47 yr/s at 60 fps).
+ */
+export const FIXED_DT = 1 / 1024;
 export const MAX_CATCHUP_STEPS = 8;          // cap when tab unfocused / slow frame
 let accumulator = 0;
 
@@ -208,14 +222,19 @@ export const runFixedSteps = (
   elapsed: number,
   stepCallback?: (bodies: CelestialBody[]) => CelestialBody[]
 ): { steps: number; bodies: CelestialBody[] } => {
-  if (!isFinite(elapsed) || elapsed <= 0 || !bodiesRef.current) {
+  if (!isFinite(elapsed) || elapsed === 0 || !bodiesRef.current) {
     return { steps: 0, bodies: bodiesRef.current || [] };
   }
-  accumulator += Math.min(elapsed, 0.2); // hard cap to avoid death spiral
+  // Velocity-Verlet is time-symmetric, so running it with a negative dt
+  // integrates backwards. The pre-2.0 loop returned early on elapsed <= 0, so
+  // the reverse half of the speed slider silently did nothing.
+  const reverse = elapsed < 0;
+  const dt = reverse ? -FIXED_DT : FIXED_DT;
+  accumulator += Math.min(Math.abs(elapsed), 0.2); // hard cap to avoid death spiral
   let steps = 0;
   let bodies = bodiesRef.current;
   while (accumulator >= FIXED_DT && steps < MAX_CATCHUP_STEPS) {
-    bodies = verletStepInPlace(bodies, FIXED_DT);
+    bodies = verletStepInPlace(bodies, dt);
     clampBodiesInPlace(bodies);
     if (stepCallback) bodies = stepCallback(bodies);
     clampBodiesInPlace(bodies);

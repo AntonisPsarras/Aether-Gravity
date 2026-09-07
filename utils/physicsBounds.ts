@@ -1,28 +1,43 @@
 import * as THREE from 'three';
 import { BodyType, CelestialBody } from '../types';
 import { TEXTURE_IDS } from '../constants';
+import { MAX_SPIN_PARAMETER } from './relativity';
 
+/**
+ * Bounds in Aether units: mass in M⊕, distance in L* (0.025 AU), velocity in
+ * L* per year (1 unit ≈ 0.1185 km/s), physical radius in km.
+ */
 export const PHYSICS_LIMITS = {
-  MIN_MASS: 0.01,
-  MAX_MASS: 100_000,
-  MIN_RADIUS: 0.1,
-  MAX_RADIUS: 5000,
+  /** A comet nucleus is ~4 × 10⁻¹² M⊕; this floor sits comfortably below it. */
+  MIN_MASS: 1e-14,
+  /** 3 × 10⁴ M☉ — an intermediate-mass black hole. */
+  MAX_MASS: 1e10,
+  /** Visual radius bounds, L*. */
+  MIN_RADIUS: 0.02,
+  MAX_RADIUS: 500,
+  /** Physical radius bounds, km: sub-km cometary nuclei to a red supergiant. */
+  MIN_RADIUS_KM: 0.05,
+  MAX_RADIUS_KM: 1e9,
   SPEED_MIN: -2,
   SPEED_MAX: 4,
   MAX_BODIES: 50,
   MAX_NAME_LENGTH: 64,
-  /** Max |v| for any body (simulation units / step scale). */
-  MAX_VELOCITY_MAGNITUDE: 150,
+  /**
+   * Max |v| for any body, ≈ 0.12 c. High enough for any bound orbit the sim can
+   * produce (Earth's is 251, Mercury's 404) while still catching runaways.
+   */
+  MAX_VELOCITY_MAGNITUDE: 300_000,
   /** Max |component| for world-space position before recentre. */
   MAX_POSITION_ABS: 500_000,
-  /** Cap on fling velocity when placing a new body. */
-  MAX_DRAG_LAUNCH_SPEED: 80,
+  /** Cap on fling velocity when placing a new body (≈ 8× Earth's orbital speed). */
+  MAX_DRAG_LAUNCH_SPEED: 2000,
   STAR_TEMPERATURE_MIN: 1000,
-  STAR_TEMPERATURE_MAX: 40_000,
+  STAR_TEMPERATURE_MAX: 60_000,
 } as const;
 
 const VALID_BODY_TYPES: readonly BodyType[] = [
   'Star', 'Planet', 'Black Hole', 'Dwarf', 'Neutron Star', 'Red Giant', 'Ice Giant',
+  'Gas Giant', 'Moon', 'White Dwarf', 'Brown Dwarf', 'Pulsar', 'Asteroid', 'Comet',
 ];
 
 const safeNum = (v: unknown, fallback: number): number => {
@@ -43,6 +58,12 @@ export const clampRadius = (r: number): number => {
   if (!isFinite(r)) return r > 0 ? PHYSICS_LIMITS.MAX_RADIUS : PHYSICS_LIMITS.MIN_RADIUS;
   if (r <= 0) return PHYSICS_LIMITS.MIN_RADIUS;
   return Math.max(PHYSICS_LIMITS.MIN_RADIUS, Math.min(PHYSICS_LIMITS.MAX_RADIUS, r));
+};
+
+/** Clamp a physical radius in km. */
+export const clampRadiusKm = (r: number): number => {
+  if (!isFinite(r) || r <= 0) return PHYSICS_LIMITS.MIN_RADIUS_KM;
+  return Math.max(PHYSICS_LIMITS.MIN_RADIUS_KM, Math.min(PHYSICS_LIMITS.MAX_RADIUS_KM, r));
 };
 
 export const clampSpeed = (s: number): number => {
@@ -84,6 +105,7 @@ export const clampBodiesInPlace = (bodies: CelestialBody[]): void => {
     clampVelocityVector(b.velocity);
     if (typeof b.mass === 'number') b.mass = clampMass(b.mass);
     if (typeof b.radius === 'number') b.radius = clampRadius(b.radius);
+    if (typeof b.radiusKm === 'number') b.radiusKm = clampRadiusKm(b.radiusKm);
   }
 };
 
@@ -140,6 +162,7 @@ export const sanitizeCelestialBody = (body: CelestialBody): CelestialBody => {
     name: sanitizeName(body.name),
     mass: clampMass(body.mass),
     radius: clampRadius(body.radius),
+    radiusKm: clampRadiusKm(body.radiusKm),
     temperature,
     color: sanitizeColor(body.color),
     texture: sanitizeTexture(body.texture),
@@ -183,8 +206,26 @@ export const sanitizeProperties = (
   if (props.flareActivity !== undefined) out.flareActivity = c01(props.flareActivity);
   if (props.magneticIndex !== undefined) out.magneticIndex = c01(props.magneticIndex);
   if (props.degeneracy !== undefined) out.degeneracy = c01(props.degeneracy);
-  if (props.spinParameter !== undefined) out.spinParameter = c01(props.spinParameter);
+  // Thorne limit: photon capture from the disk caps accretion-driven spin at
+  // a* = 0.998, so an extremal Kerr hole is not reachable by spinning one up.
+  if (props.spinParameter !== undefined) {
+    out.spinParameter = clamp(safeNum(props.spinParameter, 0), 0, MAX_SPIN_PARAMETER);
+  }
   if (props.accretionRate !== undefined) out.accretionRate = c01(props.accretionRate);
+  if (props.obliquity !== undefined) out.obliquity = clamp(safeNum(props.obliquity, 0), 0, 180);
+  if (props.albedo !== undefined) out.albedo = c01(props.albedo);
+  // Pulsars span ~1.4 ms (near the mass-shedding limit) to ~10 s.
+  if (props.pulsarPeriodS !== undefined) {
+    out.pulsarPeriodS = clamp(safeNum(props.pulsarPeriodS, 1), 0.0014, 100);
+  }
+  if (props.magneticFieldTG !== undefined) {
+    out.magneticFieldTG = clamp(safeNum(props.magneticFieldTG, 1), 0, 1e4);
+  }
+  if (props.volatileFraction !== undefined) out.volatileFraction = c01(props.volatileFraction);
+  if (props.luminositySolarDerived !== undefined) {
+    out.luminositySolarDerived = Math.max(0, safeNum(props.luminositySolarDerived, 0));
+  }
+  if (props.manualRadiusKm !== undefined) out.manualRadiusKm = clampRadiusKm(props.manualRadiusKm);
   if (props.scaleHeight !== undefined) out.scaleHeight = clamp(safeNum(props.scaleHeight, 0.2), 0.01, 1);
   if (props.haze !== undefined) out.haze = c01(props.haze);
   if (props.rotationPeriod !== undefined) out.rotationPeriod = clamp(safeNum(props.rotationPeriod, 24), 0.1, 1000);

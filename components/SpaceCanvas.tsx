@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree, extend, ThreeEvent } from '@react-three/fib
 import { OrbitControls, Stars, shaderMaterial, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialBody, BodyType, WaveEvent, PhysicsEvent } from '../types';
-import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar } from '../utils/physicsUtils';
+import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState } from '../utils/physicsUtils';
 import { runFixedSteps, resetVerletCache, resetAccumulator } from '../utils/physicsSoA';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
 import { DUST_CONFIG, TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS } from '../constants';
@@ -59,8 +59,15 @@ const _UNIT_SCALE = new THREE.Vector3(1, 1, 1);
 const _SHOCKWAVE_COLOR = new THREE.Color(1, 1, 1);
 const _SUPERNOVA_COLOR = new THREE.Color(1, 0.8, 0.4);
 
-/** Slingshot drag — velocity gain from pull-back distance (sim units). */
-const LAUNCH_VELOCITY_SCALE = 0.15;
+/**
+ * Slingshot drag — velocity gain per unit of pull-back distance.
+ *
+ * Rescaled by 56.2× when the engine moved to real units: a 1 AU circular orbit
+ * now runs at 251 units per year instead of the old 4.47, so preserving the
+ * previous drag feel means preserving the ratio of launch speed to orbital
+ * speed. 0.15 × √(G₂M₂ / G₁M₁) = 8.4.
+ */
+const LAUNCH_VELOCITY_SCALE = 8.4;
 /** Minimum pull distance before a body is spawned. */
 const MIN_SLINGSHOT_DRAG = 2.0;
 
@@ -979,22 +986,40 @@ const ObjectCreator: React.FC<{
       velocity: b.velocity.clone(),
     }));
 
+    // Log-uniform draw within the type's mass range: the ranges now span many
+    // orders of magnitude, so a linear draw would always land near the top.
+    const [massLo, massHi] = config.massRange;
+    const mass = Math.exp(
+      Math.log(massLo) + Math.random() * (Math.log(massHi) - Math.log(massLo)),
+    );
+
     const newBody = sanitizeCelestialBody({
       id: `created-${creationMode}-${Date.now()}`,
       type: creationMode,
       position: spawnPosition,
       velocity: launchVelocity,
-      mass: config.massRange[0] + Math.random() * (config.massRange[1] - config.massRange[0]),
-      radius: config.radiusRange[0] + Math.random() * (config.radiusRange[1] - config.radiusRange[0]),
+      mass,
+      // Both radii are derived from mass and type immediately below.
+      radius: 1,
+      radiusKm: 1,
       color: config.defaultColor,
       temperature: 300,
       habitability: 'N/A',
       population: 0,
       name: `${creationMode} ${number}`,
-      texture: config.visualType === 'rocky' ? 'rock' : 'solid',
+      texture: config.visualType === 'rocky' ? 'rock'
+        : config.visualType === 'gaseous' ? 'gas'
+        : config.visualType === 'neutron' ? 'neutron' : 'solid',
       trailColor: config.defaultColor,
-      properties: { rotationPeriod: 24.0, isTidallyLocked: false },
+      properties: {
+        rotationPeriod: 24.0,
+        isTidallyLocked: false,
+        compositionIron: 0.3,
+        compositionSilicates: 0.6,
+        compositionWater: 0.1,
+      },
     });
+    reconcileBodyDerivedState(newBody);
 
     appendBody(newBody);
     resetVerletCache();

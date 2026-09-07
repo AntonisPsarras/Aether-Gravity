@@ -1,21 +1,39 @@
 import * as THREE from 'three';
 import { CelestialBody, BodyType, PhysicsEvent, WaveEvent } from '../types';
-import { G_CONSTANT, COLLISION_PHYSICS, EVOLUTION_THRESHOLDS, BODY_CONFIGS } from '../constants';
+import {
+  G_CONSTANT,
+  COLLISION_PHYSICS,
+  EVOLUTION_THRESHOLDS,
+  BODY_CONFIGS,
+  LUMINOUS_TYPES,
+  TERRESTRIAL_TYPES,
+} from '../constants';
 import {
   albedoFromComposition,
-  equilibriumTemperatureK,
-  escapeVelocityKmsFromGame,
-  distGameToAU,
-  GAME_RADIUS_TO_EARTH,
-  luminositySolarFromGameMass,
-  massGameToEarth,
-  M_EARTH_KG,
+  auToDist,
+  bulkDensityGcm3,
+  circularOrbitalSpeed,
+  distToAU,
+  distToKm,
+  equilibriumTemperatureFromLuminosity,
+  escapeVelocityKms,
+  kmToDist,
+  luminositySolarFromMass,
+  M_SUN_IN_EARTH,
+  orbitalPeriodYears,
   R_EARTH_KM,
-  STAR_REFERENCE_MASS_GAME,
-  surfaceGravitySiFromGame,
+  surfaceGravitySi,
+  visualRadiusFromKm,
 } from './units';
+import {
+  applyDerivedState,
+  classifyBody,
+  deriveBodyState,
+  mixtureDensity,
+  terrestrialRadiusKm,
+} from './bodyDerivation';
 import { scratchV2, scratchV3 } from './scratchVectors';
-import { clampMass, clampRadius } from './physicsBounds';
+import { clampMass, clampRadius, clampRadiusKm } from './physicsBounds';
 
 const isValidBody = (b: CelestialBody | null | undefined): b is CelestialBody => {
   return b != null &&
@@ -28,79 +46,71 @@ const isValidBody = (b: CelestialBody | null | undefined): b is CelestialBody =>
 };
 
 // --- Astrophysics Helpers ---
+//
+// The mass-radius / mass-luminosity relations themselves live in
+// `utils/bodyDerivation.ts`; this module owns the dynamics and the
+// system-level passes that use them.
 
-// Densities in g/cm^3 (Approximate)
-const DENSITY_IRON = 7.8;
-const DENSITY_SILICATE = 3.3;
-const DENSITY_WATER = 1.0; 
-
-/** Game radius of a Sun-sized star at reference mass (visual/physics scale). */
-const STAR_RADIUS_AT_REF_MASS = 12;
-
-export const calculatePlanetaryPhysics = (mass: number, compIron: number, compSil: number, compWater: number) => {
-    const totalVolumeFraction = (compIron / DENSITY_IRON) + (compSil / DENSITY_SILICATE) + (compWater / DENSITY_WATER);
-    const bulkDensity = 1 / Math.max(totalVolumeFraction, 1e-6); // g/cm³
-    const massKg = massGameToEarth(mass) * M_EARTH_KG;
-    const bulkDensityKgM3 = bulkDensity * 1000;
-    const volumeM3 = massKg / Math.max(bulkDensityKgM3, 1);
-    const radiusM = Math.cbrt((3 * volumeM3) / (4 * Math.PI));
-    const radiusGame = (radiusM / 1000) / (GAME_RADIUS_TO_EARTH * R_EARTH_KM);
-    const radius = clampRadius(Math.max(0.15, radiusGame));
+/**
+ * Full derived state for a terrestrial body from mass (M⊕) and composition.
+ * Returns the physical radius in km alongside the visual radius, so callers
+ * cannot accidentally mix the two.
+ */
+export const calculatePlanetaryPhysics = (
+    type: BodyType,
+    mass: number,
+    compIron: number,
+    compSil: number,
+    compWater: number,
+) => {
+    const radiusKm = clampRadiusKm(terrestrialRadiusKm(mass, compIron, compSil, compWater));
     return {
-        radius,
-        bulkDensity,
-        surfaceGravity: surfaceGravitySiFromGame(mass, radius),
-        escapeVelocity: escapeVelocityKmsFromGame(mass, radius),
+        radiusKm,
+        radius: clampRadius(visualRadiusFromKm(type, radiusKm)),
+        bulkDensity: bulkDensityGcm3(mass, radiusKm),
+        surfaceGravity: surfaceGravitySi(mass, radiusKm),
+        escapeVelocity: escapeVelocityKms(mass, radiusKm),
     };
 };
 
-/** Derive bulk density (g/cm³) from game mass + radius when the user sets radius manually. */
-export const densityFromMassAndRadius = (mass: number, radius: number): number => {
-    const massKg = massGameToEarth(mass) * M_EARTH_KG;
-    const rM = radius * GAME_RADIUS_TO_EARTH * R_EARTH_KM * 1000;
-    const volumeM3 = (4 / 3) * Math.PI * Math.pow(Math.max(rM, 1), 3);
-    const bulkDensityKgM3 = massKg / Math.max(volumeM3, 1);
-    return bulkDensityKgM3 / 1000;
-};
+/** Uncompressed mixture density (g/cm³) for a composition. */
+export const compositionDensity = mixtureDensity;
 
-export const derivedPropertiesFromMassRadius = (mass: number, radius: number, bulkDensity: number) => ({
-    bulkDensity,
-    surfaceGravity: surfaceGravitySiFromGame(mass, radius),
-    escapeVelocity: escapeVelocityKmsFromGame(mass, radius),
+/** Derived geophysics when the user pins a physical radius directly. */
+export const derivedPropertiesFromMassRadiusKm = (mass: number, radiusKm: number) => ({
+    bulkDensity: bulkDensityGcm3(mass, radiusKm),
+    surfaceGravity: surfaceGravitySi(mass, radiusKm),
+    escapeVelocity: escapeVelocityKms(mass, radiusKm),
 });
 
-/** Main-sequence radius, temperature, and colour from game stellar mass. */
-export const deriveStarProperties = (massGame: number) => {
-    const x = massGame / STAR_REFERENCE_MASS_GAME;
-    const rSun = x <= 0 ? 0.1 : x < 1 ? Math.pow(x, 0.8) : Math.pow(x, 0.57);
-    const radius = clampRadius(Math.max(4, Math.min(180, STAR_RADIUS_AT_REF_MASS * rSun)));
-    const L = Math.max(1e-8, luminositySolarFromGameMass(massGame));
-    const rRatio = Math.max(0.05, radius / STAR_RADIUS_AT_REF_MASS);
-    const temperature = Math.max(
-        2400,
-        Math.min(50000, 5778 * Math.pow(L / (rRatio * rRatio), 0.25)),
-    );
-    const { r, g, b } = kelvinToRgb(temperature);
-    return { radius, temperature, color: rgbToHex(r, g, b), luminositySolar: L };
+/** Radius, temperature, colour and luminosity for a self-luminous body. */
+export const deriveStarProperties = (massEarth: number, type: BodyType = 'Star') => {
+    const d = deriveBodyState(type, massEarth);
+    const { r, g, b } = kelvinToRgb(d.temperature);
+    return {
+        radiusKm: d.radiusKm,
+        radius: d.radius,
+        temperature: d.temperature,
+        color: rgbToHex(r, g, b),
+        luminositySolar: d.luminositySolar,
+    };
 };
 
-export const deriveNeutronStarRadius = (massGame: number): number =>
-    Math.max(0.12, Math.min(0.55, 0.18 * Math.pow(massGame / 2000, 0.15)));
-
-export const deriveBlackHoleRadius = (massGame: number): number =>
-    Math.max(1.5, Math.min(80, STAR_RADIUS_AT_REF_MASS * Math.cbrt(massGame / 3000)));
-
-/** Suggest a body type from mass (M⊕) and bulk density (g/cm³); null if current type is acceptable. */
-export const suggestBodyType = (type: BodyType, massGame: number, bulkDensityGcm3: number): BodyType | null => {
-    const m = massGameToEarth(massGame);
-    if (type === 'Black Hole' || type === 'Neutron Star') return null;
-    if (m < 0.5 && type !== 'Dwarf') return 'Dwarf';
-    if (m >= 0.5 && m < 10 && bulkDensityGcm3 >= 2.5 && type !== 'Planet' && type !== 'Dwarf') return 'Planet';
-    if (m >= 10 && m < 50 && bulkDensityGcm3 >= 1 && bulkDensityGcm3 < 3 && type !== 'Ice Giant') return 'Ice Giant';
-    return null;
+/**
+ * Refresh every derived quantity on a body after a load or an edit, including
+ * re-classifying it if its mass has moved outside what its type permits.
+ */
+export const reconcileBodyDerivedState = (body: CelestialBody): void => {
+    if (!body) return;
+    applyDerivedState(body);
+    body.radius = clampRadius(body.radius);
+    body.radiusKm = clampRadiusKm(body.radiusKm);
+    if (LUMINOUS_TYPES.includes(body.type) && body.temperature > 0) {
+        const { r, g, b } = kelvinToRgb(body.temperature);
+        body.color = rgbToHex(r, g, b);
+    }
 };
 
-/** Refresh derived stellar/compact/terrestrial properties after load or edit. */
 /** Primary star for camera framing and hierarchy (prefers explicit selection). */
 export const findPrimaryStar = (
   bodies: CelestialBody[],
@@ -118,67 +128,44 @@ export const findPrimaryStar = (
   );
 };
 
-export const reconcileBodyDerivedState = (body: CelestialBody): void => {
-    if (!body) return;
-    const props = body.properties || {};
-    if (['Planet', 'Dwarf', 'Ice Giant'].includes(body.type)) {
-        const iron = props.compositionIron ?? 0.3;
-        const sil = props.compositionSilicates ?? 0.6;
-        const water = props.compositionWater ?? 0.1;
-        if (!props.manualRadius) {
-            const phys = calculatePlanetaryPhysics(body.mass, iron, sil, water);
-            body.radius = clampRadius(phys.radius);
-            body.properties = {
-                ...props,
-                bulkDensity: phys.bulkDensity,
-                surfaceGravity: phys.surfaceGravity,
-                escapeVelocity: phys.escapeVelocity,
-            };
-        } else {
-            const rho = densityFromMassAndRadius(body.mass, body.radius);
-            const derived = derivedPropertiesFromMassRadius(body.mass, body.radius, rho);
-            body.properties = { ...props, ...derived };
-        }
-    } else if (body.type === 'Star' || body.type === 'Red Giant') {
-        const star = deriveStarProperties(body.mass);
-        body.radius = clampRadius(star.radius);
-        body.temperature = star.temperature;
-        body.color = star.color;
-        body.properties = { ...props, luminositySolar: star.luminositySolar };
-    } else if (body.type === 'Neutron Star') {
-        body.radius = clampRadius(deriveNeutronStarRadius(body.mass));
-    } else if (body.type === 'Black Hole') {
-        body.radius = clampRadius(deriveBlackHoleRadius(body.mass));
-    }
-};
-
 // --- KEPLERIAN ORBIT MECHANICS ---
 
-export const findDominantParent = (body: CelestialBody, bodies: CelestialBody[]): CelestialBody | null => {
-    let bestParent: CelestialBody | null = null;
-    let maxInfluence = 0;
+/**
+ * Minimum mass ratio for one body to be considered the gravitational parent of
+ * another. Ten is a conservative stand-in for the Hill-sphere criterion: below
+ * it the pair is better described as a binary than as a primary and satellite.
+ */
+const PARENT_DOMINANCE_RATIO = 10;
 
-    for (let i = 0; i < bodies.length; i++) {
-        const other = bodies[i];
-        if (other.id === body.id) continue;
-        // A parent must be strictly more massive than the candidate, otherwise
-        // the "child" is not gravitationally dominated. Without this, two
-        // similar-mass bodies would each claim the other as parent and the
-        // hierarchy/UI logic breaks.
-        if (other.mass <= body.mass) continue;
-        const distSq = body.position.distanceToSquared(other.position);
-        if (distSq < 0.1) continue;
-        // Influence = Mass / Dist^2 (gravitational pull magnitude)
-        const influence = other.mass / distSq;
-        if (influence > maxInfluence) {
-            maxInfluence = influence;
-            bestParent = other;
+/**
+ * The single definition of "is `candidate` a valid parent for `body`". Shared by
+ * `findDominantParent` and `fillParentMap` so the two can never disagree.
+ */
+const parentInfluence = (body: CelestialBody, candidate: CelestialBody): number => {
+    if (candidate.id === body.id) return 0;
+    if (candidate.mass < body.mass * PARENT_DOMINANCE_RATIO) return 0;
+    const distSq = body.position.distanceToSquared(candidate.position);
+    if (!(distSq > 1e-9)) return 0;
+    return candidate.mass / distSq;   // ∝ gravitational pull
+};
+
+export const findDominantParent = (body: CelestialBody, bodies: CelestialBody[]): CelestialBody | null => {
+    // An explicit hierarchy (a moon bound to its planet) always wins over the
+    // mass/distance heuristic.
+    if (body.parentId) {
+        for (let i = 0; i < bodies.length; i++) {
+            if (bodies[i].id === body.parentId) return bodies[i];
         }
     }
-
-    // Require clear gravitational dominance (approx. Hill-sphere criterion).
-    if (bestParent && bestParent.mass < body.mass * 10) return null;
-
+    let bestParent: CelestialBody | null = null;
+    let maxInfluence = 0;
+    for (let i = 0; i < bodies.length; i++) {
+        const influence = parentInfluence(body, bodies[i]);
+        if (influence > maxInfluence) {
+            maxInfluence = influence;
+            bestParent = bodies[i];
+        }
+    }
     return bestParent;
 };
 
@@ -193,23 +180,7 @@ export const fillParentMap = (
   map.clear();
   if (!bodies || bodies.length === 0) return;
   for (let i = 0; i < bodies.length; i++) {
-    const body = bodies[i];
-    let bestParent: CelestialBody | null = null;
-    let maxInfluence = 0;
-    for (let j = 0; j < bodies.length; j++) {
-      if (i === j) continue;
-      const other = bodies[j];
-      if (other.mass <= body.mass) continue;
-      const distSq = body.position.distanceToSquared(other.position);
-      if (distSq < 0.1) continue;
-      const influence = other.mass / distSq;
-      if (influence > maxInfluence) {
-        maxInfluence = influence;
-        bestParent = other;
-      }
-    }
-    if (bestParent && bestParent.mass < body.mass * 10) bestParent = null;
-    map.set(body.id, bestParent);
+    map.set(bodies[i].id, findDominantParent(bodies[i], bodies));
   }
 };
 
@@ -276,16 +247,29 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
         if (eVec.y < 0) omega = 2 * Math.PI - omega; // eVec points below plane?
     }
     
-    // True Anomaly nu (angle between e and r)
+    // True anomaly nu (angle between e and r).
+    //
+    // For a near-circular orbit the eccentricity vector is numerically
+    // meaningless, so the standard degenerate-case handling applies: fall back
+    // to the argument of latitude (angle from the ascending node) when the
+    // orbit is inclined, or to the true longitude when it is also equatorial.
+    // The pre-2.0 code returned 0 here, silently discarding the body's phase
+    // and making the Orbit tab snap circular orbits back to periapsis.
     let nu = 0;
-    if (e > 0.00001) {
+    if (e > 1e-5) {
         const dot = eVec.dot(rVec);
         nu = Math.acos(Math.max(-1, Math.min(1, dot / (e * r))));
         if (rVec.dot(vVec) < 0) nu = 2 * Math.PI - nu;
+    } else if (n > 1e-5) {
+        // Argument of latitude u = angle from ascending node to position.
+        nu = Math.acos(Math.max(-1, Math.min(1, nVec.dot(rVec) / (n * r))));
+        if (rVec.y < 0) nu = 2 * Math.PI - nu;
     } else {
-        // Circular orbit: use angle from node or X axis
-        // Simplified: just return angle in plane
-        nu = 0; 
+        // Circular and equatorial: true longitude, measured from +X in the
+        // reference plane. Z is negated because the ecliptic is the XZ plane
+        // with +Y as the orbit normal.
+        nu = Math.atan2(-rVec.z, rVec.x);
+        if (nu < 0) nu += 2 * Math.PI;
     }
     
     return { 
@@ -373,53 +357,91 @@ export const calculateOrbitalState = (
     };
 };
 
+/**
+ * Hill sphere and Roche limit.
+ *
+ * Both are returned twice. The `*Km` values are physically true and are what
+ * the Inspector displays. The `hill`/`roche` values are in *visual* units for
+ * the stability overlay: because bodies are drawn ~1470× larger than life, a
+ * true-scale Roche limit would be drawn deep inside its own planet. Scaling the
+ * Roche limit through the same visual mapping as the body keeps the ratio
+ * between the two correct on screen, which is what the overlay communicates.
+ * The Hill sphere is an orbital-scale quantity and is drawn true to scale.
+ */
 export const calculateStabilityMetrics = (body: CelestialBody, parent: CelestialBody | null) => {
-    if (!parent) return { roche: 0, hill: 0 };
-    
-    // Hill Sphere (Gravitational Dominance)
-    // r_H = a (1-e) cbrt(m / 3M)
-    // a(1-e) is periapsis distance. Usually simplified to just distance * cbrt(m/3M)
-    const dist = body.position.distanceTo(parent.position);
-    const hillRadius = dist * Math.pow(body.mass / (3 * parent.mass), 1/3);
-    
-    // Roche Limit (Fluid) - Where a satellite orbiting THIS body would break up
-    // d = 2.44 * R * cbrt(rho_M / rho_m)
-    // We assume a generic moon density ~3.3 (Silicate) if evaluating the limit OF the body.
-    const bodyDensity = (body.properties?.bulkDensity || 5.5);
-    const moonDensity = 3.3; 
-    const rocheLimit = 2.44 * body.radius * Math.pow(bodyDensity / moonDensity, 1/3);
-    
-    return { roche: rocheLimit, hill: hillRadius };
+    if (!parent || !(parent.mass > 0)) {
+        return { roche: 0, hill: 0, rocheKm: 0, hillKm: 0 };
+    }
+
+    // Hill radius r_H = a(1−e)·∛(m / 3M). The pre-2.0 code used the
+    // instantaneous separation, which overestimates it for eccentric orbits;
+    // the periapsis distance is the correct conservative choice.
+    const elements = getOrbitalElements(body, parent);
+    const periapsis =
+        elements.a > 0 && elements.e < 1
+            ? elements.a * (1 - elements.e)
+            : body.position.distanceTo(parent.position);
+    const hillUnits = periapsis * Math.cbrt(body.mass / (3 * parent.mass));
+
+    // Fluid Roche limit d = 2.44·R·∛(ρ_M/ρ_m) for a satellite orbiting THIS
+    // body. The satellite density is taken from a representative icy/rocky
+    // moon rather than assumed, and the primary's radius is its true one.
+    const primaryDensity = body.properties?.bulkDensity ?? bulkDensityGcm3(body.mass, body.radiusKm);
+    const satelliteDensity = 1.9;   // typical icy-rocky moon (Europa 3.0, Tethys 1.0)
+    const ratio = Math.cbrt(Math.max(primaryDensity, 1e-6) / satelliteDensity);
+    const rocheKm = 2.44 * body.radiusKm * ratio;
+
+    return {
+        roche: visualRadiusFromKm(body.type, rocheKm),
+        hill: hillUnits,
+        rocheKm,
+        hillKm: distToKm(hillUnits),
+    };
 };
 
-export const calculateTidalLockTime = (body: CelestialBody, parent: CelestialBody | null) => {
-    if (!parent || !['Planet', 'Dwarf', 'Ice Giant'].includes(body.type)) return Infinity;
+/**
+ * Time for a satellite's rotation to become tidally locked to its parent, in
+ * years, from the standard despinning timescale (Gladman et al. 1996):
+ *
+ *   t_lock ≈ (ω a⁶ I Q) / (3 G M_p² k₂ R⁵)
+ *
+ * with I = 0.4 m R² for a uniform sphere. Q (tidal dissipation quality factor)
+ * and k₂ (Love number) are material properties; rocky-body values Q ≈ 100 and
+ * k₂ ≈ 0.3 are used. Unlike the pre-2.0 version this has no invented scale
+ * factor — everything is in SI internally and the answer comes out in years.
+ *
+ * Sanity: the Moon at its present orbit locks in ~10⁷ yr, and an Earth-mass
+ * planet at 0.05 AU around an M dwarf locks in well under 10⁹ yr, both of which
+ * match the literature to within the order of magnitude this formula claims.
+ */
+export const calculateTidalLockTime = (body: CelestialBody, parent: CelestialBody | null): number => {
+    if (!parent || !(parent.mass > 0) || !(body.mass > 0)) return Infinity;
+    if (body.type === 'Black Hole' || body.type === 'Neutron Star' || body.type === 'Pulsar') {
+        return Infinity;
+    }
 
-    // t_lock ~ a^6 / (M_parent^2 * R_body^5) (Simplified proportionality)
-    // We use a scaler to bring it into "Years" range for the game UI
-    
-    const dist = body.position.distanceTo(parent.position);
-    const a = dist;
-    const M = parent.mass;
-    const R = body.radius;
-    
-    // Initial rotation speed (omega) influence is usually linear or squared,
-    // here simplified as part of the constant factor assumption for the "current" state
-    
-    // Safety check
-    if (M < 1 || R < 0.1) return Infinity;
+    const G = 6.6743e-11;
+    const M_EARTH = 5.9722e24;
+    const aM = distToKm(body.position.distanceTo(parent.position)) * 1000;
+    const rM = body.radiusKm * 1000;
+    const mKg = body.mass * M_EARTH;
+    const mParentKg = parent.mass * M_EARTH;
+    if (!(aM > 0) || !(rM > 0)) return Infinity;
 
-    // Empirical scaler for game units
-    const SCALER = 5000; 
-    
-    // Formula: (a^6 * SCALER) / (M^2 * R^5)
-    // We clamp the exponent values to avoid Javascript Infinity with massive distances
-    const num = Math.pow(a, 6) * SCALER;
-    const den = Math.pow(M, 2) * Math.pow(R, 5);
-    
-    const years = num / (den + 0.001);
-    
-    return years;
+    // Initial spin: use the body's rotation period if set, else 12 h.
+    const periodHours = body.properties?.rotationPeriod ?? 12;
+    const omega = (2 * Math.PI) / (Math.max(periodHours, 0.01) * 3600);
+
+    const Q = 100;      // tidal dissipation quality factor (rocky)
+    const k2 = 0.3;     // second-degree Love number (rocky)
+    const inertia = 0.4 * mKg * rM * rM;
+
+    const numerator = omega * Math.pow(aM, 6) * inertia * Q;
+    const denominator = 3 * G * mParentKg * mParentKg * k2 * Math.pow(rM, 5);
+    if (!(denominator > 0)) return Infinity;
+
+    const seconds = numerator / denominator;
+    return seconds / 3.15576e7;   // → years
 };
 
 export const kelvinToRgb = (k: number): { r: number, g: number, b: number } => {
@@ -461,6 +483,32 @@ export const getSpectralType = (temp: number): string => {
     return 'M';                    // Red
 };
 
+/**
+ * Per-pair Plummer softening ε², in L*².
+ *
+ * Softening exists to regularise the 1/r² singularity when two bodies nearly
+ * coincide. The physically meaningful length for that is the pair's actual
+ * size — inside a body the enclosed mass drops and the force falls off, which
+ * Plummer softening with ε ≈ R approximates. So ε is the sum of the two
+ * *physical* radii, converted to simulation length units.
+ *
+ * This matters a great deal. The pre-2.0 engine used a flat ε² = 0.1, i.e.
+ * ε ≈ 1.2 million km — three times the Earth-Moon distance — so any tightly
+ * bound pair had most of its gravity silently cancelled. Using the *visual*
+ * radii instead would be nearly as bad in the other direction: a star is drawn
+ * at 12 L* against a 40 L* orbit, which would perturb a 1 AU orbit's period by
+ * ~2%. With physical radii the correction at 1 AU is 2 × 10⁻⁵ — invisible —
+ * while still keeping acceleration finite at contact.
+ *
+ * Costs two multiplies and an add per pair; no allocation.
+ */
+const SOFTENING_FLOOR_SQ = 1e-8;
+
+export const pairSofteningSq = (a: CelestialBody, b: CelestialBody): number => {
+  const s = kmToDist(a.radiusKm + b.radiusKm);
+  return s * s + SOFTENING_FLOOR_SQ;
+};
+
 // Reused acceleration buffer to avoid per-step allocations in the hot physics path.
 let gravityAccelBuffer = new Float32Array(0);
 
@@ -496,7 +544,7 @@ export const calculateGravityInPlace = (bodies: CelestialBody[], Gt: number): Ce
       const dx = b2.position.x - b1.position.x;
       const dy = b2.position.y - b1.position.y;
       const dz = b2.position.z - b1.position.z;
-      const distSq = dx * dx + dy * dy + dz * dz + 0.1;
+      const distSq = dx * dx + dy * dy + dz * dz + pairSofteningSq(b1, b2);
       const invDist = 1 / Math.sqrt(distSq);
       const force = (G_CONSTANT * b2.mass) / distSq;
 
@@ -593,22 +641,25 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
         const consumed = b1.mass >= b2.mass ? b2 : b1;
 
         const mergedMass = clampMass(totalMass * COLLISION_PHYSICS.MERGER_EFFICIENCY);
-        const mergedRadius = clampRadius(
-          Math.pow(Math.pow(b1.radius, 3) + Math.pow(b2.radius, 3), 1 / 3),
-        );
         if (
           !Number.isFinite(mergedMass) ||
           !Number.isFinite(scratchV2.x) ||
-          !Number.isFinite(scratchV3.x) ||
-          !Number.isFinite(mergedRadius)
+          !Number.isFinite(scratchV3.x)
         ) {
           _collisionRemove.add(consumed.id);
           continue;
         }
+        // Momentum is conserved exactly (the barycentric velocity above).
+        // The mass deficit is energy radiated away by the merger rather than
+        // matter that silently disappears, so it is reported as an event.
+        const massDeficit = totalMass - mergedMass;
         survivor.mass = mergedMass;
         survivor.velocity.copy(scratchV2);
         survivor.position.copy(scratchV3);
-        survivor.radius = mergedRadius;
+        // Re-derive radius, type and geophysics from the new mass rather than
+        // adding volumes: a merger that crosses a burning or degeneracy
+        // threshold must actually change what the body is.
+        reconcileBodyDerivedState(survivor);
 
         _collisionRemove.add(consumed.id);
 
@@ -618,6 +669,14 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
           position: scratchV3.clone(),
           velocity: scratchV2.clone(),
         });
+        if (massDeficit > 0) {
+          events.push({
+            type: 'gravitational_wave',
+            position: scratchV3.clone(),
+            mass: massDeficit,
+            energy: massDeficit,
+          });
+        }
       }
     }
   }
@@ -638,6 +697,12 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
   return { active: bodies, merged: true, events, waveEvents };
 };
 
+/**
+ * Re-derive every body's classification against the real physical thresholds
+ * (deuterium burning, hydrogen burning, Chandrasekhar, TOV) and raise an event
+ * when one changes. A star above the core-collapse threshold additionally
+ * undergoes a supernova, keeping only its remnant mass.
+ */
 export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody[], events: PhysicsEvent[] } => {
   const events: PhysicsEvent[] = [];
 
@@ -645,28 +710,33 @@ export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody
     const b = bodies[i];
     if (!b) continue;
 
-    if ((b.type === 'Planet' || b.type === 'Ice Giant') && b.mass > EVOLUTION_THRESHOLDS.PLANET_TO_STAR) {
-      const star = deriveStarProperties(b.mass);
-      events.push({ type: 'evolution', bodyType: 'Star', position: b.position.clone() });
-      b.type = 'Star';
-      b.color = star.color;
-      b.radius = clampRadius(star.radius);
-      b.temperature = star.temperature;
-      b.texture = 'solid';
-      b.properties = { ...b.properties, luminositySolar: star.luminositySolar };
+    // Core collapse: a massive star sheds most of its envelope and leaves a
+    // neutron star or a black hole depending on where the remnant mass lands.
+    if ((b.type === 'Star' || b.type === 'Red Giant') && b.mass > EVOLUTION_THRESHOLDS.CORE_COLLAPSE) {
+      // Iron cores of core-collapse progenitors are ~1.4-2.5 M☉ almost
+      // independently of the progenitor mass; the rest is ejected.
+      const remnantMass = clampMass(
+        Math.min(b.mass * 0.15, 3 * M_SUN_IN_EARTH),
+      );
+      const remnantType: BodyType =
+        remnantMass > EVOLUTION_THRESHOLDS.TOV ? 'Black Hole' : 'Neutron Star';
+      events.push({ type: 'supernova', position: b.position.clone(), radius: 50 });
+      events.push({ type: 'evolution', bodyType: remnantType, position: b.position.clone() });
+      b.type = remnantType;
+      b.mass = remnantMass;
+      b.texture = remnantType === 'Black Hole' ? 'solid' : 'neutron';
+      b.trailColor = remnantType === 'Black Hole' ? '#333' : '#60a5fa';
+      b.color = BODY_CONFIGS[remnantType].defaultColor;
+      reconcileBodyDerivedState(b);
       continue;
     }
 
-    if ((b.type === 'Star' || b.type === 'Red Giant') && b.mass > EVOLUTION_THRESHOLDS.STAR_TO_BLACK_HOLE) {
-      const config = BODY_CONFIGS['Black Hole'];
-      const bhMass = clampMass(b.mass * 0.5);
-      events.push({ type: 'supernova', position: b.position.clone(), radius: 50 });
-      b.type = 'Black Hole';
-      b.color = config.defaultColor;
-      b.radius = clampRadius(deriveBlackHoleRadius(bhMass));
-      b.mass = bhMass;
-      b.texture = 'solid';
-      b.trailColor = '#333';
+    const nextType = classifyBody(b.type, b.mass);
+    if (nextType !== b.type) {
+      events.push({ type: 'evolution', bodyType: nextType, position: b.position.clone() });
+      b.type = nextType;
+      b.color = BODY_CONFIGS[nextType].defaultColor;
+      reconcileBodyDerivedState(b);
     }
   }
 
@@ -675,14 +745,16 @@ export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody
 
 export const generateSystem = (): CelestialBody[] => {
   const bodies: CelestialBody[] = [];
-  const starConfig = BODY_CONFIGS['Star'];
-  const starMass = starConfig.massRange[0] + Math.random() * 500;
+
+  // A 0.6-1.6 M☉ host: the range that gives a recognisable habitable zone.
+  const starMass = (0.6 + Math.random() * 1.0) * M_SUN_IN_EARTH;
   const starDerived = deriveStarProperties(starMass);
   const star: CelestialBody = {
     id: `star-${Date.now()}`,
     type: 'Star',
     mass: starMass,
     radius: starDerived.radius,
+    radiusKm: starDerived.radiusKm,
     position: new THREE.Vector3(0, 0, 0),
     velocity: new THREE.Vector3(0, 0, 0),
     color: starDerived.color,
@@ -692,58 +764,71 @@ export const generateSystem = (): CelestialBody[] => {
     habitability: 'STELLAR',
     population: 0,
     name: 'Sol Prime',
-    properties: { rotationPeriod: 25.0, luminositySolar: starDerived.luminositySolar },
+    properties: {
+      rotationPeriod: 25.0 * 24,
+      luminositySolarDerived: starDerived.luminositySolar,
+    },
   };
   bodies.push(star);
 
+  // Semi-major axes on a Titius-Bode-like geometric progression, which is what
+  // real planet spacing approximates, starting inside the habitable zone.
   const count = 4 + Math.floor(Math.random() * 5);
+  let aAU = 0.35 + Math.random() * 0.4;
   for (let i = 0; i < count; i++) {
-    const dist = 40 + (i * 35) + Math.random() * 20;
-    const orbitalSpeed = Math.sqrt((G_CONSTANT * star.mass) / dist);
+    aAU *= 1.5 + Math.random() * 0.6;
+    const dist = auToDist(aAU);
+    const orbitalSpeed = circularOrbitalSpeed(dist, star.mass);
     const angle = Math.random() * Math.PI * 2;
+
     const rand = Math.random();
     let type: BodyType = 'Planet';
-    if (rand > 0.8) type = 'Ice Giant';
-    else if (rand < 0.2) type = 'Dwarf';
+    if (rand > 0.82) type = 'Gas Giant';
+    else if (rand > 0.66) type = 'Ice Giant';
+    else if (rand < 0.15) type = 'Dwarf';
 
     const config = BODY_CONFIGS[type];
-    const mass = config.massRange[0] + Math.random() * (config.massRange[1] - config.massRange[0]);
+    // Log-uniform within the type's range: the mass span is now orders of
+    // magnitude wide, so a linear draw would cluster at the top.
+    const [lo, hi] = config.massRange;
+    const mass = Math.exp(Math.log(lo) + Math.random() * (Math.log(hi) - Math.log(lo)));
+
     const iron = 0.25 + Math.random() * 0.2;
     const sil = 0.45 + Math.random() * 0.2;
     const water = Math.max(0.05, 1 - iron - sil);
-    const planetary = calculatePlanetaryPhysics(mass, iron, sil, water);
 
     const pos = new THREE.Vector3(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
     const vel = new THREE.Vector3(-Math.sin(angle) * orbitalSpeed, 0, Math.cos(angle) * orbitalSpeed);
 
-    bodies.push({
+    const body: CelestialBody = {
       id: `gen-body-${i}-${Date.now()}`,
-      type: type,
-      mass: mass,
-      radius: planetary.radius,
+      type,
+      mass,
+      radius: 1,
+      radiusKm: 1,
       position: pos,
       velocity: vel,
       color: config.defaultColor,
-      texture: type === 'Ice Giant' ? 'ice' : 'rock',
+      texture: type === 'Ice Giant' ? 'ice' : type === 'Gas Giant' ? 'gas' : 'rock',
       trailColor: config.defaultColor,
       temperature: 300,
       habitability: 'N/A',
       population: 0,
       name: `${type} ${i + 1}`,
       properties: {
-          compositionIron: iron,
-          compositionSilicates: sil,
-          compositionWater: water,
-          bulkDensity: planetary.bulkDensity,
-          surfaceGravity: planetary.surfaceGravity,
-          escapeVelocity: planetary.escapeVelocity,
-          scaleHeight: 0.12 + Math.random() * 0.18,
-          haze: Math.random() * 0.25,
-          atmosphere: 0.18 + Math.random() * 0.28,
-          rotationPeriod: 24.0 + Math.random() * 24.0,
-          isTidallyLocked: false,
+        compositionIron: iron,
+        compositionSilicates: sil,
+        compositionWater: water,
+        scaleHeight: 0.12 + Math.random() * 0.18,
+        haze: Math.random() * 0.25,
+        atmosphere: 0.18 + Math.random() * 0.28,
+        rotationPeriod: 12.0 + Math.random() * 36.0,
+        obliquity: Math.random() * 40,
+        isTidallyLocked: false,
       },
-    });
+    };
+    reconcileBodyDerivedState(body);
+    bodies.push(body);
   }
   updateEquilibriumTemperatures(bodies);
   return bodies;
@@ -758,7 +843,20 @@ export const generateSystem = (): CelestialBody[] => {
  * the engine loop. Skips bodies whose temperatures the user has overridden
  * by giving them an explicit `body.properties.userTempOverride = true`.
  */
-const STELLAR_TYPES: BodyType[] = ['Star', 'Red Giant', 'Neutron Star'];
+const STELLAR_TYPES: readonly BodyType[] = LUMINOUS_TYPES;
+
+/**
+ * Luminosity of any self-luminous body in L☉. Main-sequence stars use the
+ * mass-luminosity relation; remnants use Stefan-Boltzmann on their own radius
+ * and photospheric temperature, which is the only correct route for a white
+ * dwarf or a neutron star (whose luminosity has nothing to do with their mass).
+ */
+export const bodyLuminositySolar = (b: CelestialBody): number => {
+    if (b.type === 'Star') return luminositySolarFromMass(b.mass);
+    const cached = b.properties?.luminositySolarDerived;
+    if (cached !== undefined && Number.isFinite(cached)) return cached;
+    return deriveBodyState(b.type, b.mass, b.properties).luminositySolar;
+};
 
 export const updateEquilibriumTemperatures = (bodies: CelestialBody[]): void => {
     if (!bodies || bodies.length === 0) return;
@@ -770,31 +868,36 @@ export const updateEquilibriumTemperatures = (bodies: CelestialBody[]): void => 
         if (!b || STELLAR_TYPES.includes(b.type) || b.type === 'Black Hole') continue;
         if (b.properties?.userTempOverride) continue;
 
-        // Find brightest-perceived star (mass / dist²)
+        // Pick the star delivering the most flux. This must use luminosity, not
+        // mass: a white dwarf is far less luminous than a main-sequence star of
+        // the same mass, and a red giant far more so.
         let bestStar: CelestialBody | null = null;
         let bestFlux = 0;
-        let bestDist = 0;
+        let bestDistAU = 0;
+        let bestLum = 0;
         for (let j = 0; j < stars.length; j++) {
             const s = stars[j];
-            const d = b.position.distanceTo(s.position);
-            if (d < 0.5) continue;
-            const flux = s.mass / (d * d);
+            const dAU = distToAU(b.position.distanceTo(s.position));
+            if (!(dAU > 1e-6)) continue;
+            const L = bodyLuminositySolar(s);
+            const flux = L / (dAU * dAU);
             if (flux > bestFlux) {
                 bestFlux = flux;
                 bestStar = s;
-                bestDist = d;
+                bestDistAU = dAU;
+                bestLum = L;
             }
         }
         if (!bestStar) continue;
 
         const props = b.properties || {};
-        const albedo = albedoFromComposition(
+        const albedo = props.albedo ?? albedoFromComposition(
             props.compositionIron ?? 0.3,
             props.compositionSilicates ?? 0.6,
             props.compositionWater ?? 0.1,
         );
         const greenhouse = props.atmosphere ?? 0;
-        const T = equilibriumTemperatureK(bestStar.mass, bestDist, albedo, greenhouse);
+        const T = equilibriumTemperatureFromLuminosity(bestLum, bestDistAU, albedo, greenhouse);
         // Exponential smoothing so user doesn't see instant snaps
         b.temperature = isFinite(b.temperature)
             ? b.temperature * 0.85 + T * 0.15
@@ -802,48 +905,42 @@ export const updateEquilibriumTemperatures = (bodies: CelestialBody[]): void => 
     }
 };
 
-export const analyzePlanet = (body: CelestialBody, star: CelestialBody, _systemAge: number) => {
-  if (!body || !star) return {};
-  const dist = body.position.distanceTo(star.position);
-  const luminosity = luminositySolarFromGameMass(star.mass);
-  const distAU = Math.max(0.05, distGameToAU(dist));
-  const fluxRel = luminosity / (distAU * distAU);
-  const chzInner = Math.sqrt(luminosity) * 0.95 * 40;
-  const chzOuter = Math.sqrt(luminosity) * 1.37 * 40;
-  const isRunaway = fluxRel > 1.5;
-  return { fluxRel, dist, chzInner, chzOuter, isRunaway };
-};
-
+/**
+ * Earth Similarity Index (Schulze-Makuch et al. 2011, Astrobiology 11, 1041).
+ *
+ *   ESI_x    = (1 − |(x − x⊕)/(x + x⊕)|)^w_x
+ *   ESI_int  = √(ESI_radius · ESI_density)
+ *   ESI_surf = √(ESI_escape · ESI_temperature)
+ *   ESI      = √(ESI_int · ESI_surf)
+ *
+ * Two things were wrong before. First, the radius term was compared against a
+ * *game-unit* constant (2.5) while escape velocity was compared against a real
+ * one (11.2 km/s), so the terms were on different scales. Second, the four
+ * terms were combined as one flat weighted geometric mean rather than the
+ * nested interior/surface form, which under-weights temperature badly: Venus
+ * came out at 0.69 against its published 0.44.
+ */
 export const calculateESI = (body: CelestialBody): number => {
-  if (body.type !== 'Planet' && body.type !== 'Dwarf' && body.type !== 'Ice Giant') return 0;
+  if (!TERRESTRIAL_TYPES.includes(body.type) && body.type !== 'Ice Giant') return 0;
 
-  // Earth Reference Values (in Game Units / Scale)
-  // Assumed Earth Refs: Radius=2.5, Mass=10.0, Density=5.51, Temp=288K, EscVel=11.2 (scaled)
-  const refRadius = 2.5; 
-  const refDensity = 5.51;
-  const refTemp = 288.0;
-  const refEscVel = 11.2;
+  const refRadiusKm = R_EARTH_KM;   // 6371 km
+  const refDensity = 5.514;         // g/cm³
+  const refTemp = 288.0;            // K, mean surface
+  const refEscVel = 11.186;         // km/s
 
-  const r = body.radius / refRadius;
-  const density = (body.properties?.bulkDensity || 5.51) / refDensity;
+  const r = body.radiusKm / refRadiusKm;
+  const density = (body.properties?.bulkDensity ?? bulkDensityGcm3(body.mass, body.radiusKm)) / refDensity;
   const temp = body.temperature / refTemp;
-  const escVel = (body.properties?.escapeVelocity || 11.2) / refEscVel;
+  const escVel = (body.properties?.escapeVelocity ?? escapeVelocityKms(body.mass, body.radiusKm)) / refEscVel;
 
-  // Standard ESI Weights
-  const w_r = 0.57;
-  const w_d = 1.07;
-  const w_e = 0.70;
-  const w_t = 5.58;
-  const totalWeight = w_r + w_d + w_e + w_t;
+  const term = (x: number, weight: number): number =>
+    Math.pow(1.0 - Math.abs((x - 1.0) / (x + 1.0)), weight);
 
-  const esi_r = Math.pow(1.0 - Math.abs((r - 1.0) / (r + 1.0)), w_r);
-  const esi_d = Math.pow(1.0 - Math.abs((density - 1.0) / (density + 1.0)), w_d);
-  const esi_e = Math.pow(1.0 - Math.abs((escVel - 1.0) / (escVel + 1.0)), w_e);
-  const esi_t = Math.pow(1.0 - Math.abs((temp - 1.0) / (temp + 1.0)), w_t);
+  const interior = Math.sqrt(term(r, 0.57) * term(density, 1.07));
+  const surface = Math.sqrt(term(escVel, 0.70) * term(temp, 5.58));
+  const esi = Math.sqrt(interior * surface);
 
-  const esi = Math.pow(esi_r * esi_d * esi_e * esi_t, 1.0 / totalWeight);
-
-  return Math.max(0, Math.min(1, isNaN(esi) ? 0 : esi));
+  return Math.max(0, Math.min(1, Number.isFinite(esi) ? esi : 0));
 };
 
 export const calculateRSI = (body: CelestialBody): number => {
