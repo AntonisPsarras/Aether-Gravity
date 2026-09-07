@@ -91,7 +91,8 @@ export const BODY_CONFIGS: Record<BodyType, BodyTypeConfig> = {
     creatable: true,
   },
   'Moon': {
-    massRange: [1e-6, 0.05],
+    // Phobos is 1.8 × 10⁻⁹ M⊕ at the small end; Ganymede 0.025 M⊕ at the large.
+    massRange: [1e-10, 0.05],
     defaultColor: '#c8c8c8',
     description: 'Natural satellite bound to a planet.',
     visualType: 'rocky',

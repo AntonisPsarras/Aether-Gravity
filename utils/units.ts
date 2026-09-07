@@ -111,11 +111,24 @@ export const kmSToVelocity = (kms: number) => kms / VELOCITY_UNIT_KM_S;
 // Visual radius mapping (rendering only — never feed back into physics)
 // ---------------------------------------------------------------------------
 
+/** Earth draws at 2.5 L*, the anchor inherited from the legacy scale. */
+const EARTH_VISUAL_RADIUS = 2.5;
+
 /**
- * km of true radius per 1 L* of drawn radius, for solid bodies.
- * Calibrated so Earth (6371 km) draws at 2.5 L*, matching the legacy scale.
+ * Compression exponent for solid bodies: drawn radius ∝ (true radius)^0.5.
+ *
+ * A purely linear map cannot work. Stars must be drawn small enough to fit
+ * inside their innermost orbit (the Sun at 12 L* against Mercury's 15.5), which
+ * forces stars to be ~23× more compressed than planets — and that in turn would
+ * draw Jupiter at 27 L*, more than twice the size of the Sun it orbits. Square
+ * roots restore the ordering: Earth 2.5, Neptune 4.9, Jupiter 8.3, Sun 12.
+ *
+ * The cost is that relative sizes between solid bodies are compressed too
+ * (Jupiter reads as 3.3× Earth rather than 11×). That is the same class of
+ * deliberate concession as the star compression, and the Inspector always
+ * reports the true radius in km.
  */
-const SOLID_KM_PER_VISUAL_UNIT = R_EARTH_KM / 2.5;   // 2548.4
+const SOLID_RADIUS_EXPONENT = 0.5;
 
 /** A 1 R☉ star draws at 12 L* — stars are compressed ~23× relative to planets. */
 const STAR_VISUAL_AT_ONE_SOLAR_RADIUS = 12;
@@ -147,7 +160,11 @@ export const visualRadiusFromKm = (type: BodyType, radiusKm: number): number => 
       // 2.0 + 1.6·ln(r/3 km): ~5.7 for a 10 M☉ horizon, ~26 for Sgr A*.
       return clampRange(2.0 + 1.6 * Math.log(Math.max(km, 3) / 3), 1.5, 80);
     default:
-      return clampRange(km / SOLID_KM_PER_VISUAL_UNIT, 0.05, 200);
+      return clampRange(
+        EARTH_VISUAL_RADIUS * Math.pow(km / R_EARTH_KM, SOLID_RADIUS_EXPONENT),
+        0.05,
+        60,
+      );
   }
 };
 

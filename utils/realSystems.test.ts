@@ -17,6 +17,7 @@ import { checkCollisions, getOrbitalElements } from './physicsUtils';
 import { verletStepInPlace, resetVerletCache } from './physicsSoA';
 import { calculateHabitableZone } from './HabitabilityService';
 import { bulkDensityGcm3, surfaceGravitySi } from './units';
+import { classifyBody } from './bodyDerivation';
 
 const solar = () => buildRealSystem(getRealSystem('solar-system')!);
 const find = (bodies: ReturnType<typeof solar>, name: string) =>
@@ -141,6 +142,44 @@ describe('Solar System preset', () => {
     const nBody = bodies.filter((b) => !isSatellite(b));
     // 11 satellites cost O(1) each; only these go through the O(N^2) pair loop.
     expect(nBody.length).toBeLessThanOrEqual(12);
+  });
+
+  it('draws bodies in the right size order, and each star inside its innermost orbit', () => {
+    // The two radius scales (stars compressed ~23x more than solid bodies so a
+    // star fits inside its own planetary system) previously drew Jupiter more
+    // than twice the size of the Sun.
+    const bodies = solar();
+    const r = (name: string) => find(bodies, name).radius;
+
+    expect(r('Sun')).toBeGreaterThan(r('Jupiter'));
+    expect(r('Jupiter')).toBeGreaterThan(r('Saturn'));
+    expect(r('Saturn')).toBeGreaterThan(r('Neptune'));
+    expect(r('Neptune')).toBeGreaterThan(r('Earth'));
+    expect(r('Earth')).toBeGreaterThan(r('Mars'));
+    expect(r('Mars')).toBeGreaterThan(r('Moon'));
+    expect(r('Moon')).toBeGreaterThan(r('Phobos'));
+
+    // The Sun must be drawn smaller than Mercury's orbit or the inner system
+    // would be swallowed by its own star.
+    const mercuryOrbit = find(bodies, 'Mercury').position.length();
+    expect(r('Sun')).toBeLessThan(mercuryOrbit * 0.9);
+
+    // Nothing may be drawn so large that it overlaps its own orbit.
+    for (const b of bodies) {
+      if (isSatellite(b) || b.name === 'Sun') continue;
+      expect(b.radius, `${b.name} radius vs orbit`).toBeLessThan(b.position.length() * 0.5);
+    }
+  });
+
+  it('labels every moon as a Moon rather than reclassifying it', () => {
+    // Phobos is only 1.8e-9 Earth masses; the Moon type's mass range has to
+    // reach that far down or the classifier demotes it to an asteroid.
+    const moonNames = ['Moon', 'Io', 'Europa', 'Ganymede', 'Callisto', 'Titan',
+      'Enceladus', 'Titania', 'Triton', 'Charon', 'Phobos'];
+    const bodies = solar();
+    for (const name of moonNames) {
+      expect(classifyBody('Moon', find(bodies, name).mass), name).toBe('Moon');
+    }
   });
 
   it('has Triton on a retrograde orbit', () => {
