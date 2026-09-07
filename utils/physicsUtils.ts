@@ -454,7 +454,12 @@ export const calculateTidalLockTime = (body: CelestialBody, parent: CelestialBod
 };
 
 export const kelvinToRgb = (k: number): { r: number, g: number, b: number } => {
-    let temp = k / 100;
+    // Clamped to the range the Tanner Helland fit is defined over, matching the
+    // GLSL `blackbody` in components/Planet/PlanetShaders.ts exactly. Without
+    // this the two diverge outside 1000-40000 K — log(temp) goes negative below
+    // 1000 K and clamps green to 0 — so a star's pointLight would stop matching
+    // the colour of its own disc. utils/bodyAppearance.test.ts pins the match.
+    const temp = Math.max(1000, Math.min(40000, k)) / 100;
     let r, g, b;
 
     if (temp <= 66) {

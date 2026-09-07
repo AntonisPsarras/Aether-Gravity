@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree, extend, ThreeEvent } from '@react-three/fib
 import { OrbitControls, Stars, shaderMaterial, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialBody, BodyType, WaveEvent, PhysicsEvent } from '../types';
-import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState } from '../utils/physicsUtils';
+import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState, bodyLuminositySolar } from '../utils/physicsUtils';
 import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime } from '../utils/physicsSoA';
 import { propagateSatellites, promoteEscapedMoons, satelliteRenderPosition } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
@@ -23,6 +23,18 @@ import HabitableZoneVisual from './HabitableZoneVisual';
 import BlackHoleRig from './BlackHole/BlackHoleRig';
 import { BlackHoleLensCapture, useBlackHoleLensTexture } from './BlackHole/BlackHoleLensCapture';
 import { habitabilityToState } from '../utils/habitabilityState';
+import {
+  atmosphereTint,
+  bodySeed,
+  cloudCoverFor,
+  compositionOf,
+  nightLightsFor,
+  obliquityDegOf,
+  ringVisualFor,
+  surfaceVolatilesFor,
+  type RingVisual,
+} from '../utils/bodyAppearance';
+import { surfaceGravitySi } from '../utils/units';
 import DevPhysicsDiagnostics from './DevPhysicsDiagnostics';
 import TestMetricsCollector from './TestMetricsCollector';
 import { registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
@@ -79,7 +91,7 @@ const _slingshotQuat = new THREE.Quaternion();
 const _bhScaleVec = new THREE.Vector3(1, 1, 1);
 
 /** Shared material colors — avoid per-render `new THREE.Color()` in BodyMesh. */
-const _ATMOS_COLOR = new THREE.Color(0.45, 0.65, 1.0);
+const _WHITE = new THREE.Color(1, 1, 1);
 const _NEUTRON_COLOR = new THREE.Color(0.2, 0.5, 1.0);
 const _PULSAR_COLOR = new THREE.Color(0.5, 0, 1.0);
 
@@ -1109,6 +1121,16 @@ type PlanetSurfaceMat = THREE.ShaderMaterial & {
   uScaleHeight: number;
   uBoundingRadius: number;
   uPlanetRadius: number;
+  uCompIron: number;
+  uCompSilicate: number;
+  uCompWater: number;
+  uSeed: number;
+  uQuality: number;
+  uCloudCover: number;
+  uNightLights: number;
+  uRingShadow: number;
+  uRingInner: number;
+  uRingOuter: number;
   logarithmicDepthBuffer: boolean;
 };
 
@@ -1147,6 +1169,12 @@ function applyPlanetSurfaceUniforms(
     mass,
     planetState,
     northPole,
+    composition,
+    seed,
+    quality,
+    cloudCover,
+    nightLights,
+    ring,
   }: {
     color: string;
     textureKey: string;
@@ -1162,11 +1190,29 @@ function applyPlanetSurfaceUniforms(
     mass: number;
     planetState: number;
     northPole: THREE.Vector3;
+    composition: { iron: number; silicates: number; water: number };
+    seed: number;
+    quality: number;
+    cloudCover: number;
+    nightLights: number;
+    ring: RingVisual | null;
   }
 ) {
   mat.uColor1.set(color);
   mat.uColor2.set(color).multiplyScalar(0.5);
   mat.uType = TEXTURE_IDS[textureKey] || 0;
+  mat.uCompIron = composition.iron;
+  mat.uCompSilicate = composition.silicates;
+  mat.uCompWater = composition.water;
+  mat.uSeed = seed;
+  mat.uQuality = quality;
+  mat.uCloudCover = cloudCover;
+  mat.uNightLights = nightLights;
+  // Rings shadow the planet they orbit; the shader ray-casts against the ring
+  // plane using these edges, so a body without rings costs one compare.
+  mat.uRingShadow = ring ? Math.min(ring.opacity * 0.85, 0.8) : 0;
+  mat.uRingInner = ring ? ring.inner : 1.4;
+  mat.uRingOuter = ring ? ring.outer : 2.3;
   mat.uTectonics = tectonics;
   mat.uAtmosphere = atmosphereDensity;
   mat.uWaterLevel = waterLevel;
@@ -1250,6 +1296,8 @@ const BodyMesh = ({
   const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const atmosphereRef = useRef<THREE.Mesh>(null);
+  const cloudRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
   const jetsRef = useRef<THREE.Group>(null);
   const haloRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
@@ -1327,7 +1375,83 @@ const BodyMesh = ({
     () => atmosphereVisualParams(atmosphereDensity, props.haze ?? 0.15, props.scaleHeight ?? 0.2),
     [atmosphereDensity, props.haze, props.scaleHeight],
   );
-  const showAtmosphere = isPlanet && atmosphereVisual.density > 0.04;
+  // Lowered from 0.04: even a trace atmosphere should give a limb glow, which
+  // is most of what sells the silhouette of a small world.
+  const showAtmosphere = isPlanet && atmosphereVisual.density > 0.012;
+
+  // --- Physics primaries -> shader inputs -----------------------------------
+  const composition = useMemo(() => compositionOf(data), [
+    props.compositionIron,
+    props.compositionSilicates,
+    props.compositionWater,
+    data,
+  ]);
+  const seed = useMemo(() => bodySeed(data.id), [data.id]);
+  const shaderQuality = deviceTier === 'low' ? 0 : 1;
+
+  /**
+   * Surface water coverage. Falls back to zero rather than 0.5 when the body
+   * has no authored hydrosphere and no bulk water — otherwise Mercury and Venus
+   * inherit half an ocean from the old default.
+   */
+  const waterLevel = props.waterLevel ?? (composition.water > 0.01 ? 0.5 : 0);
+  const volatiles = useMemo(
+    () => surfaceVolatilesFor(waterLevel, composition.water),
+    [waterLevel, composition.water],
+  );
+  const cloudCover = useMemo(
+    () => (isPlanet ? cloudCoverFor(atmosphereDensity, volatiles, data.temperature) : 0),
+    [isPlanet, atmosphereDensity, volatiles, data.temperature],
+  );
+  const nightLights = useMemo(
+    () => nightLightsFor(data.population, data.habitability),
+    [data.population, data.habitability],
+  );
+  const ring = useMemo(() => ringVisualFor(data), [
+    props.ringOpacity,
+    props.ringInnerRadius,
+    props.ringOuterRadius,
+    props.bulkDensity,
+    data,
+  ]);
+
+  // The cloud shell is a second transparent pass per planet, so it is high-tier
+  // only; the surface shader draws a flat cloud bed on low instead.
+  const showClouds = isPlanet && shaderQuality === 1 && cloudCover > 0.05;
+
+  const isGiant = data.type === 'Gas Giant' || data.type === 'Ice Giant';
+
+  const atmosColor = useMemo(() => {
+    // A giant has no surface under its atmosphere — the limb glow is the same
+    // cloud deck seen edge-on, so it takes the body's own colour rather than a
+    // terrestrial N2/CO2/CH4 sky.
+    if (isGiant) return new THREE.Color(data.color).lerp(_WHITE, 0.25);
+    const [r, g, b] = atmosphereTint(composition.water, data.temperature);
+    return new THREE.Color(r, g, b);
+  }, [isGiant, data.color, composition.water, data.temperature]);
+
+  const ringColorInner = useMemo(
+    () => new THREE.Color().setRGB(
+      0.62 + composition.iron * 0.22,
+      0.60 + composition.water * 0.18,
+      0.52 + composition.water * 0.30,
+    ),
+    [composition.iron, composition.water],
+  );
+  const ringColorOuter = useMemo(
+    () => ringColorInner.clone().multiplyScalar(0.78),
+    [ringColorInner],
+  );
+
+  /**
+   * Obliquity of the spin axis, degrees. `properties.obliquity` is the real
+   * field the presets populate; `axialTilt` is the legacy ice-giant slider,
+   * kept as a fallback for worlds saved before the two were unified.
+   */
+  const obliquityDeg = obliquityDegOf(data);
+  const obliquityRad = (obliquityDeg * Math.PI) / 180;
+  /** Stable per-body azimuth so tilted worlds do not all lean the same way. */
+  const tiltAzimuth = useMemo(() => (bodySeed(data.id) / 100) * Math.PI * 2, [data.id]);
 
   const pointerHandlers = useBodyPointerGesture(data.id, !!creationMode, onBodyGesture);
 
@@ -1335,6 +1459,25 @@ const BodyMesh = ({
     const t = state.clock.elapsedTime;
     const dt = delta * 1.0;
     const liveBody = bodyByIdRef.current.get(data.id);
+
+    // Direction to the illuminating star, computed once: the surface, cloud
+    // shell, ring plane and atmosphere all need the same vector, and they must
+    // agree or the terminator, cloud shading and ring shadow drift apart.
+    let sunDir = localScratch.defaultSun;
+    if (liveBody) {
+      const parentBody = parentMapRef.current.get(data.id);
+      const starId = primaryStarIdRef.current;
+      const star =
+        parentBody && ['Star', 'Red Giant'].includes(parentBody.type)
+          ? parentBody
+          : starId
+            ? bodyByIdRef.current.get(starId) ?? null
+            : null;
+      if (star) {
+        localScratch.sunDir.copy(star.position).sub(liveBody.position).normalize();
+        sunDir = localScratch.sunDir;
+      }
+    }
 
     if (meshRef.current) {
       const meshMaterial = meshRef.current.material as any;
@@ -1346,20 +1489,7 @@ const BodyMesh = ({
         }
       }
       if (isPlanet && liveBody && meshMaterial && 'uSunDirection' in meshMaterial) {
-        const parent = parentMapRef.current.get(data.id);
-        const starId = primaryStarIdRef.current;
-        const star =
-          parent && ['Star', 'Red Giant'].includes(parent.type)
-            ? parent
-            : starId
-              ? bodyByIdRef.current.get(starId) ?? null
-              : null;
-        if (star) {
-          localScratch.sunDir.copy(star.position).sub(liveBody.position).normalize();
-          meshMaterial.uSunDirection = localScratch.sunDir;
-        } else {
-          meshMaterial.uSunDirection = localScratch.defaultSun;
-        }
+        meshMaterial.uSunDirection = sunDir;
 
         const nextState = habitabilityToState(
           liveBody.habitability,
@@ -1378,6 +1508,10 @@ const BodyMesh = ({
         }
       }
 
+      // Spin is about the mesh's own +Y, which the tilt group has already
+      // leaned to the real obliquity — so the terminator sweeps a tilted
+      // latitude band rather than always tracking the ecliptic.
+      let spinRate = 0.05;
       if (isPlanet && liveBody) {
         if (props.isTidallyLocked) {
           const parent = parentMapRef.current.get(data.id);
@@ -1385,12 +1519,51 @@ const BodyMesh = ({
             localScratch.relPos.copy(parent.position).sub(liveBody.position);
             meshRef.current.rotation.y = Math.atan2(localScratch.relPos.x, localScratch.relPos.z);
           }
+          spinRate = 0;
         } else {
-          const rotationSpeed = 5.0 / (props.rotationPeriod || 24.0);
-          meshRef.current.rotation.y += rotationSpeed * dt;
+          spinRate = 5.0 / (props.rotationPeriod || 24.0);
+          meshRef.current.rotation.y += spinRate * dt;
         }
       } else {
-        meshRef.current.rotation.y += 0.05 * dt;
+        // Stars and remnants rotate too; use their own period rather than a
+        // flat rate so a fast rotator visibly spins faster than a slow one.
+        spinRate = 5.0 / (props.rotationPeriod || 240.0);
+        meshRef.current.rotation.y += spinRate * dt;
+      }
+
+      // Cloud parallax: the deck super-rotates relative to the surface (Venus
+      // does this at ~60x), so a small excess is enough to read as depth.
+      if (cloudRef.current) {
+        cloudRef.current.rotation.y += (spinRate * 1.18 + 0.012) * dt;
+        const cloudMat = cloudRef.current.material as any;
+        if (cloudMat && typeof cloudMat === 'object') {
+          if ('uTime' in cloudMat) cloudMat.uTime = t;
+          if ('uSunDirection' in cloudMat) cloudMat.uSunDirection = sunDir;
+          if ('uCover' in cloudMat && liveBody) {
+            // Cover tracks live temperature, so a world that is heating up
+            // clouds over without waiting for a React render.
+            const liveWater = compositionOf(liveBody).water;
+            const liveProps = liveBody.properties;
+            cloudMat.uCover = cloudCoverFor(
+              liveProps?.atmosphere ?? 0,
+              surfaceVolatilesFor(liveProps?.waterLevel ?? (liveWater > 0.01 ? 0.5 : 0), liveWater),
+              liveBody.temperature,
+            );
+          }
+        }
+      }
+    }
+
+    if (ringRef.current) {
+      const ringMat = ringRef.current.material as any;
+      if (ringMat && typeof ringMat === 'object') {
+        if ('uTime' in ringMat) ringMat.uTime = t;
+        if ('uSunDirection' in ringMat) ringMat.uSunDirection = sunDir;
+        // The ring shader ray-casts the planet shadow in world space, so it
+        // needs the body's render-space centre every frame.
+        if ('uPlanetCenter' in ringMat && groupRef.current) {
+          ringMat.uPlanetCenter = groupRef.current.position;
+        }
       }
     }
 
@@ -1422,13 +1595,9 @@ const BodyMesh = ({
       if (!mat || typeof mat !== 'object') {
         // skip atmosphere uniform updates this frame
       } else {
-      const parent = parentMapRef.current.get(data.id);
-      if (parent && liveBody) {
-        localScratch.sunDir.copy(parent.position).sub(liveBody.position).normalize();
-        mat.uSunDirection = localScratch.sunDir;
-      } else {
-        mat.uSunDirection = localScratch.defaultSun;
-      }
+      // Same star vector the surface uses — previously this took the *parent*
+      // body, so a moon's atmosphere was lit by its planet.
+      mat.uSunDirection = sunDir;
       mat.uViewVector = camera.position;
 
       if (groupRef.current) {
@@ -1457,15 +1626,44 @@ const BodyMesh = ({
     return Math.max(visualRadius * 30, 120);
   }, [isStar, visualRadius]);
 
+  /**
+   * Star brightness and granule size come from the physics, not the palette:
+   * luminosity (L☉) sets how bright the disc renders, effective temperature
+   * sets its hue, and photospheric surface gravity sets convection cell size.
+   */
+  const starLuminositySolar = useMemo(
+    () => (isStar ? Math.max(bodyLuminositySolar(data), 1e-4) : 1),
+    [isStar, data],
+  );
+  const starSurfaceGravity = useMemo(() => {
+    if (!isStar) return 274;
+    const g = surfaceGravitySi(data.mass, data.radiusKm);
+    return Number.isFinite(g) && g > 0 ? g : 274;
+  }, [isStar, data.mass, data.radiusKm]);
+
   const planetState = useMemo(
     () => habitabilityToState(data.habitability, props.tectonics || 0, data.temperature),
     [data.habitability, props.tectonics, data.temperature]
   );
 
+  /**
+   * World-space spin axis.
+   *
+   * This is no longer a decorative vector: it is exactly the axis the tilt
+   * group below rotates the body about, so ice caps, the day/night terminator
+   * and the ring plane all agree. For a group with Euler order XYZ and
+   * rotation (0, azimuth, obliquity), the local +Y axis maps to
+   * Ry(az) * Rz(ob) * (0,1,0).
+   */
   const northPole = useMemo(() => {
-    const tiltRad = ((props.axialTilt ?? 23.5) * Math.PI) / 180;
-    return new THREE.Vector3(Math.sin(tiltRad) * 0.3, Math.cos(tiltRad), Math.sin(tiltRad) * 0.2).normalize();
-  }, [props.axialTilt]);
+    const s = Math.sin(obliquityRad);
+    const c = Math.cos(obliquityRad);
+    return new THREE.Vector3(
+      -s * Math.cos(tiltAzimuth),
+      c,
+      s * Math.sin(tiltAzimuth),
+    ).normalize();
+  }, [obliquityRad, tiltAzimuth]);
 
   const usesPlanetSurface = !isStar && !isNeutronStar;
 
@@ -1484,7 +1682,7 @@ const BodyMesh = ({
       bodyType: data.type,
       tectonics: props.tectonics || 0,
       atmosphereDensity: atmosphereVisual.density,
-      waterLevel: props.waterLevel || 0.5,
+      waterLevel,
       methane: props.methane || 0,
       cloudDepth: props.cloudDepth || 0,
       temperature: data.temperature,
@@ -1493,6 +1691,12 @@ const BodyMesh = ({
       mass: data.mass,
       planetState,
       northPole,
+      composition,
+      seed,
+      quality: shaderQuality,
+      cloudCover,
+      nightLights,
+      ring,
     });
   }, [
     planetSurfaceMaterial,
@@ -1502,7 +1706,7 @@ const BodyMesh = ({
     data.temperature,
     data.mass,
     props.tectonics,
-    props.waterLevel,
+    waterLevel,
     props.methane,
     props.cloudDepth,
     atmosphereVisual.density,
@@ -1510,6 +1714,12 @@ const BodyMesh = ({
     oblateness,
     planetState,
     northPole,
+    composition,
+    seed,
+    shaderQuality,
+    cloudCover,
+    nightLights,
+    ring,
   ]);
 
   useEffect(() => {
@@ -1547,44 +1757,98 @@ const BodyMesh = ({
           decay={2}
         />
       )}
-      {!isBlackHole && (
-        <mesh
-          ref={meshRef}
-          material={usesPlanetSurface ? planetSurfaceMaterial! : undefined}
-          raycast={NO_RAYCAST}
-          frustumCulled={true}
-          scale={scale}
-        >
-          <sphereGeometry args={[visualRadius, surfaceSeg, surfaceSeg]} />
-          {isStar ?
-            <starSurfaceMaterial attach="material" uColor={starColor} uSpeed={1.0} uTemperature={data.temperature} uMetallicity={props.metallicity || 0} uConvection={props.convectionScale || 5} uPulsation={props.pulsationSpeed || 0} uLuminosityClass={props.luminosityClass || 0} uFlareActivity={props.flareActivity || 0} uMagnetic={props.magneticIndex || 0} uOblateness={oblateness} logarithmicDepthBuffer={true} /> :
-            (isNeutronStar ?
-              <neutronStarMaterial attach="material" uColor={_NEUTRON_COLOR} uMagneticField={1.0} uMass={data.mass} uRadius={data.radius} logarithmicDepthBuffer={true} /> :
-              null
-            )
-          }
-        </mesh>
-      )}
+      {/*
+        Tilt group. Everything that belongs to the body's rotating frame — the
+        surface, its cloud deck, its atmosphere and its ring plane — hangs off
+        here, so a real obliquity leans all of them together and the spin below
+        stays about the tilted axis rather than world +Y.
+      */}
+      <group rotation={[0, tiltAzimuth, obliquityRad]}>
+        {!isBlackHole && (
+          <mesh
+            ref={meshRef}
+            material={usesPlanetSurface ? planetSurfaceMaterial! : undefined}
+            raycast={NO_RAYCAST}
+            frustumCulled={true}
+            scale={scale}
+          >
+            <sphereGeometry args={[visualRadius, surfaceSeg, surfaceSeg]} />
+            {isStar ?
+              <starSurfaceMaterial attach="material" uColor={starColor} uSpeed={1.0} uTemperature={data.temperature} uMetallicity={props.metallicity || 0} uConvection={props.convectionScale || 5} uPulsation={props.pulsationSpeed || 0} uLuminosityClass={props.luminosityClass || 0} uFlareActivity={props.flareActivity || 0} uMagnetic={props.magneticIndex || 0} uOblateness={oblateness} uLuminosity={starLuminositySolar} uSurfaceGravity={starSurfaceGravity} logarithmicDepthBuffer={true} /> :
+              (isNeutronStar ?
+                <neutronStarMaterial attach="material" uColor={_NEUTRON_COLOR} uMagneticField={1.0} uMass={data.mass} uRadius={data.radius} logarithmicDepthBuffer={true} /> :
+                null
+              )
+            }
+          </mesh>
+        )}
 
-      {showAtmosphere && (
-        <mesh ref={atmosphereRef} scale={scale} renderOrder={1} raycast={NO_RAYCAST}>
-          <sphereGeometry args={[atmosRadius, atmosSeg, atmosSeg]} />
-          <planetAtmosphereMaterial
-            transparent
-            side={THREE.BackSide}
-            depthWrite={false}
-            blending={THREE.NormalBlending}
-            uColor={_ATMOS_COLOR}
-            uBoundingRadius={atmosRadius}
-            uPlanetRadius={visualRadius}
-            uDensity={atmosphereVisual.density}
-            uHaze={atmosphereVisual.haze}
-            uScaleHeight={atmosphereVisual.scaleHeight}
-            uOblateness={oblateness}
-            logarithmicDepthBuffer={true}
-          />
-        </mesh>
-      )}
+        {showClouds && (
+          <mesh ref={cloudRef} scale={scale} renderOrder={1} raycast={NO_RAYCAST}>
+            <sphereGeometry args={[visualRadius * 1.02, surfaceSeg, surfaceSeg]} />
+            <planetCloudMaterial
+              transparent
+              depthWrite={false}
+              blending={THREE.NormalBlending}
+              uCover={cloudCover}
+              uSeed={seed}
+              uQuality={shaderQuality}
+              uOblateness={oblateness}
+              uAtmosphere={atmosphereVisual.density}
+              logarithmicDepthBuffer={true}
+            />
+          </mesh>
+        )}
+
+        {ring && (
+          <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2} raycast={NO_RAYCAST}>
+            <ringGeometry
+              args={[
+                visualRadius * ring.inner,
+                visualRadius * ring.outer,
+                deviceTier === 'low' ? 48 : 96,
+                1,
+              ]}
+            />
+            <planetRingMaterial
+              transparent
+              side={THREE.DoubleSide}
+              depthWrite={false}
+              blending={THREE.NormalBlending}
+              uInner={ring.inner}
+              uOuter={ring.outer}
+              uOpacity={ring.opacity}
+              uColorInner={ringColorInner}
+              uColorOuter={ringColorOuter}
+              uPlanetRadius={visualRadius}
+              uSeed={seed}
+              uQuality={shaderQuality}
+              logarithmicDepthBuffer={true}
+            />
+          </mesh>
+        )}
+
+        {showAtmosphere && (
+          <mesh ref={atmosphereRef} scale={scale} renderOrder={3} raycast={NO_RAYCAST}>
+            <sphereGeometry args={[atmosRadius, atmosSeg, atmosSeg]} />
+            <planetAtmosphereMaterial
+              transparent
+              side={THREE.BackSide}
+              depthWrite={false}
+              blending={THREE.NormalBlending}
+              uColor={atmosColor}
+              uBoundingRadius={atmosRadius}
+              uPlanetRadius={visualRadius}
+              uDensity={atmosphereVisual.density}
+              uHaze={atmosphereVisual.haze}
+              uScaleHeight={atmosphereVisual.scaleHeight}
+              uOblateness={oblateness}
+              uSteps={deviceTier === 'low' ? 4 : 8}
+              logarithmicDepthBuffer={true}
+            />
+          </mesh>
+        )}
+      </group>
 
       {isBlackHole && (
         <BlackHoleBody

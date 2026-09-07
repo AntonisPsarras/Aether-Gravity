@@ -10,6 +10,8 @@ declare global {
       starSurfaceMaterial: any;
       planetSurfaceMaterial: any;
       planetAtmosphereMaterial: any;
+      planetCloudMaterial: any;
+      planetRingMaterial: any;
       shockwaveMaterial: any;
       supernovaMaterial: any;
       neutronStarMaterial: any;
@@ -32,6 +34,8 @@ declare module 'react' {
       starSurfaceMaterial: any;
       planetSurfaceMaterial: any;
       planetAtmosphereMaterial: any;
+      planetCloudMaterial: any;
+      planetRingMaterial: any;
       shockwaveMaterial: any;
       supernovaMaterial: any;
       neutronStarMaterial: any;
@@ -153,6 +157,15 @@ export interface CelestialBody {
     // Black Hole (Kerr Metric)
     spinParameter?: number;    // 0-0.998 (Dimensionless spin a*; Thorne limit)
     accretionRate?: number;    // 0-1 (Mass flow rate)
+
+    // Ring system (rendering only; rings carry negligible mass and are not
+    // integrated by the N-body solver).
+    /** 0-1 optical depth of the ring plane. 0 (or absent) means no rings. */
+    ringOpacity?: number;
+    /** Inner ring edge, in body radii. Physically sits near the Roche limit. */
+    ringInnerRadius?: number;
+    /** Outer ring edge, in body radii. Always greater than the inner edge. */
+    ringOuterRadius?: number;
 
     // Dynamics
     rotationPeriod?: number;   // Hours

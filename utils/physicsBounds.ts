@@ -213,6 +213,13 @@ export const sanitizeProperties = (
   }
   if (props.accretionRate !== undefined) out.accretionRate = c01(props.accretionRate);
   if (props.obliquity !== undefined) out.obliquity = clamp(safeNum(props.obliquity, 0), 0, 180);
+  if (props.ringOpacity !== undefined) out.ringOpacity = c01(props.ringOpacity);
+  if (props.ringInnerRadius !== undefined) {
+    out.ringInnerRadius = clamp(safeNum(props.ringInnerRadius, 1.4), 1.05, 8);
+  }
+  if (props.ringOuterRadius !== undefined) {
+    out.ringOuterRadius = clamp(safeNum(props.ringOuterRadius, 2.3), 1.05, 12);
+  }
   if (props.albedo !== undefined) out.albedo = c01(props.albedo);
   // Pulsars span ~1.4 ms (near the mass-shedding limit) to ~10 s.
   if (props.pulsarPeriodS !== undefined) {
@@ -235,6 +242,15 @@ export const sanitizeProperties = (
   if (props.isTidallyLocked !== undefined) out.isTidallyLocked = Boolean(props.isTidallyLocked);
   if (props.userTempOverride !== undefined) out.userTempOverride = Boolean(props.userTempOverride);
   if (props.manualRadius !== undefined) out.manualRadius = Boolean(props.manualRadius);
+
+  // A ring plane with the outer edge inside the inner edge would render as an
+  // empty annulus; push the outer edge out rather than dropping the rings.
+  if (out.ringInnerRadius !== undefined || out.ringOuterRadius !== undefined) {
+    const inner = out.ringInnerRadius ?? 1.4;
+    const outer = out.ringOuterRadius ?? 2.3;
+    out.ringInnerRadius = inner;
+    out.ringOuterRadius = Math.max(outer, inner + 0.05);
+  }
 
   const hasComposition =
     out.compositionIron !== undefined ||

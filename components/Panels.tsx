@@ -13,7 +13,7 @@ import { TEXTURE_TYPES, BODY_CONFIGS } from '../constants';
 import {
   fmtMass, fmtRadiusKm, fmtRadiusRelative, fmtTemp, fmtGravity, fmtEscVel, fmtDensity,
   fmtDistance, fmtLuminositySolar, fmtPeriod, massToEarth, radiusKmToEarth,
-  orbitalPeriodYears, distToKm,
+  orbitalPeriodYears, distToKm, rocheLimitRadii,
 } from '../utils/units';
 import {
   schwarzschildRadiusKm, kerrOuterHorizonKm, iscoRadiusKm, photonSphereRadiusKm,
@@ -498,6 +498,51 @@ export const InspectorPanel: React.FC = () => {
     !['Black Hole', 'Neutron Star', 'Pulsar', 'White Dwarf', 'Brown Dwarf', 'Star', 'Red Giant']
       .includes(selectedBody.type);
 
+  /**
+   * Types whose appearance and mass-radius relation are both driven by the
+   * iron/silicate/water split, so the composition sliders are worth showing.
+   * Previously this was 'Planet' only, which left the composition-driven
+   * surface shading unreachable on every moon, dwarf and asteroid.
+   */
+  const hasEditableComposition =
+    !!selectedBody &&
+    ['Planet', 'Dwarf', 'Moon', 'Asteroid', 'Comet'].includes(selectedBody.type);
+
+  /**
+   * Types that can carry a ring system. Rings need a body large enough to hold
+   * debris in a stable plane, and they are rendered in the equatorial plane of
+   * the spin axis.
+   */
+  const canHaveRings =
+    !!selectedBody && ['Planet', 'Gas Giant', 'Ice Giant'].includes(selectedBody.type);
+
+  /** Types with a meaningful spin axis to tilt. */
+  const hasSpinAxis =
+    !!selectedBody &&
+    ['Planet', 'Dwarf', 'Moon', 'Gas Giant', 'Ice Giant', 'Asteroid', 'Comet'].includes(
+      selectedBody.type,
+    );
+
+  /**
+   * Roche limit in body radii for a loose ice aggregate. Ring debris cannot
+   * accrete into a moon inside this radius, which is why every ring system in
+   * the Solar System sits there — shown so the user can see whether the edges
+   * they are dragging are somewhere rings could physically survive.
+   */
+  const rocheLimitRadiiFor = (body: CelestialBody): number => {
+    const density = body.properties?.bulkDensity;
+    const roche = density && density > 0 ? rocheLimitRadii(density) : NaN;
+    return Number.isFinite(roche) ? roche : 2.5;
+  };
+
+  const defaultRingEdges = useMemo(() => {
+    if (!selectedBody) return { inner: 1.4, outer: 2.3 };
+    const roche = rocheLimitRadiiFor(selectedBody);
+    const outer = Math.min(Math.max(roche, 1.6), 4.5);
+    return { inner: Math.max(outer * 0.6, 1.15), outer };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBody?.id, selectedBody?.properties?.bulkDensity]);
+
   /** Slider bounds: one decade either side of the type's own mass range. */
   const massSliderRange = useMemo<[number, number]>(() => {
     if (!selectedBody) return [PHYSICS_LIMITS.MIN_MASS, PHYSICS_LIMITS.MAX_MASS];
@@ -854,7 +899,7 @@ export const InspectorPanel: React.FC = () => {
               </div>
             </div>
 
-            {selectedBody.type === 'Planet' && (
+            {hasEditableComposition && (
               <div>
                 <h3 className="text-[10px] font-bold uppercase text-pulsar-white/40 flex items-center gap-2 mb-3 tracking-widest"><Layers size={12} /> Composition</h3>
                 <div className="bg-black/20 rounded-xl p-3 border border-white/5 space-y-4">
@@ -901,12 +946,79 @@ export const InspectorPanel: React.FC = () => {
                     </div>
                   </>
                 )}
-                {selectedBody.type === 'Ice Giant' && (
+                {(selectedBody.type === 'Ice Giant' || selectedBody.type === 'Gas Giant') && (
                   <>
                     <RangeInput label="Methane Conc." min={0} max={1} step={0.01} value={props.methane ?? 0.3} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('methane', v)} />
                     <RangeInput label="Cloud Depth" min={0} max={1} step={0.01} value={props.cloudDepth ?? 0.2} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('cloudDepth', v)} />
-                    <RangeInput label="Axial Tilt" min={0} max={180} step={1} value={props.axialTilt ?? 0} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('axialTilt', v)} />
                   </>
+                )}
+
+                {/* Obliquity is the real spin-axis tilt the presets populate and
+                    the renderer leans the body by. `axialTilt` was the old
+                    ice-giant-only value; it is still read as a fallback for
+                    worlds saved before the two were unified. */}
+                {hasSpinAxis && (
+                  <RangeInput
+                    label="Axial Tilt (Obliquity)"
+                    min={0}
+                    max={180}
+                    step={1}
+                    value={props.obliquity ?? props.axialTilt ?? 0}
+                    onEditStart={propEditStart}
+                    onEditEnd={propEditEnd}
+                    onChange={(v) => setProp('obliquity', v)}
+                  />
+                )}
+
+                {canHaveRings && (
+                  <div className="pt-2 mt-2 border-t border-white/5">
+                    <RangeInput
+                      label="Ring Opacity"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={props.ringOpacity ?? 0}
+                      onEditStart={propEditStart}
+                      onEditEnd={propEditEnd}
+                      onChange={(v) => setProp('ringOpacity', v)}
+                    />
+                    {(props.ringOpacity ?? 0) > 0.01 && (
+                      <>
+                        <RangeInput
+                          label="Ring Inner Edge (R)"
+                          min={1.05}
+                          max={6}
+                          step={0.05}
+                          value={props.ringInnerRadius ?? defaultRingEdges.inner}
+                          onEditStart={propEditStart}
+                          onEditEnd={propEditEnd}
+                          onChange={(v) => setProp('ringInnerRadius', v)}
+                        />
+                        <RangeInput
+                          label="Ring Outer Edge (R)"
+                          min={1.1}
+                          max={10}
+                          step={0.05}
+                          value={props.ringOuterRadius ?? defaultRingEdges.outer}
+                          onEditStart={propEditStart}
+                          onEditEnd={propEditEnd}
+                          onChange={(v) => setProp('ringOuterRadius', v)}
+                        />
+                        <div className="bg-black/30 rounded-lg p-3 border border-white/5 space-y-1.5 mt-2">
+                          <DerivedRow
+                            label="Roche limit"
+                            value={`${rocheLimitRadiiFor(selectedBody).toFixed(2)} R`}
+                          />
+                          <div className="text-[9px] text-pulsar-white/30 leading-snug">
+                            {(props.ringOuterRadius ?? defaultRingEdges.outer) >
+                            rocheLimitRadiiFor(selectedBody)
+                              ? 'Outer edge is beyond the Roche limit — debris out there would accrete into a moon.'
+                              : 'Rings sit inside the Roche limit, where tides prevent accretion.'}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
                 {selectedBody.type === 'Dwarf' && (
                   <>

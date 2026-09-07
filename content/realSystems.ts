@@ -146,28 +146,48 @@ const SOLAR_SYSTEM: RealSystem = {
       color: '#c9a06a', texture: 'gas', temperatureK: 165,
       rotationHours: 9.9250, obliquityDeg: 3.13,
       orbit: { aAU: 5.20288700, e: 0.04838624, iDeg: 1.30439695, lanDeg: 100.47390909, argpDeg: 274.25457074, mDeg: 19.66796068 },
-      properties: { atmosphere: 1.0, cloudDepth: 0.8, oblateness: 0.065 },
+      // Jupiter's ring is a tenuous dust halo from Adrastea/Amalthea/Thebe,
+      // 1.4-3.1 R_J and optically thin to the point of invisibility from Earth.
+      properties: {
+        atmosphere: 1.0, cloudDepth: 0.8, oblateness: 0.065,
+        ringOpacity: 0.05, ringInnerRadius: 1.4, ringOuterRadius: 3.1,
+      },
     },
     {
       name: 'Saturn', type: 'Gas Giant', mass: 95.16, radiusKm: 58232,
       color: '#e3d1a0', texture: 'gas', temperatureK: 134,
       rotationHours: 10.656, obliquityDeg: 26.73,
       orbit: { aAU: 9.53667594, e: 0.05386179, iDeg: 2.48599187, lanDeg: 113.66242448, argpDeg: 338.93645383, mDeg: 317.35553592 },
-      properties: { atmosphere: 1.0, cloudDepth: 0.7, oblateness: 0.098 },
+      // The main rings: inner edge of the C ring at 1.24 R_S, outer edge of the
+      // A ring at 2.27 R_S, both comfortably inside Saturn's 2.7 R_S Roche
+      // limit for loose ice. Optically thick in the B ring.
+      properties: {
+        atmosphere: 1.0, cloudDepth: 0.7, oblateness: 0.098,
+        ringOpacity: 0.85, ringInnerRadius: 1.24, ringOuterRadius: 2.27,
+      },
     },
     {
       name: 'Uranus', type: 'Ice Giant', mass: 14.536, radiusKm: 25362,
       color: '#a7d8de', texture: 'ice', temperatureK: 76,
       rotationHours: -17.24, obliquityDeg: 97.77,
       orbit: { aAU: 19.18916464, e: 0.04725744, iDeg: 0.77263783, lanDeg: 74.01692503, argpDeg: 96.93735127, mDeg: 142.28382821 },
-      properties: { methane: 0.85, cloudDepth: 0.5, atmosphere: 0.9, oblateness: 0.023 },
+      // Thirteen narrow, dark rings between 1.6 and 2.0 R_U (the epsilon ring
+      // at 2.006). Nearly edge-on from the Sun given the 97.8 deg obliquity.
+      properties: {
+        methane: 0.85, cloudDepth: 0.5, atmosphere: 0.9, oblateness: 0.023,
+        ringOpacity: 0.18, ringInnerRadius: 1.60, ringOuterRadius: 2.01,
+      },
     },
     {
       name: 'Neptune', type: 'Ice Giant', mass: 17.147, radiusKm: 24622,
       color: '#3f6fd1', texture: 'ice', temperatureK: 72,
       rotationHours: 16.11, obliquityDeg: 28.32,
       orbit: { aAU: 30.06992276, e: 0.00859048, iDeg: 1.77004347, lanDeg: 131.78422574, argpDeg: 273.18053653, mDeg: 259.91520804 },
-      properties: { methane: 0.9, cloudDepth: 0.6, atmosphere: 0.9, oblateness: 0.017 },
+      // Five faint rings, the Adams ring at 2.54 R_N carrying the arcs.
+      properties: {
+        methane: 0.9, cloudDepth: 0.6, atmosphere: 0.9, oblateness: 0.017,
+        ringOpacity: 0.10, ringInnerRadius: 1.69, ringOuterRadius: 2.54,
+      },
     },
     {
       name: 'Pluto', type: 'Dwarf', mass: 0.002188, radiusKm: 1188.3,

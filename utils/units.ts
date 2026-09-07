@@ -205,6 +205,35 @@ export const escapeVelocityKms = (massEarth: number, radiusKm: number): number =
 };
 
 /**
+ * Density of the loose water ice that makes up Saturn's rings, g/cm³.
+ * Ring particles are porous aggregates, so this sits below solid ice (0.917).
+ */
+export const RING_PARTICLE_DENSITY_GCM3 = 0.5;
+
+/**
+ * Rigid-satellite Roche limit, expressed in radii of the primary.
+ *
+ *   d = 2.456 R_primary (rho_primary / rho_satellite)^(1/3)
+ *
+ * Inside this radius tidal shear beats a rubble pile's self-gravity, so debris
+ * cannot accrete into a moon — which is why every ring system in the Solar
+ * System lies inside its planet's Roche zone. Used to default and validate the
+ * inner ring edge; it is a rendering/authoring aid and feeds no integrator.
+ *
+ * Sanity: Saturn (0.687 g/cm³) with 0.5 g/cm³ ice gives 2.72 R_Saturn, and the
+ * A ring's outer edge is at 2.27 R_Saturn — comfortably inside.
+ */
+export const rocheLimitRadii = (
+  primaryDensityGcm3: number,
+  satelliteDensityGcm3: number = RING_PARTICLE_DENSITY_GCM3,
+): number => {
+  const rhoP = primaryDensityGcm3;
+  const rhoS = satelliteDensityGcm3;
+  if (!(rhoP > 0) || !(rhoS > 0)) return NaN;
+  return 2.456 * Math.cbrt(rhoP / rhoS);
+};
+
+/**
  * Main-sequence mass-luminosity relation, L/L☉ from mass in M⊕.
  *
  * The standard four-segment empirical broken power law (see e.g. Duric,

@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { registerBlackHoleVisual } from './BlackHoleLensCapture';
-import { diskEfficiency, iscoRadiusRg } from '../../utils/relativity';
+import {
+  diskEfficiency,
+  diskPeakTemperatureK,
+  iscoRadiusRg,
+  photonSphereRadiusRg,
+} from '../../utils/relativity';
+import { displayDiskTemperatureK } from '../../utils/bodyAppearance';
+import { relativityChunk } from '../Planet/PlanetShaders';
 
 export type BlackHoleRigProps = {
   radius: number;
@@ -69,10 +76,18 @@ const diskVertex = `
 varying vec2 vUv;
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
+/** World-space radial and normal directions of the disk plane. */
+varying vec3 vRadialWorld;
+varying vec3 vDiskNormalWorld;
 void main() {
   vUv = uv;
   vLocalPos = position;
   vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+  // The ring geometry is pre-rotated flat, so the disk plane is local XZ with
+  // its normal on +Y. Carrying both into world space lets the fragment stage
+  // work out which side of the disk is approaching the camera.
+  vRadialWorld = mat3(modelMatrix) * vec3(position.x, 0.0, position.z);
+  vDiskNormalWorld = mat3(modelMatrix) * vec3(0.0, 1.0, 0.0);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -86,9 +101,19 @@ uniform sampler2D u_bg_texture;
 uniform vec2 u_resolution;
 /** Inner edge of the disk as a fraction of the quad: the ISCO. */
 uniform float u_inner;
+/** Peak effective temperature of the Shakura-Sunyaev disk, kelvin. */
+uniform float u_diskTempPeak;
+/** Schwarzschild radius, in quad units, for the gravitational redshift. */
+uniform float u_rs;
+/** Photon-sphere radius, in quad units. */
+uniform float u_photon;
 varying vec2 vUv;
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
+varying vec3 vRadialWorld;
+varying vec3 vDiskNormalWorld;
+
+${relativityChunk}
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
@@ -99,6 +124,22 @@ float hash21(vec2 p) {
 mat2 rot2(float a) {
   float s = sin(a), c = cos(a);
   return mat2(c, -s, s, c);
+}
+
+/**
+ * Shakura-Sunyaev thin-disk temperature profile.
+ *
+ *   T(r)^4 proportional to r^-3 (1 - sqrt(r_in / r))
+ *
+ * with the zero-torque inner boundary condition, so the disk is cold at the
+ * ISCO, peaks at r = (49/36) r_in and falls off outward. x is r / r_in.
+ * Normalised so the peak equals u_diskTempPeak.
+ */
+float diskTemperature(float x) {
+  x = max(x, 1.0001);
+  float prof = pow(x, -3.0) * (1.0 - inversesqrt(x));
+  const float PEAK = 0.0566510;   // value of the profile at x = 49/36
+  return u_diskTempPeak * pow(max(prof / PEAK, 1e-8), 0.25);
 }
 
 void main() {
@@ -128,23 +169,41 @@ void main() {
     density += ring * thick * mix(0.5, 1.2, n) * 0.055;
   }
 
-  vec3 hotColor = vec3(0.98, 0.83, 0.14);
-  vec3 coldColor = vec3(0.06, 0.08, 0.11);
-  float heat = smoothstep(1.0, 0.2, r);
-  accretion = mix(coldColor, hotColor, heat) * density * (4.0 + u_accretion * 6.0);
+  // ---- Emitted spectrum ----------------------------------------------------
+  // The disk radiates as a blackbody at the local Shakura-Sunyaev temperature,
+  // so its colour is a consequence of mass, spin and accretion rate rather than
+  // a hand-picked gold-to-blue ramp. u_diskTempPeak comes from
+  // diskPeakTemperatureK in utils/relativity.ts.
+  float xRin = max(r / max(u_inner, 0.02), 1.0);
+  float localT = diskTemperature(xRin);
 
-  // Relativistic Doppler beaming. Material at radius r orbits at
-  // beta ~ 1/sqrt(r/r_g); the observed intensity of an approaching element
-  // scales as the Doppler factor cubed for a thin disk. The approaching side
-  // is genuinely brighter than the receding one, which is the defining visual
-  // signature of an accretion disk. Replaces a sinusoid scaled by spin.
-  float angle = atan(uv.y, uv.x);
-  float orbitR = max(r / max(u_inner, 0.02), 1.0);
-  float beta = clamp(0.5 / sqrt(orbitR), 0.0, 0.85);
-  float cosPhi = cos(angle + u_time * 0.2);
+  // ---- Relativistic Doppler beaming ---------------------------------------
+  // Orbital velocity is tangential in the disk plane: v = n x r for prograde
+  // motion. Projecting it on the direction to the CAMERA fixes the bright limb
+  // in screen space, which is what a real disk does — the previous
+  // cos(angle + u_time) made the beaming rotate with the texture, so the
+  // asymmetry chased itself around the ring.
+  vec3 planeN = normalize(vDiskNormalWorld);
+  vec3 radialDir = normalize(vRadialWorld + vec3(1e-5, 0.0, 0.0));
+  vec3 orbitDir = normalize(cross(planeN, radialDir));
+  float cosPhi = clamp(dot(orbitDir, viewDir), -1.0, 1.0);
+
+  // beta ~ 1/sqrt(r in r_g), matching orbitalBetaAtRg in utils/relativity.ts.
+  float rRg = xRin * (u_inner / max(u_rs * 0.5, 1e-4));
+  float beta = clamp(inversesqrt(max(rRg, 1.0)), 0.0, 0.85);
   float gamma = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
-  float doppler = 1.0 / (gamma * (1.0 - beta * cosPhi));
-  accretion *= clamp(doppler * doppler * doppler, 0.15, 6.0);
+  float dopplerG = 1.0 / (gamma * (1.0 - beta * cosPhi));
+
+  // ---- Gravitational redshift ---------------------------------------------
+  // sqrt(1 - r_s/r) for a static observer; the inner disk both dims and
+  // reddens as it approaches the horizon.
+  float gravG = sqrt(max(1.0 - u_rs / max(r, 1e-4), 0.0));
+
+  // Total shift factor. Intensity of a thin disk scales as g^3 and the observed
+  // spectrum is the rest spectrum at g x T, so one factor drives both.
+  float g = clamp(dopplerG * gravG, 0.05, 4.0);
+  accretion = blackbodyNormalized(clamp(localT * g, 1000.0, 40000.0)) * density * (4.0 + u_accretion * 6.0);
+  accretion *= clamp(g * g * g, 0.05, 6.0);
 
   vec2 screenUv = gl_FragCoord.xy / max(u_resolution, vec2(1.0));
   vec2 lensDir = normalize(uv + 1e-5);
@@ -157,8 +216,18 @@ void main() {
   vec3 color = lensedBg * 0.25 + accretion;
   color = mix(color, vec3(0.0), innerHole);
 
+  // ---- Photon ring ---------------------------------------------------------
+  // Light on unstable circular orbits at the photon sphere piles up into a thin,
+  // very bright annulus that rims the shadow. It sits INSIDE the ISCO, so it is
+  // added after the inner hole is cut, not before — it is the one thing that is
+  // still bright in there. One exp(), and the sharpest feature of a real image.
+  float ringDelta = (r - u_photon) / max(u_photon * 0.06, 1e-4);
+  float photonRing = exp(-ringDelta * ringDelta);
+  vec3 ringColor = blackbodyNormalized(clamp(u_diskTempPeak * 0.65, 1000.0, 40000.0));
+  color += ringColor * photonRing * (0.8 + u_accretion * 1.2);
+
   float alpha = smoothstep(1.0, 0.2, r) * (1.0 - innerHole);
-  alpha = clamp(alpha + innerHole * 0.95, 0.0, 1.0);
+  alpha = clamp(alpha + innerHole * 0.95 + photonRing * 0.8, 0.0, 1.0);
   if (alpha < 0.02) discard;
   gl_FragColor = vec4(color, alpha);
 }
@@ -231,7 +300,7 @@ export default function BlackHoleRig({
   radius,
   spin,
   accretion,
-  mass: _mass,
+  mass,
   onSelect,
   interactive,
   lensTexture,
@@ -302,6 +371,9 @@ export default function BlackHoleRig({
           u_bg_texture: { value: bgTexture },
           u_resolution: { value: new THREE.Vector2(size.width, size.height) },
           u_inner: { value: 0.2 },
+          u_diskTempPeak: { value: 1.0e7 },
+          u_rs: { value: 0.2 / 3.0 },
+          u_photon: { value: 0.1 },
         },
         vertexShader: diskVertex,
         fragmentShader: diskFragmentHigh,
@@ -437,6 +509,22 @@ export default function BlackHoleRig({
     diskMatHigh.uniforms.u_inner.value = innerFraction;
     diskMatHigh.uniforms.u_bg_texture.value = bgTexture;
     diskMatHigh.uniforms.u_resolution.value.set(size.width, size.height);
+
+    // Geometry in quad units. The quad's `r` runs 0..1 across the disk, and
+    // u_inner marks the ISCO, so one r_g is u_inner / (ISCO in r_g). That
+    // conversion lets the shader express the Schwarzschild radius and the
+    // photon sphere in its own coordinates, and both move with spin.
+    const iscoRg = iscoRadiusRg(spin, true);
+    const quadPerRg = innerFraction / Math.max(iscoRg, 1e-4);
+    diskMatHigh.uniforms.u_rs.value = 2 * quadPerRg;
+    diskMatHigh.uniforms.u_photon.value = photonSphereRadiusRg(spin, true) * quadPerRg;
+    // Colour follows the real Shakura-Sunyaev peak temperature, log-compressed
+    // into the visible band by `displayDiskTemperatureK` — see the note there:
+    // the physics value is untouched, only the shading scale is remapped so the
+    // r^-3/4 gradient is visible instead of clipping to UV white.
+    diskMatHigh.uniforms.u_diskTempPeak.value = displayDiskTemperatureK(
+      diskPeakTemperatureK(mass, spin, Math.max(accretion, 0.02)),
+    );
 
     lowDiskMats.forEach((m) => {
       m.uniforms.u_time.value = t;
