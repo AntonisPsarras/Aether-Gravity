@@ -23,13 +23,20 @@ import { CelestialBody } from '../types';
 import { G_CONSTANT } from '../constants';
 import { clampBodiesInPlace } from './physicsBounds';
 import { pairSofteningSq } from './physicsUtils';
+import { isSatellite } from './moonSystem';
 
+/**
+ * Bodies the integrator owns. Satellites on Kepler rails are excluded: they are
+ * placed analytically by `moonSystem.propagateSatellites`, exert no force, and
+ * must not be moved by Verlet or their position would be written twice.
+ */
 const isValid = (b: CelestialBody | null | undefined): b is CelestialBody =>
   b != null &&
   b.position != null &&
   b.velocity != null &&
   typeof b.mass === 'number' && isFinite(b.mass) &&
-  typeof b.radius === 'number' && isFinite(b.radius);
+  typeof b.radius === 'number' && isFinite(b.radius) &&
+  !isSatellite(b);
 
 // Reusable typed buffers (resized on demand, never shrunk).
 let bufCapacity = 0;
@@ -213,6 +220,15 @@ export const MAX_CATCHUP_STEPS = 8;          // cap when tab unfocused / slow fr
 let accumulator = 0;
 
 /**
+ * Total simulated time in years. Kepler-propagated satellites need an absolute
+ * clock (their mean anomaly is defined against an epoch), and it is what the UI
+ * shows as elapsed simulation time.
+ */
+let simTime = 0;
+export const getSimTime = (): number => simTime;
+export const setSimTime = (t: number): void => { simTime = isFinite(t) ? t : 0; };
+
+/**
  * Run zero or more verlet steps to consume `elapsed` simulated time.
  * `stepCallback` is invoked after each step so collision/evolution checks
  * can run at sub-frame resolution.
@@ -235,6 +251,7 @@ export const runFixedSteps = (
   let bodies = bodiesRef.current;
   while (accumulator >= FIXED_DT && steps < MAX_CATCHUP_STEPS) {
     bodies = verletStepInPlace(bodies, dt);
+    simTime += dt;
     clampBodiesInPlace(bodies);
     if (stepCallback) bodies = stepCallback(bodies);
     clampBodiesInPlace(bodies);
@@ -249,4 +266,5 @@ export const runFixedSteps = (
 
 export const resetAccumulator = () => {
   accumulator = 0;
+  simTime = 0;
 };

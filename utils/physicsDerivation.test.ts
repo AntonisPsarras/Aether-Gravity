@@ -185,8 +185,10 @@ describe('orbital element conversions', () => {
   it('round-trips state -> elements -> state for a range of eccentricities', () => {
     for (const e of [0, 0.1, 0.5, 0.9]) {
       const a = auToDist(1.5);
-      const state = calculateOrbitalState(parent, a, e, 23, 45, 67, 89);
-      const body = makeBody({ position: state.position, velocity: state.velocity });
+      // Both directions must use the same mu = G(M_parent + M_body), so the
+      // orbiting body's mass is passed through explicitly.
+      const state = calculateOrbitalState(parent, a, e, 23, 45, 67, 89, 1);
+      const body = makeBody({ mass: 1, position: state.position, velocity: state.velocity });
       const el = getOrbitalElements(body, parent);
       expect(Math.abs(el.a - a) / a, `a for e=${e}`).toBeLessThan(1e-6);
       expect(Math.abs(el.e - e), `e for e=${e}`).toBeLessThan(1e-6);

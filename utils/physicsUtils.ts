@@ -191,7 +191,12 @@ export const buildParentMap = (bodies: CelestialBody[]): Map<string, CelestialBo
 };
 
 export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) => {
-    const mu = G_CONSTANT * parent.mass;
+    // Standard gravitational parameter of the RELATIVE two-body orbit,
+    // μ = G(M_parent + M_body). Using the parent's mass alone is a good
+    // approximation for a planet around a star (Earth contributes 3 parts per
+    // million) but badly wrong for a comparable-mass pair: for Alpha Centauri
+    // A-B it understates μ by 46%, which makes a bound binary look hyperbolic.
+    const mu = G_CONSTANT * (parent.mass + body.mass);
     const rVec = body.position.clone().sub(parent.position);
     const vVec = body.velocity.clone().sub(parent.velocity);
     
@@ -283,15 +288,18 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
 };
 
 export const calculateOrbitalState = (
-    parent: CelestialBody, 
-    a: number, 
-    e: number, 
-    iDeg: number, 
-    OmegaDeg: number, 
-    omegaDeg: number, 
-    nuDeg: number
+    parent: CelestialBody,
+    a: number,
+    e: number,
+    iDeg: number,
+    OmegaDeg: number,
+    omegaDeg: number,
+    nuDeg: number,
+    /** Mass of the orbiting body; included in μ so the inverse of
+     *  `getOrbitalElements` is exact for comparable-mass pairs. */
+    bodyMass = 0,
 ) => {
-    const mu = G_CONSTANT * parent.mass;
+    const mu = G_CONSTANT * (parent.mass + bodyMass);
     const safeA = Math.max(1e-3, Math.abs(a));
     const safeE = Math.max(0, Math.min(0.999, e));
     const p = safeA * (1 - safeE * safeE);

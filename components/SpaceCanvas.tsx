@@ -5,7 +5,8 @@ import { OrbitControls, Stars, shaderMaterial, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialBody, BodyType, WaveEvent, PhysicsEvent } from '../types';
 import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState } from '../utils/physicsUtils';
-import { runFixedSteps, resetVerletCache, resetAccumulator } from '../utils/physicsSoA';
+import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime } from '../utils/physicsSoA';
+import { propagateSatellites, promoteEscapedMoons, satelliteRenderPosition } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
 import { DUST_CONFIG, TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS } from '../constants';
 import {
@@ -695,7 +696,7 @@ const PhysicsEngine = ({
     const bodyCountChanged = bodyCount !== lastBodyCountRef.current;
     if (bodyCountChanged) lastBodyCountRef.current = bodyCount;
 
-    if (physicsBodies && physicsBodies.length > 0 && (bodyCountChanged || currentTime - lastParentMapUpdateRef.current > 0.12 || collisionOccurred || newEvents.length > 0)) {
+    if (physicsBodies && physicsBodies.length > 0 && (bodyCountChanged || bodyByIdRef.current.size === 0 || currentTime - lastParentMapUpdateRef.current > 0.12 || collisionOccurred || newEvents.length > 0)) {
       fillParentMap(physicsBodies, parentMapRef.current);
       const byId = bodyByIdRef.current;
       byId.clear();
@@ -709,6 +710,12 @@ const PhysicsEngine = ({
       }
       primaryStarIdRef.current = primaryStarId;
       lastParentMapUpdateRef.current = currentTime;
+
+      // A moon whose parent has merged away, or which has been pushed outside
+      // its parent's Hill sphere, stops being a two-body problem and rejoins
+      // the N-body integrator.
+      const released = promoteEscapedMoons(physicsBodies, byId, parentMapRef.current);
+      if (released.length > 0) resetVerletCache();
     } else {
       if (!physicsBodies || physicsBodies.length === 0) {
         parentMapRef.current.clear();
@@ -717,13 +724,29 @@ const PhysicsEngine = ({
       }
     }
 
+    // Place Kepler-propagated satellites at their parent's live position plus
+    // an analytic offset. O(1) per moon, allocation-free, and independent of
+    // the physics timestep. Runs even while paused so moons stay put.
+    if (physicsBodies && physicsBodies.length > 0) {
+      propagateSatellites(physicsBodies, bodyByIdRef.current, getSimTime());
+    }
+
     // Update only registered body meshes instead of traversing the full scene graph every frame.
     if (physicsBodies) {
       for (let i = 0; i < physicsBodies.length; i++) {
         const body = physicsBodies[i];
         const obj = bodyObjectsRef.current.get(body.id);
         if (obj && body.position) {
-          toRenderSpace(scratchV0, body.position, floatingOffset.current);
+          // A satellite's *true* separation from its parent is far smaller than
+          // the parent's exaggerated drawn radius, so it is drawn through the
+          // same exaggeration to keep the real orbit-to-radius ratio visible.
+          const parent = body.parentId ? bodyByIdRef.current.get(body.parentId) : undefined;
+          if (parent && body.orbit) {
+            satelliteRenderPosition(body, parent, scratchV1);
+            toRenderSpace(scratchV0, scratchV1, floatingOffset.current);
+          } else {
+            toRenderSpace(scratchV0, body.position, floatingOffset.current);
+          }
           obj.position.copy(scratchV0);
         }
       }
