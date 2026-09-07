@@ -3,6 +3,7 @@ import { Plus, Info, Sparkles, Globe2, Play, Pencil, Trash2, Check, X, Calendar,
 import { WorldMeta, FolderMeta } from '../types';
 import { getWorldList, createWorld, deleteWorld, renameWorld, getFolderList, createFolder, deleteFolder, renameFolder, moveWorldToFolder } from '../utils/worldStorage';
 import { registerBackHandler } from '../utils/backNavigation';
+import { REAL_SYSTEMS } from '../content/realSystems';
 
 const MenuSpaceBackground = lazy(() => import('./MenuSpaceBackground'));
 const PortfolioPanel = lazy(() => import('./PortfolioPanel'));
@@ -312,13 +313,36 @@ const FolderSection: React.FC<{
     );
 };
 
-export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id: string) => void; }> = ({ onOpenWorld, onCreateWorld }) => {
+/** One selectable starting system in the new-universe dialog. */
+const PresetOption: React.FC<{
+    selected: boolean;
+    onSelect: () => void;
+    name: string;
+    subtitle: string;
+}> = ({ selected, onSelect, name, subtitle }) => (
+    <button
+        type="button"
+        onClick={onSelect}
+        className={`text-left px-3 py-2.5 rounded-lg border transition-colors ${
+            selected
+                ? 'bg-nova-gold/15 border-nova-gold/50'
+                : 'bg-black/30 border-white/10 hover:border-white/25'
+        }`}
+    >
+        <div className="text-sm font-medium text-pulsar-white">{name}</div>
+        <div className="text-[11px] text-pulsar-white/45 mt-0.5">{subtitle}</div>
+    </button>
+);
+
+export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id: string, presetId?: string) => void; }> = ({ onOpenWorld, onCreateWorld }) => {
     const [worlds, setWorlds] = useState<WorldMeta[]>([]);
     const [folders, setFolders] = useState<FolderMeta[]>([]);
     const [showCredits, setShowCredits] = useState(false);
     const [showPrivacy, setShowPrivacy] = useState(false);
     const [showTutorial, setShowTutorial] = useState(false);
     const [isCreating, setIsCreating] = useState<'world' | 'folder' | null>(null);
+    /** Chosen starting system; null means the procedural generator. */
+    const [preset, setPreset] = useState<string | null>(null);
     const [newWorldName, setNewWorldName] = useState('');
     const [error, setError] = useState<string | null>(null);
 
@@ -334,7 +358,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
             setNewWorldName('');
             setIsCreating(null);
             setError(null);
-            onCreateWorld(id);
+            onCreateWorld(id, preset ?? undefined);
         } catch (e: any) {
             setError(e.message);
         }
@@ -442,6 +466,34 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                                 className={`w-full bg-black/40 border rounded-lg px-4 py-3 text-pulsar-white placeholder-pulsar-white/25 focus:outline-none focus:ring-1 transition-colors mb-2 ${error ? 'border-red-500/50 focus:ring-red-500/50' : 'border-white/10 focus:border-nova-gold/50 focus:ring-nova-gold/50'}`}
                             />
                             {error && <p className="text-xs text-red-500 mb-4 ml-1">{error}</p>}
+
+                            {/* Start from a real, scientifically-parameterised
+                                system rather than a random one. */}
+                            {isCreating === 'world' && (
+                                <div className="mb-4">
+                                    <label className="text-[10px] uppercase tracking-widest text-pulsar-white/40 block mb-2">
+                                        Starting System
+                                    </label>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        <PresetOption
+                                            selected={preset === null}
+                                            onSelect={() => setPreset(null)}
+                                            name="Random System"
+                                            subtitle="Procedurally generated star and planets"
+                                        />
+                                        {REAL_SYSTEMS.map((s) => (
+                                            <PresetOption
+                                                key={s.id}
+                                                selected={preset === s.id}
+                                                onSelect={() => setPreset(s.id)}
+                                                name={s.name}
+                                                subtitle={s.subtitle}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="flex flex-col sm:flex-row gap-3">
                                 <button onClick={() => { setIsCreating(null); setError(null); setNewWorldName(''); }} className="touch-target flex-1 py-3 bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg font-medium transition-colors">Cancel</button>
                                 <button onClick={isCreating === 'folder' ? handleCreateFolder : handleCreateWorld} className="touch-target flex-1 py-3 bg-nova-gold hover:bg-nova-gold/90 text-void-navy font-bold rounded-lg transition-all shadow-lg shadow-nova-gold/20">

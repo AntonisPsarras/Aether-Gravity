@@ -8,7 +8,7 @@ import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentM
 import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime } from '../utils/physicsSoA';
 import { propagateSatellites, promoteEscapedMoons, satelliteRenderPosition } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
-import { DUST_CONFIG, TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS } from '../constants';
+import { DUST_CONFIG, TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS, LUMINOUS_TYPES } from '../constants';
 import {
   PHYSICS_LIMITS,
   clampLaunchVelocity,
@@ -786,7 +786,7 @@ const PhysicsEngine = ({
         shaderData.positions[i3 + 2] = scratchV0.z;
         shaderData.masses[i] = b.mass;
         shaderData.radii[i] = b.radius;
-        shaderData.types[i] = b.type === 'Black Hole' ? 1.0 : (['Star', 'Red Giant'].includes(b.type) ? 2.0 : 0.0);
+        shaderData.types[i] = b.type === 'Black Hole' ? 1.0 : (LUMINOUS_TYPES.includes(b.type) ? 2.0 : 0.0);
         count++;
       }
       gridMatRef.current.uBodiesPos = shaderData.positions;
@@ -1260,10 +1260,10 @@ const BodyMesh = ({
     defaultSun: new THREE.Vector3(1, 0.5, 0.5).normalize(),
   }).current;
 
-  const isPlanet = ['Planet', 'Dwarf', 'Ice Giant'].includes(data.type);
-  const isStar = ['Star', 'Red Giant'].includes(data.type);
+  const isPlanet = ['Planet', 'Dwarf', 'Ice Giant', 'Gas Giant', 'Moon', 'Asteroid', 'Comet'].includes(data.type);
+  const isStar = ['Star', 'Red Giant', 'White Dwarf', 'Brown Dwarf'].includes(data.type);
   const isBlackHole = data.type === 'Black Hole';
-  const isNeutronStar = data.type === 'Neutron Star';
+  const isNeutronStar = data.type === 'Neutron Star' || data.type === 'Pulsar';
 
   const props = data.properties || {};
 
@@ -1274,24 +1274,37 @@ const BodyMesh = ({
   if (isNeutronStar) visualRadius = Math.max(data.radius * 5.0, 3.0);
 
   if (isBlackHole) {
+    // Ratio of the Kerr outer horizon to the Schwarzschild radius,
+    // r+/R_s = (1 + sqrt(1 - a*^2)) / 2. A maximally spinning hole has a
+    // horizon half the size of a static one of the same mass.
     const spin = props.spinParameter || 0;
-    eventHorizonScale = (1.0 + Math.sqrt(1.0 - spin * spin)) * 0.5;
+    eventHorizonScale = (1.0 + Math.sqrt(Math.max(0, 1.0 - spin * spin))) * 0.5;
   }
 
-  // Calculate Oblateness Factor
-  // f = 5/4 * (omega^2 * R^3) / (GM)
-  // Scaling constants tuned for game visuals
-  let oblateness = 0.0;
-  if (isStar && props.oblateness !== undefined) {
-    oblateness = props.oblateness;
-  } else if (isPlanet) {
-    const rotPeriod = Math.max(0.1, props.rotationPeriod || 24.0);
-    const omega = (2 * Math.PI) / rotPeriod;
-    // G ~ 0.8. Mass ~ 10-100. Radius ~ 3. 
-    // Constants tuned to produce visible effect for fast spinners
-    const term = (omega * omega * Math.pow(data.radius, 3)) / (0.8 * data.mass);
-    oblateness = (5.0 / 4.0) * term * 0.05;
-    oblateness = Math.min(oblateness, 0.6); // Cap deformation
+  /**
+   * Rotational flattening f = (a - b)/a.
+   *
+   * To first order in the rotation parameter q = omega^2 R^3 / GM, a
+   * uniform-density body flattens by f = (5/4)q (the Maclaurin spheroid
+   * limit). This is now computed in SI from the body's real rotation period,
+   * real radius and real mass, rather than from game units with a hardcoded
+   * G = 0.8 and a tuning factor of 0.05.
+   *
+   * Centrally condensed bodies flatten less than the uniform-density limit
+   * (Jupiter's measured f is 0.065 against 0.111 from this formula), so a
+   * measured value in `properties.oblateness` always wins — the Solar System
+   * preset supplies real ones for the giants.
+   */
+  let oblateness = props.oblateness ?? 0.0;
+  if (props.oblateness === undefined && (isPlanet || isStar)) {
+    const periodS = Math.max(0.05, props.rotationPeriod || 24.0) * 3600;
+    const omega = (2 * Math.PI) / periodS;
+    const rM = data.radiusKm * 1000;
+    const gm = 6.6743e-11 * data.mass * 5.9722e24;
+    if (gm > 0 && rM > 0) {
+      const q = (omega * omega * rM * rM * rM) / gm;
+      oblateness = Math.min((5.0 / 4.0) * q, 0.5);
+    }
   }
 
   // Black Hole scaling handled via transform, others via vertex shader.

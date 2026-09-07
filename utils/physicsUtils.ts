@@ -32,6 +32,7 @@ import {
   mixtureDensity,
   terrestrialRadiusKm,
 } from './bodyDerivation';
+import { isSatellite } from './moonSystem';
 import { scratchV2, scratchV3 } from './scratchVectors';
 import { clampMass, clampRadius, clampRadiusKm } from './physicsBounds';
 
@@ -611,10 +612,18 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
   for (let i = 0; i < bodies.length; i++) {
     const b1 = bodies[i];
     if (!isValidBody(b1) || _collisionRemove.has(b1.id)) continue;
+    // Satellites on Kepler rails never collide. Their true orbital radius is
+    // far smaller than their parent's *drawn* radius — the Moon orbits at 0.10
+    // length units while Earth is drawn at 2.5 — so contact tests against the
+    // visual radius would consume every moon on the first step. They are
+    // already excluded from the integrator for the same reason; if one escapes
+    // its Hill sphere it is promoted to a free body and becomes collidable.
+    if (isSatellite(b1)) continue;
 
     for (let j = i + 1; j < bodies.length; j++) {
       const b2 = bodies[j];
       if (!isValidBody(b2) || _collisionRemove.has(b2.id)) continue;
+      if (isSatellite(b2)) continue;
 
       const dx = b2.position.x - b1.position.x;
       const dy = b2.position.y - b1.position.y;

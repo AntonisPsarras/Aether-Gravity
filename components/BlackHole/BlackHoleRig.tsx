@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { registerBlackHoleVisual } from './BlackHoleLensCapture';
+import { diskEfficiency, iscoRadiusRg } from '../../utils/relativity';
 
 export type BlackHoleRigProps = {
   radius: number;
@@ -83,6 +84,8 @@ uniform float u_spin;
 uniform float u_accretion;
 uniform sampler2D u_bg_texture;
 uniform vec2 u_resolution;
+/** Inner edge of the disk as a fraction of the quad: the ISCO. */
+uniform float u_inner;
 varying vec2 vUv;
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
@@ -117,7 +120,9 @@ void main() {
     vec3 p = marchOrigin + marchDir * (float(i) * 0.07);
     p.xz *= rot2(u_time * (0.25 + u_spin * 0.5) + p.y * 1.5);
     float radial = length(p.xz);
-    float ring = exp(-pow((radial - 0.55) * 3.5, 2.0));
+    // Brightest annulus sits just outside the ISCO, where the disk is hottest.
+    float ringR = clamp(u_inner * 2.4, 0.28, 0.72);
+    float ring = exp(-pow((radial - ringR) * 3.5, 2.0));
     float thick = exp(-abs(p.y) * 10.0);
     float n = hash21(p.xz * 4.0 + vec2(float(i), u_time * 0.3));
     density += ring * thick * mix(0.5, 1.2, n) * 0.055;
@@ -128,9 +133,18 @@ void main() {
   float heat = smoothstep(1.0, 0.2, r);
   accretion = mix(coldColor, hotColor, heat) * density * (4.0 + u_accretion * 6.0);
 
+  // Relativistic Doppler beaming. Material at radius r orbits at
+  // beta ~ 1/sqrt(r/r_g); the observed intensity of an approaching element
+  // scales as the Doppler factor cubed for a thin disk. The approaching side
+  // is genuinely brighter than the receding one, which is the defining visual
+  // signature of an accretion disk. Replaces a sinusoid scaled by spin.
   float angle = atan(uv.y, uv.x);
-  float doppler = 1.0 + 0.35 * sin(angle + u_time * 0.2) * u_spin;
-  accretion *= doppler;
+  float orbitR = max(r / max(u_inner, 0.02), 1.0);
+  float beta = clamp(0.5 / sqrt(orbitR), 0.0, 0.85);
+  float cosPhi = cos(angle + u_time * 0.2);
+  float gamma = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
+  float doppler = 1.0 / (gamma * (1.0 - beta * cosPhi));
+  accretion *= clamp(doppler * doppler * doppler, 0.15, 6.0);
 
   vec2 screenUv = gl_FragCoord.xy / max(u_resolution, vec2(1.0));
   vec2 lensDir = normalize(uv + 1e-5);
@@ -139,7 +153,7 @@ void main() {
   float starNoise = hash21(floor(screenUv * 180.0)) * hash21(floor(screenUv * 220.0 + 10.0));
   lensedBg += vec3(starNoise) * 0.15 * smoothstep(0.5, 0.0, r);
 
-  float innerHole = smoothstep(0.22, 0.18, r);
+  float innerHole = smoothstep(u_inner * 1.15, u_inner, r);
   vec3 color = lensedBg * 0.25 + accretion;
   color = mix(color, vec3(0.0), innerHole);
 
@@ -157,6 +171,7 @@ uniform float u_spin;
 uniform float u_accretion;
 uniform float u_parallax;
 uniform float u_layer;
+uniform float u_inner;
 varying vec2 vUv;
 varying vec3 vWorldPos;
 
@@ -169,7 +184,7 @@ void main() {
 
   float swirl = sin(a * 5.0 - u_time * (2.0 + u_spin) + u_layer * 0.7) * 0.5 + 0.5;
   float ripple = cos(r * (26.0 + u_layer * 4.0) - u_time * 1.5) * 0.5 + 0.5;
-  float diskMask = smoothstep(1.12, 0.28, r) * (1.0 - smoothstep(0.24, 0.19, r));
+  float diskMask = smoothstep(1.12, u_inner * 1.4, r) * (1.0 - smoothstep(u_inner * 1.2, u_inner, r));
   float intensity = diskMask * (0.4 + 0.6 * swirl) * (0.65 + 0.35 * ripple);
 
   vec3 hotColor = vec3(0.98, 0.83, 0.14);
@@ -177,7 +192,7 @@ void main() {
   float heat = smoothstep(1.0, 0.25, r);
   vec3 diskColor = mix(coldColor, hotColor, heat) * intensity * (1.1 + u_accretion);
 
-  float horizon = smoothstep(0.24, 0.19, r);
+  float horizon = smoothstep(u_inner * 1.2, u_inner, r);
   vec3 color = mix(diskColor, vec3(0.0), horizon);
   float alpha = clamp(max(diskMask, horizon * 0.9), 0.0, 1.0) * (0.55 + u_layer * 0.15);
   if (alpha < 0.03) discard;
@@ -286,6 +301,7 @@ export default function BlackHoleRig({
           u_accretion: { value: accretion },
           u_bg_texture: { value: bgTexture },
           u_resolution: { value: new THREE.Vector2(size.width, size.height) },
+          u_inner: { value: 0.2 },
         },
         vertexShader: diskVertex,
         fragmentShader: diskFragmentHigh,
@@ -306,6 +322,7 @@ export default function BlackHoleRig({
         u_accretion: { value: accretion },
         u_parallax: { value: parallax },
         u_layer: { value: layer },
+        u_inner: { value: 0.2 },
       },
       vertexShader: diskVertex,
       fragmentShader: parallaxDiskFragment,
@@ -402,21 +419,30 @@ export default function BlackHoleRig({
     const t = state.clock.elapsedTime;
     let nextTier = qualityTier;
 
+    // Brightness tracks the disk's radiative efficiency, which rises from 5.7%
+    // at zero spin to ~32% at the Thorne limit as the ISCO moves inwards. A
+    // spun-up hole is genuinely brighter for the same accretion rate.
+    const luminous = Math.min(1, accretion * (diskEfficiency(spin) / diskEfficiency(0)));
+    // Inner disk edge = ISCO, anchored so a static hole is unchanged (0.20).
+    const innerFraction = Math.max(0.03, 0.20 * (iscoRadiusRg(spin, true) / 6));
+
     horizonMatHigh.uniforms.u_time.value = t;
     horizonMatHigh.uniforms.u_spin.value = spin;
-    horizonMatHigh.uniforms.u_accretion.value = accretion;
+    horizonMatHigh.uniforms.u_accretion.value = luminous;
     horizonMatLow.uniforms.u_spin.value = spin;
 
     diskMatHigh.uniforms.u_time.value = t;
     diskMatHigh.uniforms.u_spin.value = spin;
-    diskMatHigh.uniforms.u_accretion.value = accretion;
+    diskMatHigh.uniforms.u_accretion.value = luminous;
+    diskMatHigh.uniforms.u_inner.value = innerFraction;
     diskMatHigh.uniforms.u_bg_texture.value = bgTexture;
     diskMatHigh.uniforms.u_resolution.value.set(size.width, size.height);
 
     lowDiskMats.forEach((m) => {
       m.uniforms.u_time.value = t;
       m.uniforms.u_spin.value = spin;
-      m.uniforms.u_accretion.value = accretion;
+      m.uniforms.u_accretion.value = luminous;
+      m.uniforms.u_inner.value = innerFraction;
     });
 
     ergoMat.uniforms.u_time.value = t;
@@ -425,7 +451,13 @@ export default function BlackHoleRig({
     if (diskGroupRef.current) {
       diskGroupRef.current.rotation.x = 0;
       diskGroupRef.current.rotation.z = 0;
-      diskGroupRef.current.rotation.y += delta * (0.15 + spin * 0.85);
+      // Orbital angular frequency at the ISCO, Omega = 1/(r^1.5 + a) in
+      // geometrised units, normalised to the Schwarzschild case (r = 6 r_g).
+      // A near-extremal hole's inner disk therefore whirls ~13x faster than a
+      // static one's, instead of the previous linear 0.15 + 0.85a fudge.
+      const isco = iscoRadiusRg(spin, true);
+      const omegaRel = Math.pow(6, 1.5) / (Math.pow(isco, 1.5) + spin);
+      diskGroupRef.current.rotation.y += delta * 0.15 * Math.min(omegaRel, 20);
     }
 
     if (qualityTier === 'high' && frameProbeRef.current.length < 60) {
@@ -451,7 +483,41 @@ export default function BlackHoleRig({
 
   const tier = qualityTier;
   const horizonScale = radius * 0.55;
-  const diskScale = radius * 2.8;
+
+  /**
+   * Spin drives real geometry, not just shader mood.
+   *
+   * `radius` is the drawn Kerr outer horizon r+ = r_g(1 + sqrt(1 - a*^2)).
+   * Expressing everything else as a multiple of r_g keeps the whole rig
+   * self-consistent as spin changes:
+   *
+   *  - The accretion disk's inner edge is the ISCO, which runs from 6 r_g at
+   *    zero spin down to 1 r_g at extremal prograde spin. A rapidly spinning
+   *    hole therefore has a disk that reaches much further in relative to its
+   *    horizon, which is the visually striking part of Kerr geometry.
+   *  - The ergosphere is oblate: it touches the horizon at the poles and
+   *    reaches R_s = 2 r_g at the equator. It was previously a fixed 1.12x
+   *    sphere, which is the wrong shape at every spin.
+   */
+  const rgPerHorizon = 1 / (1 + Math.sqrt(Math.max(0, 1 - spin * spin)));
+  const iscoRg = iscoRadiusRg(spin, true);
+
+  // The disk's outer extent is held constant in gravitational radii, so it does
+  // not appear to shrink merely because the horizon does. The 2 * rgPerHorizon
+  // factor is exactly 1 at zero spin, so a static hole renders identically to
+  // before this change.
+  const diskScale = radius * 2.8 * (2 * rgPerHorizon);
+
+  // Inner edge of the disk, as a fraction of the quad. Anchored so a static
+  // hole keeps its existing 0.20 hole and scaled by the ISCO's real motion:
+  // 6 r_g when static, 1.24 r_g at the Thorne limit, so a rapidly spinning
+  // hole's disk reaches almost to the horizon.
+  const diskInnerFraction = Math.max(0.03, 0.20 * (iscoRg / 6));
+
+  // Equatorial static limit is always R_s = 2 r_g; the poles sit on the
+  // horizon. Expressed as a multiple of the drawn horizon radius.
+  const ergoEquatorial = 2 * rgPerHorizon;
+  const ergoPolar = 1.0;
   const showErgo = spin > 0.08;
 
   return (
@@ -466,7 +532,15 @@ export default function BlackHoleRig({
       <mesh ref={horizonMeshRef} geometry={horizonGeo} scale={horizonScale} renderOrder={2} material={tier === 'high' ? horizonMatHigh : horizonMatLow} />
 
       {showErgo && tier === 'high' && (
-        <mesh ref={ergoMeshRef} geometry={ergoGeo} scale={horizonScale} renderOrder={1} material={ergoMat} />
+        // Non-uniform scale: the ergosphere bulges at the equator (XZ) and
+        // meets the horizon at the poles (Y).
+        <mesh
+          ref={ergoMeshRef}
+          geometry={ergoGeo}
+          scale={[horizonScale * ergoEquatorial, horizonScale * ergoPolar, horizonScale * ergoEquatorial]}
+          renderOrder={1}
+          material={ergoMat}
+        />
       )}
 
       <group ref={diskGroupRef} scale={diskScale} renderOrder={3}>

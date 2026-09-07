@@ -9,6 +9,8 @@ import {
 } from './physicsUtils';
 import { patchPhysicsBody, replacePhysicsBodies, appendPhysicsBody } from './physicsBridge';
 import { G_CONSTANT } from '../constants';
+import { buildRealSystem, getRealSystem } from '../content/realSystems';
+import { resetAccumulator, resetVerletCache } from './physicsSoA';
 import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
 import {
   clampMass,
@@ -82,6 +84,8 @@ interface AppState {
 
   // System Actions
   generateNewSystem: () => void;
+  loadRealSystem: (systemId: string) => void;
+  installBodies: (bodies: CelestialBody[]) => void;
   loadWorld: (data: WorldData) => void;
   /** Clears selection, camera lock, and inspector locks (e.g. when leaving a world). */
   resetSessionUiState: () => void;
@@ -395,13 +399,28 @@ export const useStore = create<AppState>((set, get) => ({
   toggleStability: () => set((state) => ({ showStability: !state.showStability })),
 
   generateNewSystem: () => {
-    const bodies = generateSystem();
+    get().installBodies(generateSystem());
+  },
+
+  /**
+   * Load a scientifically-parameterised real system (Solar System, TRAPPIST-1,
+   * …) as a starting point. Distinct from `generateNewSystem`, which produces a
+   * random one. The resulting bodies are fully editable and saveable like any
+   * other world.
+   */
+  loadRealSystem: (systemId: string) => {
+    const system = getRealSystem(systemId);
+    if (!system) return;
+    get().installBodies(buildRealSystem(system));
+  },
+
+  /** Replace the world with `bodies`, recomputing naming counters and camera. */
+  installBodies: (bodies: CelestialBody[]) => {
     const star = findPrimaryStar(bodies);
 
-    // Recalculate type counts from generated system
+    // Recalculate type counts so newly created bodies keep numbering upward.
     const counts: Record<string, number> = {};
     bodies.forEach(b => {
-      // Attempt to parse number from name "Type X"
       const match = b.name.match(/(\d+)$/);
       if (match) {
         const num = parseInt(match[1]);
@@ -411,9 +430,17 @@ export const useStore = create<AppState>((set, get) => ({
       }
     });
 
+    const sanitized = sanitizeCelestialBodies(bodies);
+    // Start the simulation clock at zero so satellites, whose mean anomalies
+    // are defined against an epoch, begin at the phase the preset specifies.
+    // Also drops stale cached accelerations from the previous world.
+    resetAccumulator();
+    resetVerletCache();
+    replacePhysicsBodies(sanitized);
+
     const state = get();
     set({
-      bodies: sanitizeCelestialBodies(bodies),
+      bodies: sanitized,
       selectedId: null,
       inspectorBodyId: null,
       cameraLockedId: star?.id ?? null,

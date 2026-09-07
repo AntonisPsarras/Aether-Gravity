@@ -3,6 +3,12 @@ import type { AetherTestAPI, PerfReport, StoreSnapshot } from '../utils/testBrid
 
 export const FIXTURE_MINIMAL = 'minimal-3body';
 export const FIXTURE_STRESS = 'stress-20b';
+/**
+ * The real Solar System: 11 N-body bodies plus 11 Kepler-propagated moons.
+ * This is the heaviest scene the app ships with, so it is the honest target for
+ * the 60 FPS mobile budget.
+ */
+export const FIXTURE_SOLAR = 'preset:solar-system';
 
 export function e2eUrl(fixture: string, extra: Record<string, string> = {}): string {
   const params = new URLSearchParams({ e2e: '1', fixture, ...extra });

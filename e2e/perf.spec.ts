@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   e2eUrl,
   FIXTURE_MINIMAL,
+  FIXTURE_SOLAR,
   FIXTURE_STRESS,
   runPerfSoak,
   waitForSimulationReady,
@@ -78,6 +79,35 @@ test.describe('Performance soak', () => {
     expect(report.fps.avg).toBeGreaterThan(stressMinFps);
 
     test.info().attach('perf-stress-20b.json', {
+      body: JSON.stringify(report, null, 2),
+      contentType: 'application/json',
+    });
+  });
+
+  test('solar system preset maintains FPS floor', async ({ page }) => {
+    const meta = {
+      testName: 'solar system preset maintains FPS floor',
+      fixture: FIXTURE_SOLAR,
+      soakMs: SOAK_MS,
+    };
+
+    await page.goto(e2eUrl(FIXTURE_SOLAR));
+    await waitForSimulationReady(page);
+
+    // 21 bodies total, but only the 10 free ones go through the O(N^2) pair
+    // loop — the 11 moons are propagated analytically at O(1) each.
+    const bodyCount = await page.evaluate(() => window.__AETHER_TEST__!.getStore().bodyCount);
+    expect(bodyCount).toBe(21);
+
+    const report = await runPerfSoak(page, SOAK_MS);
+
+    logPerfSummary(meta, report);
+    bufferPerfRun(meta, report);
+
+    expect(report.contextLostCount).toBe(0);
+    expect(report.fps.avg).toBeGreaterThan(MIN_FPS);
+
+    test.info().attach('perf-solar-system.json', {
       body: JSON.stringify(report, null, 2),
       contentType: 'application/json',
     });

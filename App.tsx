@@ -185,7 +185,7 @@ const App: React.FC = () => {
   const [e2eBootstrapping, setE2eBootstrapping] = useState(
     e2eConfig.enabled && !!e2eConfig.fixture,
   );
-  const { loadWorld, setBodies, generateNewSystem, resetSessionUiState } = useStore();
+  const { loadWorld, setBodies, generateNewSystem, loadRealSystem, resetSessionUiState } = useStore();
 
   useEffect(() => {
     if (!e2eConfig.enabled || !e2eConfig.fixture) {
@@ -195,6 +195,18 @@ const App: React.FC = () => {
 
     let cancelled = false;
     const fixtureName = e2eConfig.fixture;
+
+    // `preset:<id>` loads a real system straight from content/realSystems.ts
+    // rather than a JSON fixture, so the perf suite can measure the heaviest
+    // scene the app actually ships with.
+    if (fixtureName.startsWith('preset:')) {
+      const presetId = fixtureName.slice('preset:'.length);
+      setActiveWorldId(`e2e-${presetId}`);
+      loadRealSystem(presetId);
+      markTestBridgeAppReady();
+      setE2eBootstrapping(false);
+      return;
+    }
 
     fetch(`./e2e/fixtures/${fixtureName}.json`)
       .then((res) => {
@@ -279,14 +291,17 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCreateWorld = (id: string) => {
+  const handleCreateWorld = (id: string, presetId?: string) => {
     const data = getWorld(id);
     if (!data) return;
     loadWorld(data);
     setActiveWorldId(id);
-    // Mount Simulation first, then generate so CameraRecenter runs with live controls.
+    // Mount Simulation first, then populate so CameraRecenter runs with live controls.
     if (data.bodies.length === 0) {
-      deferDoubleFrame(() => generateNewSystem());
+      deferDoubleFrame(() => {
+        if (presetId) loadRealSystem(presetId);
+        else generateNewSystem();
+      });
     }
   };
 

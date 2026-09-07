@@ -12,8 +12,8 @@ import * as THREE from 'three';
 import { REAL_SYSTEMS, buildRealSystem, getRealSystem } from '../content/realSystems';
 import { M_SUN_IN_EARTH, distToAU, distToKm, orbitalPeriodYears } from './units';
 import { gravitationalParameter, periodFromElements } from './keplerOrbit';
-import { isSatellite, satellitePeriodYears } from './moonSystem';
-import { getOrbitalElements } from './physicsUtils';
+import { isSatellite, propagateSatellites, satellitePeriodYears } from './moonSystem';
+import { checkCollisions, getOrbitalElements } from './physicsUtils';
 import { verletStepInPlace, resetVerletCache } from './physicsSoA';
 import { calculateHabitableZone } from './HabitabilityService';
 import { bulkDensityGcm3, surfaceGravitySi } from './units';
@@ -158,6 +158,44 @@ describe('Solar System preset', () => {
     }
     // Net velocity of the centre of mass, in units of Earth's orbital speed.
     expect(mom.length() / totalMass).toBeLessThan(0.5);
+  });
+
+  it('does not eat its own moons on the first collision pass', () => {
+    // A moon's true orbital radius is far inside its parent's *drawn* radius
+    // (the Moon at 0.10 length units against an Earth drawn at 2.5), so a
+    // naive contact test against the visual radius merges every satellite
+    // immediately. This caught a real bug: the Solar System preset lost all 11
+    // moons within one physics step.
+    const bodies = solar();
+    const before = bodies.length;
+    const result = checkCollisions(bodies, 0);
+    expect(result.merged).toBe(false);
+    expect(result.active.length).toBe(before);
+    expect(result.active.filter(isSatellite).length).toBe(11);
+  });
+
+  it('keeps its moons over a sustained run', () => {
+    resetVerletCache();
+    const bodies = solar();
+    const byId = new Map(bodies.map((b) => [b.id, b]));
+    const parents = new Map<string, ReturnType<typeof find> | null>();
+    for (const b of bodies) parents.set(b.id, null);
+
+    let live = bodies;
+    for (let step = 0; step < 300; step++) {
+      verletStepInPlace(live, 1 / 1024);
+      propagateSatellites(live, byId, step / 1024);
+      live = checkCollisions(live, step).active;
+    }
+    expect(live.length).toBe(bodies.length);
+    expect(live.filter(isSatellite).length).toBe(11);
+    // And each moon must still be at a sane distance from its parent.
+    for (const moon of live.filter(isSatellite)) {
+      const parent = byId.get(moon.parentId!)!;
+      const sep = moon.position.distanceTo(parent.position);
+      expect(sep, `${moon.name} separation`).toBeGreaterThan(0);
+      expect(sep, `${moon.name} separation`).toBeLessThan(1);
+    }
   });
 
   it('stays bound: no planet escapes over 200 integration steps', () => {

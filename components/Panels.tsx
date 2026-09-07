@@ -5,7 +5,8 @@ import { useStore } from '../utils/store';
 import {
   Play, Pause, RotateCcw, Trash2, Thermometer,
   Focus, Hexagon, Sun, Globe, CircleDot, MousePointer2, Sparkles,
-  Aperture, AlertTriangle, X, Flame, Snowflake, Zap, ChevronUp, ChevronDown, Settings, Home, Sliders, Layers, Scale, Weight, Wind, Orbit, Disc, Microscope, Timer, Lock, Activity, HelpCircle
+  Aperture, AlertTriangle, X, Flame, Snowflake, Zap, ChevronUp, ChevronDown, Settings, Home, Sliders, Layers, Scale, Weight, Wind, Orbit, Disc, Microscope, Timer, Lock, Activity, HelpCircle,
+  Moon, Gem, Sparkle, Radio
 } from 'lucide-react';
 import { calculateESI, calculateRSI, kelvinToRgb, rgbToHex, getSpectralType, calculateTidalLockTime, findDominantParent, getOrbitalElements, calculateOrbitalState, calculateStabilityMetrics, bodyLuminositySolar } from '../utils/physicsUtils';
 import { TEXTURE_TYPES, BODY_CONFIGS } from '../constants';
@@ -18,6 +19,8 @@ import {
   schwarzschildRadiusKm, kerrOuterHorizonKm, iscoRadiusKm, photonSphereRadiusKm,
   diskEfficiency, MAX_SPIN_PARAMETER,
 } from '../utils/relativity';
+import { elementsFromDegrees, meanAnomalyFromTrueAnomaly } from '../utils/keplerOrbit';
+import { getSimTime } from '../utils/physicsSoA';
 import { Group } from '@visx/group';
 import { LinePath } from '@visx/shape';
 import { curveMonotoneX } from '@visx/curve';
@@ -288,6 +291,13 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
     { id: 'Planet', label: 'Planet', icon: Globe, color: 'text-blue-400', bg: 'bg-blue-500/20' },
     { id: 'Ice Giant', label: 'Ice', icon: Snowflake, color: 'text-indigo-300', bg: 'bg-indigo-500/20' },
     { id: 'Dwarf', label: 'Dwarf', icon: CircleDot, color: 'text-gray-400', bg: 'bg-gray-500/20' },
+    { id: 'Gas Giant', label: 'Gas', icon: Wind, color: 'text-amber-300', bg: 'bg-amber-500/20' },
+    { id: 'White Dwarf', label: 'W. Dwarf', icon: Sparkle, color: 'text-sky-200', bg: 'bg-sky-400/20' },
+    { id: 'Brown Dwarf', label: 'B. Dwarf', icon: Moon, color: 'text-orange-700', bg: 'bg-orange-800/20' },
+    { id: 'Pulsar', label: 'Pulsar', icon: Radio, color: 'text-cyan-200', bg: 'bg-cyan-300/20' },
+    { id: 'Moon', label: 'Moon', icon: Moon, color: 'text-stone-300', bg: 'bg-stone-400/20' },
+    { id: 'Asteroid', label: 'Asteroid', icon: Gem, color: 'text-stone-500', bg: 'bg-stone-600/20' },
+    { id: 'Comet', label: 'Comet', icon: Sparkles, color: 'text-teal-200', bg: 'bg-teal-400/20' },
   ];
 
   return (
@@ -539,25 +549,51 @@ export const InspectorPanel: React.FC = () => {
     }
   }, [selectedBody, parentBody]);
 
+  /**
+   * Apply the Orbit tab's elements to the body.
+   *
+   * For a free body this sets position and velocity, and additionally *stores*
+   * the elements on `body.orbit` so they survive a save/load round trip — the
+   * pre-2.0 tab computed a state vector and threw the elements away, so the
+   * sliders reset to whatever the integrator happened to produce.
+   *
+   * For a satellite on Kepler rails the elements ARE the state, so they are
+   * written straight through and the body is re-placed on the next frame.
+   */
   const applyOrbitalElements = () => {
     if (!selectedBody || !parentBody) return;
     const clamped = {
-      a: Math.max(10, Math.min(500, elements.a || 50)),
+      a: Math.max(1e-4, Math.min(20000, elements.a || 40)),
       e: Math.max(0, Math.min(0.95, elements.e || 0)),
       i: Math.max(0, Math.min(180, elements.i || 0)),
       Omega: ((elements.Omega || 0) % 360 + 360) % 360,
       omega: ((elements.omega || 0) % 360 + 360) % 360,
       nu: ((elements.nu || 0) % 360 + 360) % 360,
     };
+
+    const orbit = elementsFromDegrees(
+      clamped.a, clamped.e, clamped.i, clamped.Omega, clamped.omega,
+      // The tab edits true anomaly; the stored element is mean anomaly.
+      (meanAnomalyFromTrueAnomaly((clamped.nu * Math.PI) / 180, clamped.e) * 180) / Math.PI,
+      getSimTime(),
+    );
+
+    if (selectedBody.parentId) {
+      updateBody(selectedBody.id, { orbit });
+      return;
+    }
+
     const state = calculateOrbitalState(
       parentBody,
       clamped.a, clamped.e, clamped.i,
-      clamped.Omega, clamped.omega, clamped.nu
+      clamped.Omega, clamped.omega, clamped.nu,
+      selectedBody.mass,
     );
     if (!isFinite(state.position.x) || !isFinite(state.velocity.x)) return;
     updateBody(selectedBody.id, {
       position: state.position,
       velocity: state.velocity,
+      orbit,
     });
   };
 
@@ -880,8 +916,38 @@ export const InspectorPanel: React.FC = () => {
                 )}
                 {selectedBody.type === 'Black Hole' && (
                   <>
-                    <RangeInput label="Spin Parameter (a*)" min={0} max={1.0} step={0.01} value={props.spinParameter ?? 0.0} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('spinParameter', v)} />
+                    {/* Thorne limit: photon capture from the disk caps
+                        accretion-driven spin at a* = 0.998. */}
+                    <RangeInput label="Spin Parameter (a*)" min={0} max={MAX_SPIN_PARAMETER} step={0.002} value={props.spinParameter ?? 0.0} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('spinParameter', v)} />
                     <RangeInput label="Accretion Rate" min={0} max={1.0} step={0.01} value={props.accretionRate ?? 0.5} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('accretionRate', v)} />
+
+                    {/* Everything below is derived Kerr geometry — read-only,
+                        recomputed from mass and spin. */}
+                    <div className="bg-black/30 rounded-lg p-3 border border-white/5 space-y-1.5 mt-2">
+                      <div className="text-[9px] uppercase tracking-widest text-pulsar-white/30 mb-1">
+                        Kerr Geometry
+                      </div>
+                      <DerivedRow
+                        label="Schwarzschild r_s"
+                        value={fmtRadiusKm(schwarzschildRadiusKm(selectedBody.mass))}
+                      />
+                      <DerivedRow
+                        label="Event horizon r₊"
+                        value={fmtRadiusKm(kerrOuterHorizonKm(selectedBody.mass, props.spinParameter ?? 0))}
+                      />
+                      <DerivedRow
+                        label="Photon sphere"
+                        value={fmtRadiusKm(photonSphereRadiusKm(selectedBody.mass, props.spinParameter ?? 0))}
+                      />
+                      <DerivedRow
+                        label="ISCO (prograde)"
+                        value={fmtRadiusKm(iscoRadiusKm(selectedBody.mass, props.spinParameter ?? 0, true))}
+                      />
+                      <DerivedRow
+                        label="Disk efficiency η"
+                        value={`${(diskEfficiency(props.spinParameter ?? 0) * 100).toFixed(1)} %`}
+                      />
+                    </div>
                   </>
                 )}
               </div>
@@ -906,7 +972,26 @@ export const InspectorPanel: React.FC = () => {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <RangeInput label="Semi-major Axis (a)" min={10} max={500} step={1} value={elements.a || 50} onEditStart={orbitEditStart} onEditEnd={orbitEditEnd} onChange={(v) => setElements({ ...elements, a: v })} />
+                  {/* Logarithmic: a moon sits at ~0.1 units while an outer
+                      planet sits at ~1200, so a linear slider cannot serve both. */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[10px] text-pulsar-white/50 uppercase">Semi-major Axis (a)</span>
+                      <span className="text-[10px] text-pulsar-white/30 font-mono">{fmtDistance(elements.a || 40)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={Math.log10(0.005)}
+                      max={Math.log10(2000)}
+                      step={0.001}
+                      value={Math.log10(Math.max(elements.a || 40, 0.005))}
+                      onPointerDown={orbitEditStart}
+                      onPointerUp={orbitEditEnd}
+                      onPointerCancel={orbitEditEnd}
+                      onChange={(e) => setElements({ ...elements, a: Math.pow(10, parseFloat(e.target.value)) })}
+                      className="w-full rounded-lg appearance-none cursor-pointer h-1.5 bg-white/10"
+                    />
+                  </div>
                   <RangeInput label="Eccentricity (e)" min={0} max={0.95} step={0.01} value={elements.e || 0} onEditStart={orbitEditStart} onEditEnd={orbitEditEnd} onChange={(v) => setElements({ ...elements, e: v })} />
                   <RangeInput label="True Anomaly (ν)" min={0} max={360} step={1} value={elements.nu || 0} onEditStart={orbitEditStart} onEditEnd={orbitEditEnd} onChange={(v) => setElements({ ...elements, nu: v })} />
                 </div>

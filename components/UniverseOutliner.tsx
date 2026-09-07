@@ -7,7 +7,8 @@ import { buildParentMap } from '../utils/physicsUtils';
 import { fmtMass, fmtTemp } from '../utils/units';
 import {
     Sun, Globe, CircleDot, Aperture, Zap, Flame, Snowflake,
-    ChevronDown, ChevronUp, ChevronRight, List, Droplets
+    ChevronDown, ChevronUp, ChevronRight, List, Droplets,
+    Moon, Gem, Sparkles, Sparkle, Wind, Radio
 } from 'lucide-react';
 
 // Icon mapping for body types
@@ -18,9 +19,16 @@ const BodyIcon: React.FC<{ type: BodyType; className?: string }> = ({ type, clas
         case 'Red Giant': return <Flame {...iconProps} />;
         case 'Neutron Star': return <Zap {...iconProps} />;
         case 'Black Hole': return <Aperture {...iconProps} />;
+        case 'Pulsar': return <Radio {...iconProps} />;
+        case 'White Dwarf': return <Sparkle {...iconProps} />;
+        case 'Brown Dwarf': return <Moon {...iconProps} />;
         case 'Planet': return <Globe {...iconProps} />;
+        case 'Gas Giant': return <Wind {...iconProps} />;
         case 'Ice Giant': return <Snowflake {...iconProps} />;
         case 'Dwarf': return <CircleDot {...iconProps} />;
+        case 'Moon': return <Moon {...iconProps} />;
+        case 'Asteroid': return <Gem {...iconProps} />;
+        case 'Comet': return <Sparkles {...iconProps} />;
         default: return <CircleDot {...iconProps} />;
     }
 };
@@ -32,9 +40,16 @@ const getTypeColor = (type: BodyType): string => {
         case 'Red Giant': return 'text-red-500';
         case 'Neutron Star': return 'text-cyan-300';
         case 'Black Hole': return 'text-orange-500';
+        case 'Pulsar': return 'text-cyan-200';
+        case 'White Dwarf': return 'text-sky-200';
+        case 'Brown Dwarf': return 'text-orange-800';
         case 'Planet': return 'text-blue-400';
+        case 'Gas Giant': return 'text-amber-300';
         case 'Ice Giant': return 'text-indigo-300';
         case 'Dwarf': return 'text-gray-400';
+        case 'Moon': return 'text-stone-300';
+        case 'Asteroid': return 'text-stone-500';
+        case 'Comet': return 'text-teal-200';
         default: return 'text-slate-400';
     }
 };
