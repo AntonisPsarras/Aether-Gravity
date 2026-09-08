@@ -248,6 +248,8 @@ export interface WorldMeta {
   createdAt: number;
   lastOpenedAt: number;
   folderId?: string;
+  /** Optional origin template. Absent for procedural and legacy worlds. */
+  presetId?: string;
 }
 
 export interface WorldData {

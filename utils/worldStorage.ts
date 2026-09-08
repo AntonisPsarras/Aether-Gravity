@@ -64,8 +64,9 @@ const parseWorldMetaList = (raw: unknown): WorldMeta[] => {
     const createdAt = safeNum(item.createdAt, Date.now());
     const lastOpenedAt = safeNum(item.lastOpenedAt, createdAt);
     const folderId = typeof item.folderId === 'string' ? item.folderId : undefined;
+    const presetId = typeof item.presetId === 'string' ? item.presetId : undefined;
     if (!id) continue;
-    out.push({ id, name, createdAt, lastOpenedAt, folderId });
+    out.push({ id, name, createdAt, lastOpenedAt, folderId, presetId });
   }
   return out;
 };
@@ -240,7 +241,7 @@ export const saveWorld = (world: WorldData): SaveWorldResult => {
     }
 };
 
-export const createWorld = (name: string, folderId?: string): string => {
+export const createWorld = (name: string, folderId?: string, presetId?: string): string => {
     const trimmedName = name.trim() ? sanitizeName(name) : `Universe ${Date.now()}`;
     if (isWorldNameTaken(trimmedName)) {
         throw new Error('A universe with this name already exists.');
@@ -255,6 +256,7 @@ export const createWorld = (name: string, folderId?: string): string => {
         createdAt: now,
         lastOpenedAt: now,
         folderId,
+        presetId,
     };
 
     const data: WorldData = {

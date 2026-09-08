@@ -47,7 +47,7 @@ export default defineConfig({
        * via `?e2e=1&touch=1`.
        */
       name: 'mobile-chrome',
-      testMatch: /(layout|editlock)\.spec\.ts/,
+      testMatch: /(layout|editlock|menu)\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 390, height: 844 },

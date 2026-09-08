@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { CelestialBody } from '../types';
-import { serializeBodies, deserializeBodies, sanitizeWorldSettings, parseWorldData } from './worldStorage';
+import { createWorld, getWorldList, serializeBodies, deserializeBodies, sanitizeWorldSettings, parseWorldData } from './worldStorage';
 import { clampMass, clampSpeed, PHYSICS_LIMITS } from './physicsBounds';
 
 describe('world persistence sanitization', () => {
@@ -41,5 +41,43 @@ describe('world persistence sanitization', () => {
     expect(parseWorldData(null)).toBeNull();
     expect(parseWorldData({ id: 'x' })).toBeNull();
     expect(parseWorldData({ id: 'x', bodies: [], settings: { speed: 2, showGrid: true, showDust: true, showHabitable: false, showStability: false } })?.settings.speed).toBe(2);
+  });
+});
+
+describe('world metadata', () => {
+  const values = new Map<string, string>();
+
+  beforeEach(() => {
+    values.clear();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+      },
+    });
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, 'localStorage');
+  });
+
+  it('records the selected real-system preset without changing world data', () => {
+    const id = createWorld('JPL playground', undefined, 'solar-system');
+    const [meta] = getWorldList();
+
+    expect(meta).toMatchObject({ id, name: 'JPL playground', presetId: 'solar-system' });
+    expect(JSON.parse(values.get(`aether:worlds:data:${id}`) ?? '{}')).not.toHaveProperty('presetId');
+  });
+
+  it('keeps legacy and unknown preset metadata backward compatible', () => {
+    values.set('aether:worlds:index', JSON.stringify([
+      { id: 'legacy', name: 'Legacy', createdAt: 1, lastOpenedAt: 1 },
+      { id: 'future', name: 'Future', createdAt: 2, lastOpenedAt: 2, presetId: 'future-system' },
+    ]));
+
+    expect(getWorldList().find((world) => world.id === 'legacy')?.presetId).toBeUndefined();
+    expect(getWorldList().find((world) => world.id === 'future')?.presetId).toBe('future-system');
   });
 });
