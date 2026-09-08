@@ -42,10 +42,16 @@ test.describe('Simulation controls', () => {
   });
 
   test('overlay toggles update store', async ({ page }) => {
+    // The display toggles moved off the control bar into the settings sheet to
+    // free up phone HUD space; the testids and store keys are unchanged.
+    await page.getByTestId('open-settings').click();
+    await expect(page.getByTestId('settings-panel')).toBeVisible();
+
     let store = await readStore(page);
     const initialGrid = store.showGrid;
     const initialDust = store.showDust;
     const initialHabitable = store.showHabitable;
+    const initialOrbitPaths = store.showOrbitPaths;
 
     await page.getByTestId('toggle-grid').click();
     store = await readStore(page);
@@ -58,6 +64,29 @@ test.describe('Simulation controls', () => {
     await page.getByTestId('toggle-habitable').click();
     store = await readStore(page);
     expect(store.showHabitable).toBe(!initialHabitable);
+
+    await page.getByTestId('toggle-orbit-paths').click();
+    store = await readStore(page);
+    expect(store.showOrbitPaths).toBe(!initialOrbitPaths);
+
+    await page.getByTestId('settings-close').click();
+    await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+  });
+
+  test('mode switch is live and non-destructive', async ({ page }) => {
+    const before = await page.evaluate(() => window.__AETHER_TEST__!.getPhysicsSnapshot());
+
+    await page.getByTestId('open-settings').click();
+    await page.getByTestId('ui-mode-beginner').click();
+    expect(await readStore(page)).toMatchObject({ uiMode: 'beginner' });
+
+    await page.getByTestId('ui-mode-advanced').click();
+    expect(await readStore(page)).toMatchObject({ uiMode: 'advanced' });
+    await page.getByTestId('settings-close').click();
+
+    // Switching modes is presentation-only: the body set is untouched.
+    const after = await page.evaluate(() => window.__AETHER_TEST__!.getPhysicsSnapshot());
+    expect(after.length).toBe(before.length);
   });
 
   test('physics energy drift stays bounded over 5 seconds', async ({ page }) => {

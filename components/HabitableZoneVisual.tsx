@@ -16,6 +16,10 @@ import { scratchV0, scratchV1 } from '../utils/scratchVectors';
 
 import { getPhysicsBodiesSnapshot } from '../utils/physicsBridge';
 
+import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
+
+import { CURVATURE_KNEE, CURVATURE_MAX_DEPTH, curvatureAmountFor } from '../utils/displayMode';
+
 
 
 const HabitableZoneMaterial = shaderMaterial(
@@ -42,6 +46,15 @@ const HabitableZoneMaterial = shaderMaterial(
 
     uColorOptimal: new THREE.Color(0.1, 0.8, 0.3), // Optimal
 
+    // Must track the grid's own curvature uniforms exactly, or this disc
+    // detaches from the surface it is supposed to lie on.
+
+    uCurvatureAmount: 0.0,
+
+    uCurvatureKnee: CURVATURE_KNEE,
+
+    uCurvatureMax: CURVATURE_MAX_DEPTH,
+
   },
 
   // Vertex Shader
@@ -66,7 +79,13 @@ const HabitableZoneMaterial = shaderMaterial(
 
     uniform int uBodyCount;
 
+    uniform float uCurvatureAmount;
 
+    uniform float uCurvatureKnee;
+
+    uniform float uCurvatureMax;
+
+    ${CURVATURE_DISPLAY_GLSL}
 
     void main() {
 
@@ -103,6 +122,8 @@ const HabitableZoneMaterial = shaderMaterial(
       }
 
       
+
+      displacement = -curvatureDisplayScale(-displacement, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
 
       newPos.z += displacement;
 
@@ -206,6 +227,8 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
   const showHabitable = useStore((s) => s.showHabitable);
 
+  const uiMode = useStore((s) => s.uiMode);
+
 
 
   const zones = useMemo(() => getHabitableZoneInGameUnits(star), [star.mass, star.temperature]);
@@ -233,6 +256,8 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
     materialRef.current.uInnerRadius = zones.inner;
 
     materialRef.current.uOuterRadius = zones.outer;
+
+    materialRef.current.uCurvatureAmount = curvatureAmountFor(uiMode);
 
 
 

@@ -29,7 +29,7 @@ export const OrbitSection: React.FC<{
   /** Reported upward so the tab bar and section header can show a dirty dot. */
   onDirtyChange?: (dirty: boolean) => void;
 }> = ({ onDirtyChange }) => {
-  const { body, parent, updateBody, lockFields, unlockFields } = useInspectorCtx();
+  const { body, parent, updateBody, lockFields, unlockFields, showField } = useInspectorCtx();
   const [elements, setElements] = useState<OrbitElements>(EMPTY);
   /**
    * Dirty means "the user has edited something that has not been applied".
@@ -163,17 +163,24 @@ export const OrbitSection: React.FC<{
               onChange={(a) => edit({ a })}
             />
             <RangeInput label="Eccentricity (e)" min={0} max={0.95} step={0.01} value={elements.e || 0} onEditStart={start} onEditEnd={end} onChange={(e) => edit({ e })} />
-            <RangeInput label="True Anomaly (ν)" min={0} max={360} step={1} value={elements.nu || 0} onEditStart={start} onEditEnd={end} onChange={(nu) => edit({ nu })} />
+            {/* Orientation angles are Advanced-only. The staged values are still
+                carried and still applied, so a beginner never silently
+                flattens an inclined orbit by pressing Apply. */}
+            {showField('trueAnomaly') && (
+              <RangeInput label="True Anomaly (ν)" min={0} max={360} step={1} value={elements.nu || 0} onEditStart={start} onEditEnd={end} onChange={(nu) => edit({ nu })} />
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <CircularDial label="Inclination (i)" value={elements.i || 0} max={180} onEditStart={start} onEditEnd={end} onChange={(i) => edit({ i })} />
-            <CircularDial label="Asc Node (Ω)" value={elements.Omega || 0} onEditStart={start} onEditEnd={end} onChange={(Omega) => edit({ Omega })} />
-            <div className="col-span-2 flex justify-center">
-              <div className="w-1/2">
-                <CircularDial label="Arg Periapsis (ω)" value={elements.omega || 0} onEditStart={start} onEditEnd={end} onChange={(omega) => edit({ omega })} />
+          {showField('inclination') && (
+            <div className="grid grid-cols-2 gap-2">
+              <CircularDial label="Inclination (i)" value={elements.i || 0} max={180} onEditStart={start} onEditEnd={end} onChange={(i) => edit({ i })} />
+              <CircularDial label="Asc Node (Ω)" value={elements.Omega || 0} onEditStart={start} onEditEnd={end} onChange={(Omega) => edit({ Omega })} />
+              <div className="col-span-2 flex justify-center">
+                <div className="w-1/2">
+                  <CircularDial label="Arg Periapsis (ω)" value={elements.omega || 0} onEditStart={start} onEditEnd={end} onChange={(omega) => edit({ omega })} />
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

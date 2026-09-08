@@ -158,6 +158,7 @@ export const parseWorldData = (raw: unknown): WorldData | null => {
         showDust: true,
         showHabitable: false,
         showStability: false,
+        showOrbitPaths: true,
     };
 
     const sourceVersion = typeof d.version === 'number' ? d.version : 1;
@@ -269,6 +270,7 @@ export const createWorld = (name: string, folderId?: string, presetId?: string):
             showDust: true,
             showHabitable: false,
             showStability: false,
+            showOrbitPaths: true,
         },
     };
 
@@ -519,6 +521,9 @@ export const sanitizeWorldSettings = (settings: WorldData['settings']): WorldDat
     showDust: Boolean(settings?.showDust ?? true),
     showHabitable: Boolean(settings?.showHabitable ?? false),
     showStability: Boolean(settings?.showStability ?? false),
+    // Defaults on for worlds saved before the orbit-path toggle moved into the
+    // settings sheet, matching the old hard-coded SpaceCanvas default.
+    showOrbitPaths: Boolean(settings?.showOrbitPaths ?? true),
 });
 
 export const markWorldOpened = (id: string): void => {

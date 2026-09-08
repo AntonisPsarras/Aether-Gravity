@@ -212,11 +212,21 @@ export const resetVerletCache = () => {
  * dt does not have to shrink further (see `utils/moonSystem.ts`).
  *
  * This does NOT change per-frame cost: the number of steps drained per frame is
- * capped by MAX_CATCHUP_STEPS either way. It only sets how much simulated time
- * passes per real second (up to ~0.47 yr/s at 60 fps).
+ * capped by MAX_CATCHUP_STEPS either way, and it does not set the playback rate
+ * either — `utils/simRate.ts` owns the real-seconds→sim-years mapping and is
+ * deliberately calibrated to stay under this cap across the whole speed slider.
  */
 export const FIXED_DT = 1 / 1024;
-export const MAX_CATCHUP_STEPS = 8;          // cap when tab unfocused / slow frame
+/**
+ * Steps drained per frame. This is the per-frame O(N²) budget, so it must not
+ * be raised to buy playback speed — that is `simRate.ts`'s job.
+ *
+ * It exists to absorb a stalled tab or a slow frame. Before the pacing layer,
+ * normal 60 fps playback hit this cap every single frame and the residual was
+ * discarded below, which silently flattened the whole upper half of the speed
+ * slider into one rate.
+ */
+export const MAX_CATCHUP_STEPS = 8;
 let accumulator = 0;
 
 /**

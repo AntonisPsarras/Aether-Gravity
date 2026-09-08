@@ -5,6 +5,7 @@ import { getWorldList, createWorld, deleteWorld, renameWorld, getFolderList, cre
 import { registerBackHandler } from '../utils/backNavigation';
 import { REAL_SYSTEMS } from '../content/realSystems';
 import { getOnboardingProgress, markTutorialSeen } from '../utils/onboarding';
+import { CREATION_ORDER } from './bodyTypeVisuals';
 
 const MenuSpaceBackground = lazy(() => import('./MenuSpaceBackground'));
 const PortfolioPanel = lazy(() => import('./PortfolioPanel'));
@@ -376,7 +377,10 @@ const PresetCard: React.FC<PresetCardProps> = ({ id, selected, name, subtitle, d
 );
 
 const defaultPresetId = REAL_SYSTEMS[0]?.id ?? null;
-const ALL_BODY_TYPES = ['Star', 'Planet', 'Moon', 'Gas Giant', 'Ice Giant', 'Black Hole', 'Neutron Star', 'Pulsar', 'White Dwarf', 'Brown Dwarf', 'Red Giant', 'Dwarf', 'Asteroid', 'Comet'];
+// Decorative ribbon of everything the sim can build. Derived from the toolbar's
+// own order rather than re-typed, so adding a body type cannot leave this list
+// silently stale.
+const ALL_BODY_TYPES: readonly string[] = CREATION_ORDER;
 
 export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id: string, presetId?: string) => void; }> = ({ onOpenWorld, onCreateWorld }) => {
     const [worlds, setWorlds] = useState<WorldMeta[]>([]);

@@ -4,6 +4,7 @@ import type { CelestialBody } from '../types';
 import { sampleOrbitPath } from './orbitPaths';
 import { elementsFromDegrees, gravitationalParameter, propagateOrbit } from './keplerOrbit';
 import { satelliteRenderPosition } from './moonSystem';
+import { beginnerVisualScale } from './displayMode';
 import { findDominantParent } from './physicsUtils';
 
 const body = (overrides: Partial<CelestialBody> = {}): CelestialBody => ({
@@ -64,6 +65,26 @@ describe('read-only orbit estimates', () => {
     const path = sampleOrbitPath(b, p, 128, 3);
     const drawn = satelliteRenderPosition(b, p, new THREE.Vector3());
     expect(point(path, 0).add(p.position).distanceTo(drawn)).toBeLessThan(1e-4);
+  });
+
+  it('keeps satellite paths glued to the bodies in Beginner Mode too', () => {
+    // Beginner Mode draws the parent larger, so both the moon's render position
+    // and its path must inflate by the same factor or the two separate.
+    const p = parent(); p.position.set(100, 20, -50);
+    const b = body({ parentId: p.id, orbit: elementsFromDegrees(0.1, 0.2, 40, 20, 10, 65) });
+    propagateOrbit(b.orbit!, gravitationalParameter(p.mass, b.mass), 3, b.position, b.velocity);
+    b.position.add(p.position); b.velocity.add(p.velocity);
+
+    const path = sampleOrbitPath(b, p, 128, 3, 'beginner');
+    const drawn = satelliteRenderPosition(b, p, new THREE.Vector3(), 'beginner');
+    expect(point(path, 0).add(p.position).distanceTo(drawn)).toBeLessThan(1e-4);
+
+    // ...and Beginner really is a different, larger frame from Advanced.
+    const advanced = sampleOrbitPath(b, p, 128, 3, 'advanced');
+    expect(point(path, 0).length()).toBeGreaterThan(point(advanced, 0).length());
+    expect(point(path, 0).length()).toBeCloseTo(
+      point(advanced, 0).length() * beginnerVisualScale(p.type), 4,
+    );
   });
 
   it('responds to orbital edits and resolves a changed explicit parent', () => {

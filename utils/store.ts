@@ -12,6 +12,8 @@ import { G_CONSTANT } from '../constants';
 import { buildRealSystem, getRealSystem } from '../content/realSystems';
 import { resetAccumulator, resetVerletCache } from './physicsSoA';
 import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
+import type { UiMode } from './displayMode';
+import { getUiMode, saveUiMode } from './displayPrefs';
 import {
   clampMass,
   clampRadius,
@@ -57,7 +59,18 @@ interface AppState {
   showDust: boolean;
   showHabitable: boolean;
   showStability: boolean;
+  /** Orbit path overlay. Lives here rather than in SpaceCanvas so the settings
+   *  sheet can drive it and it can be saved with the world. */
+  showOrbitPaths: boolean;
   historyVersion: number;
+  /**
+   * Beginner ⇄ Advanced presentation mode. Display and pacing only — see
+   * `utils/displayMode.ts`. Global, not per-world, so it is seeded from
+   * `utils/displayPrefs.ts` rather than from the world settings blob.
+   */
+  uiMode: UiMode;
+  /** Whether the in-world settings sheet is open. */
+  settingsOpen: boolean;
   /** Bumped when the camera should snap to the primary star (e.g. after generate). */
   cameraRecenterNonce: number;
   /** Dev-only: energy-drift HUD on the simulation canvas */
@@ -98,7 +111,11 @@ interface AppState {
   toggleDust: () => void;
   toggleHabitable: () => void;
   toggleStability: () => void;
+  toggleOrbitPaths: () => void;
   toggleDebugMode: () => void;
+  /** Switch presentation mode. Non-destructive: no body data is touched. */
+  setUiMode: (mode: UiMode) => void;
+  setSettingsOpen: (open: boolean) => void;
   lockInspectorFields: (bodyId: string, fields: string[]) => void;
   unlockInspectorFields: (bodyId: string, fields?: string[]) => void;
   setInteractingWithUI: (v: boolean) => void;
@@ -136,7 +153,10 @@ export const useStore = create<AppState>((set, get) => ({
   showDust: true,
   showHabitable: false,
   showStability: false,
+  showOrbitPaths: true,
   historyVersion: 0,
+  uiMode: getUiMode(),
+  settingsOpen: false,
   cameraRecenterNonce: 0,
   isDebugMode: false,
   inspectorLocks: {},
@@ -416,6 +436,7 @@ export const useStore = create<AppState>((set, get) => ({
       storageNotice: null,
       inspectorDetent: 'half',
       outlinerOpen: false,
+      settingsOpen: false,
     }),
 
   setStorageNotice: (msg) => set({ storageNotice: msg }),
@@ -456,6 +477,18 @@ export const useStore = create<AppState>((set, get) => ({
   toggleDust: () => set((state) => ({ showDust: !state.showDust })),
   toggleHabitable: () => set((state) => ({ showHabitable: !state.showHabitable })),
   toggleStability: () => set((state) => ({ showStability: !state.showStability })),
+  toggleOrbitPaths: () => set((state) => ({ showOrbitPaths: !state.showOrbitPaths })),
+
+  /**
+   * Switching mode changes only what is drawn, listed and how fast the clock is
+   * fed — never the bodies. Nothing is deleted on the way into Beginner Mode, so
+   * switching back mid-session restores every field and type exactly.
+   */
+  setUiMode: (mode) => {
+    saveUiMode(mode);
+    set({ uiMode: mode });
+  },
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
 
   generateNewSystem: () => {
     get().installBodies(generateSystem());
@@ -550,6 +583,7 @@ export const useStore = create<AppState>((set, get) => ({
       showDust: settings.showDust,
       showHabitable: settings.showHabitable,
       showStability: settings.showStability,
+      showOrbitPaths: settings.showOrbitPaths,
       typeCounts: counts,
     });
   },

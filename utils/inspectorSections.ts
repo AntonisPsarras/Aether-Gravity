@@ -16,6 +16,7 @@ import type { BodyType, CelestialBody } from '../types';
 import { BODY_CONFIGS } from '../constants';
 import { PHYSICS_LIMITS } from './physicsBounds';
 import { rocheLimitRadii } from './units';
+import type { UiMode } from './displayMode';
 
 /* ─── Type-gating predicates ──────────────────────────────────────────────── */
 
@@ -119,6 +120,9 @@ export type SectionId =
  */
 export type FieldTier = 'primary' | 'derived';
 
+/** Omitted means "every audience". `'advanced'` is hidden in Beginner Mode. */
+export type FieldAudience = 'advanced';
+
 export interface FieldMeta {
   /** Stable id — also the `data-testid` suffix. */
   id: string;
@@ -134,6 +138,13 @@ export interface FieldMeta {
    * legitimately change on every physics tick and would strobe.
    */
   flash?: boolean;
+  /**
+   * `'advanced'` hides the field in Beginner Mode. Purely a display gate — the
+   * value stays on the body and reappears the moment the user switches back.
+   * Reserve it for deep derived physics and secondary orbital elements, never
+   * for something a beginner has to edit to build a system.
+   */
+  audience?: FieldAudience;
 }
 
 export interface SectionMeta {
@@ -146,12 +157,17 @@ export interface SectionMeta {
   defaultOpen: boolean;
   visibleFor?: BodyType[];
   visibleWhen?: (body: CelestialBody) => boolean;
+  /** As `FieldMeta.audience`, but hides the whole section. */
+  audience?: FieldAudience;
   fields: FieldMeta[];
 }
 
 function typeAllowed(types: BodyType[] | undefined, body: CelestialBody): boolean {
   return !types || types.includes(body.type);
 }
+
+const audienceAllowed = (audience: FieldAudience | undefined, mode: UiMode): boolean =>
+  audience !== 'advanced' || mode === 'advanced';
 
 export const INSPECTOR_SECTIONS: SectionMeta[] = [
   {
@@ -171,13 +187,13 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
       // Tracks the staged semi-major axis, which moves with the integrator.
       { id: 'orbitalPeriod', label: 'Orbital Period', tier: 'derived' },
       { id: 'texture', label: 'Surface Material', tier: 'primary', visibleWhen: (b) => b.type !== 'Planet' },
-      { id: 'metallicity', label: 'Metallicity (Z)', tier: 'primary', visibleFor: ['Star'] },
-      { id: 'oblateness', label: 'Rotation (Oblateness)', tier: 'primary', visibleFor: ['Star'] },
-      { id: 'convectionScale', label: 'Convection Scale', tier: 'primary', visibleFor: ['Star'] },
-      { id: 'massLoss', label: 'Mass Loss Rate', tier: 'primary', visibleFor: ['Red Giant'] },
-      { id: 'pulsationSpeed', label: 'Pulsation Freq', tier: 'primary', visibleFor: ['Red Giant'] },
-      { id: 'luminosityClass', label: 'Luminosity Class', tier: 'primary', visibleFor: ['Red Giant'] },
-      { id: 'tectonics', label: 'Tectonic Activity', tier: 'primary', visibleFor: ['Planet'] },
+      { id: 'metallicity', label: 'Metallicity (Z)', tier: 'primary', visibleFor: ['Star'], audience: 'advanced' },
+      { id: 'oblateness', label: 'Rotation (Oblateness)', tier: 'primary', visibleFor: ['Star'], audience: 'advanced' },
+      { id: 'convectionScale', label: 'Convection Scale', tier: 'primary', visibleFor: ['Star'], audience: 'advanced' },
+      { id: 'massLoss', label: 'Mass Loss Rate', tier: 'primary', visibleFor: ['Red Giant'], audience: 'advanced' },
+      { id: 'pulsationSpeed', label: 'Pulsation Freq', tier: 'primary', visibleFor: ['Red Giant'], audience: 'advanced' },
+      { id: 'luminosityClass', label: 'Luminosity Class', tier: 'primary', visibleFor: ['Red Giant'], audience: 'advanced' },
+      { id: 'tectonics', label: 'Tectonic Activity', tier: 'primary', visibleFor: ['Planet'], audience: 'advanced' },
       { id: 'waterLevel', label: 'Water Level', tier: 'primary', visibleFor: ['Planet'] },
     ],
   },
@@ -201,6 +217,9 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
     iconId: 'layers',
     tab: 'props',
     defaultOpen: false,
+    // A three-way mass-fraction budget is a modelling exercise, not a first
+    // system. Hidden wholesale in Beginner Mode; the fractions stay on the body.
+    audience: 'advanced',
     visibleWhen: hasEditableComposition,
     fields: [
       { id: 'compositionIron', label: 'Iron (Core)', tier: 'primary' },
@@ -217,9 +236,9 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
     visibleFor: ATMOSPHERE_TYPES,
     fields: [
       { id: 'atmosphere', label: 'Atmosphere Density', tier: 'primary', visibleFor: ['Planet'] },
-      { id: 'scaleHeight', label: 'Atmosphere Height', tier: 'primary', visibleFor: ['Planet'] },
-      { id: 'haze', label: 'Haze Concentration', tier: 'primary', visibleFor: ['Planet'] },
-      { id: 'methane', label: 'Methane Conc.', tier: 'primary', visibleFor: ['Ice Giant', 'Gas Giant'] },
+      { id: 'scaleHeight', label: 'Atmosphere Height', tier: 'primary', visibleFor: ['Planet'], audience: 'advanced' },
+      { id: 'haze', label: 'Haze Concentration', tier: 'primary', visibleFor: ['Planet'], audience: 'advanced' },
+      { id: 'methane', label: 'Methane Conc.', tier: 'primary', visibleFor: ['Ice Giant', 'Gas Giant'], audience: 'advanced' },
       { id: 'cloudDepth', label: 'Cloud Depth', tier: 'primary', visibleFor: ['Ice Giant', 'Gas Giant'] },
       { id: 'atmosphereChart', label: 'Atmospheric Profile', tier: 'derived', visibleFor: ['Planet', 'Ice Giant'] },
     ],
@@ -253,6 +272,7 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
     iconId: 'activity',
     tab: 'props',
     defaultOpen: false,
+    audience: 'advanced',
     visibleWhen: (b) => hasSpinAxis(b) || b.type === 'Dwarf',
     fields: [
       { id: 'obliquity', label: 'Axial Tilt (Obliquity)', tier: 'primary', visibleWhen: hasSpinAxis },
@@ -269,12 +289,14 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
     visibleFor: ['Black Hole'],
     fields: [
       { id: 'spinParameter', label: 'Spin Parameter (a*)', tier: 'primary' },
-      { id: 'accretionRate', label: 'Accretion Rate', tier: 'primary' },
+      { id: 'accretionRate', label: 'Accretion Rate', tier: 'primary', audience: 'advanced' },
+      // Spin, r_s and r₊ survive into Beginner Mode: they are the readouts that
+      // make a black hole legible as a black hole rather than a heavy dot.
       { id: 'schwarzschildRadius', label: 'Schwarzschild r_s', tier: 'derived', flash: true },
       { id: 'eventHorizon', label: 'Event horizon r₊', tier: 'derived', flash: true },
-      { id: 'photonSphere', label: 'Photon sphere', tier: 'derived', flash: true },
-      { id: 'isco', label: 'ISCO (prograde)', tier: 'derived', flash: true },
-      { id: 'diskEfficiency', label: 'Disk efficiency η', tier: 'derived', flash: true },
+      { id: 'photonSphere', label: 'Photon sphere', tier: 'derived', flash: true, audience: 'advanced' },
+      { id: 'isco', label: 'ISCO (prograde)', tier: 'derived', flash: true, audience: 'advanced' },
+      { id: 'diskEfficiency', label: 'Disk efficiency η', tier: 'derived', flash: true, audience: 'advanced' },
     ],
   },
   {
@@ -289,10 +311,13 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
       { id: 'parentDistance', label: 'Distance', tier: 'derived' },
       { id: 'semiMajorAxis', label: 'Semi-major Axis (a)', tier: 'primary' },
       { id: 'eccentricity', label: 'Eccentricity (e)', tier: 'primary' },
-      { id: 'trueAnomaly', label: 'True Anomaly (ν)', tier: 'primary' },
-      { id: 'inclination', label: 'Inclination (i)', tier: 'primary' },
-      { id: 'ascendingNode', label: 'Asc Node (Ω)', tier: 'primary' },
-      { id: 'argPeriapsis', label: 'Arg Periapsis (ω)', tier: 'primary' },
+      // a and e stay: they are the two elements with an intuitive picture
+      // ("how far out" and "how squashed"). The orientation angles do not, so
+      // Beginner Mode keeps a usable Orbit tab without the ν/i/Ω/ω wall.
+      { id: 'trueAnomaly', label: 'True Anomaly (ν)', tier: 'primary', audience: 'advanced' },
+      { id: 'inclination', label: 'Inclination (i)', tier: 'primary', audience: 'advanced' },
+      { id: 'ascendingNode', label: 'Asc Node (Ω)', tier: 'primary', audience: 'advanced' },
+      { id: 'argPeriapsis', label: 'Arg Periapsis (ω)', tier: 'primary', audience: 'advanced' },
     ],
   },
   {
@@ -304,23 +329,34 @@ export const INSPECTOR_SECTIONS: SectionMeta[] = [
     visibleWhen: hasAnalysis,
     fields: [
       { id: 'esi', label: 'Earth Similarity', tier: 'derived' },
-      { id: 'rsi', label: 'Rock Similarity', tier: 'derived' },
+      { id: 'rsi', label: 'Rock Similarity', tier: 'derived', audience: 'advanced' },
       { id: 'assessment', label: 'Assessment', tier: 'derived' },
-      { id: 'timeToLock', label: 'Time to Tidal Lock', tier: 'derived' },
+      { id: 'timeToLock', label: 'Time to Tidal Lock', tier: 'derived', audience: 'advanced' },
       { id: 'isTidallyLocked', label: 'Synchronous Rotation', tier: 'primary' },
       {
         id: 'rotationPeriod', label: 'Rotation Speed', tier: 'primary',
         visibleWhen: (b) => !b.properties?.isTidallyLocked,
       },
-      { id: 'geophysics', label: 'Geophysics', tier: 'derived', visibleFor: ['Planet'] },
+      { id: 'geophysics', label: 'Geophysics', tier: 'derived', visibleFor: ['Planet'], audience: 'advanced' },
     ],
   },
 ];
 
-/** Fields of `section` that apply to `body`. */
-export function visibleFields(section: SectionMeta, body: CelestialBody): FieldMeta[] {
+/**
+ * Fields of `section` that apply to `body` in `mode`.
+ *
+ * `mode` defaults to `'advanced'` — the full set — so a caller that has no
+ * opinion always sees everything, and only the Inspector opts into filtering.
+ */
+export function visibleFields(
+  section: SectionMeta,
+  body: CelestialBody,
+  mode: UiMode = 'advanced',
+): FieldMeta[] {
   return section.fields.filter(
-    (f) => typeAllowed(f.visibleFor, body) && (!f.visibleWhen || f.visibleWhen(body)),
+    (f) => typeAllowed(f.visibleFor, body)
+      && audienceAllowed(f.audience, mode)
+      && (!f.visibleWhen || f.visibleWhen(body)),
   );
 }
 
@@ -329,17 +365,36 @@ export function visibleFields(section: SectionMeta, body: CelestialBody): FieldM
  * are all hidden for this type is dropped — otherwise the IA would show empty
  * collapsibles, which is exactly the noise this overhaul removes.
  */
-export function visibleSections(body: CelestialBody): SectionMeta[] {
+export function visibleSections(body: CelestialBody, mode: UiMode = 'advanced'): SectionMeta[] {
   return INSPECTOR_SECTIONS.filter((s) => {
     if (!typeAllowed(s.visibleFor, body)) return false;
+    if (!audienceAllowed(s.audience, mode)) return false;
     if (s.visibleWhen && !s.visibleWhen(body)) return false;
-    return visibleFields(s, body).length > 0;
+    return visibleFields(s, body, mode).length > 0;
   });
 }
 
+/**
+ * Field ids marked `audience: 'advanced'`, across every section.
+ *
+ * The React sections own their own JSX rather than being generated from this
+ * metadata, so they gate individual controls through `isFieldVisibleInMode`
+ * (exposed on the inspector context as `showField`). Keeping the set derived
+ * from `INSPECTOR_SECTIONS` means the metadata stays the single source of
+ * truth even though two layers read it.
+ */
+const ADVANCED_FIELD_IDS: ReadonlySet<string> = new Set(
+  INSPECTOR_SECTIONS.flatMap((s) =>
+    s.fields.filter((f) => f.audience === 'advanced' || s.audience === 'advanced').map((f) => f.id),
+  ),
+);
+
+export const isFieldVisibleInMode = (fieldId: string, mode: UiMode): boolean =>
+  mode === 'advanced' || !ADVANCED_FIELD_IDS.has(fieldId);
+
 /** Tabs that have at least one visible section for `body`, in tab order. */
-export function visibleTabs(body: CelestialBody): InspectorTab[] {
+export function visibleTabs(body: CelestialBody, mode: UiMode = 'advanced'): InspectorTab[] {
   const order: InspectorTab[] = ['props', 'orbit', 'analysis'];
-  const present = new Set(visibleSections(body).map((s) => s.tab));
+  const present = new Set(visibleSections(body, mode).map((s) => s.tab));
   return order.filter((t) => present.has(t));
 }

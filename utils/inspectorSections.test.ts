@@ -5,7 +5,7 @@ import { BODY_CONFIGS } from '../constants';
 import { PHYSICS_LIMITS } from './physicsBounds';
 import { deriveBodyState } from './bodyDerivation';
 import {
-  INSPECTOR_SECTIONS, visibleSections, visibleFields, visibleTabs,
+  INSPECTOR_SECTIONS, visibleSections, visibleFields, visibleTabs, isFieldVisibleInMode,
   isRadiusEditable, hasEditableComposition, canHaveRings, hasSpinAxis,
   massSliderRange, rocheLimitRadiiFor, defaultRingEdges,
   RADIUS_FIXED_TYPES, COMPOSITION_TYPES, RING_TYPES, SPIN_AXIS_TYPES,
@@ -144,6 +144,76 @@ describe('section visibility', () => {
       expect(tabs.includes('analysis')).toBe(
         (['Planet', 'Dwarf', 'Ice Giant'] as BodyType[]).includes(type),
       );
+    }
+  });
+});
+
+describe('audience gating (Beginner vs Advanced)', () => {
+  it('defaults to the full Advanced set when no mode is given', () => {
+    for (const type of ALL_TYPES) {
+      const body = makeBody({ type });
+      expect(visibleSections(body)).toEqual(visibleSections(body, 'advanced'));
+      expect(visibleTabs(body)).toEqual(visibleTabs(body, 'advanced'));
+    }
+  });
+
+  it('never shows a beginner a field an advanced user would not see', () => {
+    // Beginner is strictly a subset. A field that only exists in Beginner Mode
+    // would be a second information architecture to maintain.
+    for (const type of ALL_TYPES) {
+      const body = makeBody({ type });
+      for (const section of visibleSections(body, 'beginner')) {
+        const advanced = visibleSections(body, 'advanced').find((s) => s.id === section.id);
+        expect(advanced).toBeDefined();
+        const beginnerIds = visibleFields(section, body, 'beginner').map((f) => f.id);
+        const advancedIds = visibleFields(advanced!, body, 'advanced').map((f) => f.id);
+        for (const id of beginnerIds) expect(advancedIds).toContain(id);
+      }
+    }
+  });
+
+  it('hides composition and dynamics wholesale in Beginner Mode', () => {
+    const planet = makeBody({ type: 'Planet' });
+    const beginner = visibleSections(planet, 'beginner').map((s) => s.id);
+    const advanced = visibleSections(planet, 'advanced').map((s) => s.id);
+    expect(advanced).toEqual(expect.arrayContaining(['composition', 'dynamics']));
+    expect(beginner).not.toContain('composition');
+    expect(beginner).not.toContain('dynamics');
+  });
+
+  it('keeps a usable Orbit tab for beginners: parent, distance, a and e', () => {
+    const planet = makeBody({ type: 'Planet' });
+    const orbital = INSPECTOR_SECTIONS.find((s) => s.id === 'orbital')!;
+    const ids = visibleFields(orbital, planet, 'beginner').map((f) => f.id);
+    expect(ids).toEqual(['parent', 'parentDistance', 'semiMajorAxis', 'eccentricity']);
+    expect(visibleTabs(planet, 'beginner')).toContain('orbit');
+  });
+
+  it('keeps a black hole legible: spin, r_s and r₊ survive Beginner Mode', () => {
+    const bh = makeBody({ type: 'Black Hole' });
+    const rel = INSPECTOR_SECTIONS.find((s) => s.id === 'relativistic')!;
+    const ids = visibleFields(rel, bh, 'beginner').map((f) => f.id);
+    expect(ids).toEqual(expect.arrayContaining(['spinParameter', 'schwarzschildRadius', 'eventHorizon']));
+    expect(ids).not.toContain('isco');
+    expect(ids).not.toContain('diskEfficiency');
+  });
+
+  it('leaves every type at least one section and the props tab in Beginner Mode', () => {
+    for (const type of ALL_TYPES) {
+      const body = makeBody({ type });
+      expect(visibleSections(body, 'beginner').length).toBeGreaterThan(0);
+      expect(visibleTabs(body, 'beginner')).toContain('props');
+    }
+  });
+
+  it('agrees with isFieldVisibleInMode, which the section JSX gates on', () => {
+    // The two layers read the same metadata; this pins them together.
+    for (const section of INSPECTOR_SECTIONS) {
+      for (const field of section.fields) {
+        const advancedOnly = field.audience === 'advanced' || section.audience === 'advanced';
+        expect(isFieldVisibleInMode(field.id, 'beginner')).toBe(!advancedOnly);
+        expect(isFieldVisibleInMode(field.id, 'advanced')).toBe(true);
+      }
     }
   });
 });

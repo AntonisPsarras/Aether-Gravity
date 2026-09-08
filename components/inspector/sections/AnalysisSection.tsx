@@ -17,7 +17,7 @@ function formatLockTime(years: number): string {
 
 /** Habitability indices, tidal evolution, and the bulk geophysics summary. */
 export const AnalysisSection: React.FC = () => {
-  const { body, parent, props, setProp, propEditStart, propEditEnd } = useInspectorCtx();
+  const { body, parent, props, setProp, propEditStart, propEditEnd, showField } = useInspectorCtx();
 
   const esi = useMemo(() => calculateESI(body), [body]);
   const rsi = useMemo(() => calculateRSI(body), [body]);
@@ -31,7 +31,9 @@ export const AnalysisSection: React.FC = () => {
       <div className="bg-black/20 rounded-xl p-4 border border-white/5 space-y-4">
         <div className="flex justify-around">
           <Gauge value={esi} label="Earth Similarity" subLabel="ESI" color={esi > 0.8 ? 'text-emerald-400' : esi > 0.5 ? 'text-yellow-400' : 'text-orange-400'} />
-          <Gauge value={rsi} label="Rock Similarity" subLabel="RSI (Extreme)" color={rsi > 0.7 ? 'text-rose-400' : rsi > 0.4 ? 'text-orange-300' : 'text-slate-600'} />
+          {showField('rsi') && (
+            <Gauge value={rsi} label="Rock Similarity" subLabel="RSI (Extreme)" color={rsi > 0.7 ? 'text-rose-400' : rsi > 0.4 ? 'text-orange-300' : 'text-slate-600'} />
+          )}
         </div>
         <div className="bg-white/5 rounded-lg p-3 text-center">
           <span className="text-[10px] text-pulsar-white/40 uppercase tracking-widest block mb-1">Assessment</span>
@@ -49,7 +51,7 @@ export const AnalysisSection: React.FC = () => {
 
       <div className="bg-black/20 rounded-xl p-3 border border-white/5 space-y-3">
         <DerivedGroup title="Tidal Evolution" note="Recomputed from mass, radius and orbital distance.">
-          <DerivedRow label="Time to Tidal Lock" value={timeToLock} />
+          {showField('timeToLock') && <DerivedRow label="Time to Tidal Lock" value={timeToLock} />}
           <DerivedRow label="Rotation Period" value={`${(props.rotationPeriod || 24).toFixed(1)} hrs`} />
         </DerivedGroup>
 
@@ -75,7 +77,7 @@ export const AnalysisSection: React.FC = () => {
         )}
       </div>
 
-      {body.type === 'Planet' && (
+      {body.type === 'Planet' && showField('geophysics') && (
         <DerivedGroup title="Geophysics" note="Recomputed from mass, radius and composition.">
           <DerivedRow label="Density" value={fmtDensity(props.bulkDensity ?? NaN)} flash />
           <DerivedRow label="Gravity" value={fmtGravity(props.surfaceGravity ?? NaN)} flash />

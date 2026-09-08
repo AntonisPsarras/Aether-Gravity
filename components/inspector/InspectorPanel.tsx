@@ -6,6 +6,7 @@ import {
 import { useStore } from '../../utils/store';
 import { findDominantParent } from '../../utils/physicsUtils';
 import {
+  isFieldVisibleInMode,
   visibleSections, visibleTabs, type InspectorTab, type SectionId, type SectionMeta,
 } from '../../utils/inspectorSections';
 import { useBreakpoint } from '../hooks/useMediaQuery';
@@ -81,6 +82,7 @@ export const InspectorPanel: React.FC<{
   const closeInspector = useStore((s) => s.closeInspector);
   const lockInspectorFields = useStore((s) => s.lockInspectorFields);
   const unlockInspectorFields = useStore((s) => s.unlockInspectorFields);
+  const uiMode = useStore((s) => s.uiMode);
   const detent = useStore((s) => s.inspectorDetent);
   const setDetent = useStore((s) => s.setInspectorDetent);
 
@@ -121,8 +123,11 @@ export const InspectorPanel: React.FC<{
     [body, bodies],
   );
 
-  const sections = useMemo(() => (body ? visibleSections(body) : []), [body]);
-  const tabs = useMemo(() => (body ? visibleTabs(body) : []), [body]);
+  // Beginner Mode hides advanced-audience sections and fields. Purely a display
+  // filter — no body data is touched, so switching back restores everything,
+  // including staged-but-unapplied Orbit edits.
+  const sections = useMemo(() => (body ? visibleSections(body, uiMode) : []), [body, uiMode]);
+  const tabs = useMemo(() => (body ? visibleTabs(body, uiMode) : []), [body, uiMode]);
 
   // Fall back to a tab that exists — types differ in which ones they offer.
   useEffect(() => {
@@ -144,8 +149,9 @@ export const InspectorPanel: React.FC<{
       unlockFields,
       propEditStart: () => lockFields(LOCK_SETS.props),
       propEditEnd: () => unlockFields(LOCK_SETS.props),
+      showField: (fieldId: string) => isFieldVisibleInMode(fieldId, uiMode),
     };
-  }, [body, parent, updateBody, lockInspectorFields, unlockInspectorFields]);
+  }, [body, parent, updateBody, lockInspectorFields, unlockInspectorFields, uiMode]);
 
   if (!body || !ctx) return null;
 

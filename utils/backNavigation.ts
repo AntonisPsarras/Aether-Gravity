@@ -36,6 +36,8 @@ export function resetBackHandlers(): void {
 export type SimBackState = {
   storageNotice: boolean;
   confirmOpen: boolean;
+  /** The in-world settings sheet. A modal surface, so it dismisses early. */
+  settingsOpen: boolean;
   helperOpen: boolean;
   creationMode: boolean;
   /** Phone tiers get sheet detents; wider layouts have none. */
@@ -50,6 +52,7 @@ export type SimBackState = {
 export type SimBackAction =
   | 'dismissNotice'
   | 'cancelConfirm'
+  | 'closeSettings'
   | 'dismissHelper'
   | 'exitCreationMode'
   | 'collapseInspector'
@@ -77,6 +80,9 @@ export function detentBelowName(detent: string): string | null {
 export function resolveSimBackAction(state: SimBackState): SimBackAction {
   if (state.storageNotice) return 'dismissNotice';
   if (state.confirmOpen) return 'cancelConfirm';
+  // Above the helper: the settings sheet covers the HUD, so it is what the user
+  // is looking at and therefore what back should dismiss.
+  if (state.settingsOpen) return 'closeSettings';
   if (state.helperOpen) return 'dismissHelper';
   if (state.creationMode) return 'exitCreationMode';
   if (state.isPhone && state.inspectorOpen && detentBelowName(state.inspectorDetent)) {

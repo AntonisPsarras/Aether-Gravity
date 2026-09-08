@@ -33,9 +33,11 @@ export const OutlinerToolbar: React.FC<{
   flat: boolean;
   flatForced: boolean;
   onToggleFlat: () => void;
+  /** Beginner Mode drops sort and tree/flat; search and category chips stay. */
+  showListOptions: boolean;
 }> = ({
   query, onQueryChange, categories, onToggleCategory, counts,
-  sort, onSortChange, flat, flatForced, onToggleFlat,
+  sort, onSortChange, flat, flatForced, onToggleFlat, showListOptions,
 }) => (
   <div className="px-2 pt-2 pb-1.5 space-y-1.5 border-b border-white/5 shrink-0">
     <SearchInput
@@ -59,6 +61,7 @@ export const OutlinerToolbar: React.FC<{
         ))}
       </div>
 
+      {showListOptions && (
       <button
         type="button"
         onClick={onToggleFlat}
@@ -74,7 +77,9 @@ export const OutlinerToolbar: React.FC<{
       >
         {flat ? <Rows3 size={12} /> : <ListTree size={12} />}
       </button>
+      )}
 
+      {showListOptions && (
       <select
         value={sort}
         aria-label="Sort bodies"
@@ -89,6 +94,7 @@ export const OutlinerToolbar: React.FC<{
           </option>
         ))}
       </select>
+      )}
     </div>
   </div>
 );

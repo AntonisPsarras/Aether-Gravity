@@ -23,6 +23,13 @@ export interface InspectorCtx {
   /** Convenience wrappers around the `['properties']` lock set. */
   propEditStart: () => void;
   propEditEnd: () => void;
+  /**
+   * Whether a field id from `utils/inspectorSections.ts` should be rendered in
+   * the active presentation mode. Sections own their JSX, so the `audience`
+   * metadata can only take effect if each advanced control asks this first.
+   * Display-only: a hidden field's value is untouched and returns on switch.
+   */
+  showField: (fieldId: string) => boolean;
 }
 
 /** Field groups protected while the matching control is being edited. */

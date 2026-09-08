@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { BodyType } from '../types';
 import { BODY_CONFIGS } from '../constants';
+import { isBeginnerBodyType, type UiMode } from '../utils/displayMode';
 
 export interface BodyTypeVisual {
   icon: LucideIcon;
@@ -68,6 +69,19 @@ export const CREATION_ORDER: BodyType[] = [
 export const CREATABLE_TYPES: BodyType[] = CREATION_ORDER.filter(
   (t) => BODY_CONFIGS[t]?.creatable !== false,
 );
+
+/**
+ * Creatable types for a presentation mode, in display order.
+ *
+ * Beginner Mode offers the subset in `utils/displayMode.ts` — enough to build a
+ * recognisable star system without a wall of compact objects to choose between.
+ * Nothing is removed from the app: an existing pulsar keeps working, keeps its
+ * inspector entry, and stays saveable; it just is not offered in the dock.
+ */
+export const creatableTypesFor = (mode: UiMode): BodyType[] =>
+  mode === 'beginner'
+    ? CREATABLE_TYPES.filter(isBeginnerBodyType)
+    : CREATABLE_TYPES;
 
 /** Human label for a category chip. */
 export const CATEGORY_LABELS: Record<string, string> = {

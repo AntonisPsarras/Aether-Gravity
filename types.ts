@@ -262,5 +262,7 @@ export interface WorldData {
     showDust: boolean;
     showHabitable: boolean;
     showStability: boolean;
+    /** Optional: worlds saved before the settings sheet existed omit it. */
+    showOrbitPaths?: boolean;
   };
 }

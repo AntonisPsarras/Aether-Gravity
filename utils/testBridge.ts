@@ -4,6 +4,7 @@ import { getE2EConfig, isE2EMode } from './e2eConfig';
 import { getPhysicsBodiesSnapshot } from './physicsBridge';
 import { parseWorldData } from './worldStorage';
 import { useStore } from './store';
+import type { UiMode } from './displayMode';
 
 export interface SerializedBody {
   id: string;
@@ -23,6 +24,8 @@ export interface StoreSnapshot {
   showGrid: boolean;
   showDust: boolean;
   showHabitable: boolean;
+  showOrbitPaths: boolean;
+  uiMode: UiMode;
   worldId: string | null;
 }
 
@@ -181,6 +184,8 @@ function buildApi(): AetherTestAPI {
         showGrid: s.showGrid,
         showDust: s.showDust,
         showHabitable: s.showHabitable,
+        showOrbitPaths: s.showOrbitPaths,
+        uiMode: s.uiMode,
         worldId: s.worldId,
       };
     },

@@ -2,16 +2,23 @@ import * as THREE from 'three';
 import type { CelestialBody } from '../types';
 import { gravitationalParameter, periodFromElements, propagateOrbit } from './keplerOrbit';
 import { moonOrbitRenderScale } from './moonSystem';
+import type { UiMode } from './displayMode';
 
 /** Read-only display sampler. Coordinates are relative to the parent's true position. */
-export function sampleOrbitPath(body: CelestialBody, parent: CelestialBody, segments: number, epoch: number): Float32Array {
+export function sampleOrbitPath(
+  body: CelestialBody,
+  parent: CelestialBody,
+  segments: number,
+  epoch: number,
+  mode: UiMode = 'advanced',
+): Float32Array {
   const empty = () => new Float32Array(0);
   const mu = gravitationalParameter(parent.mass, body.mass);
   if (!(mu > 0) || !Number.isFinite(mu) || segments < 8) return empty();
   const r = body.position.clone().sub(parent.position);
   const v = body.velocity.clone().sub(parent.velocity);
   if (![...r.toArray(), ...v.toArray()].every(Number.isFinite)) return empty();
-  const scale = body.parentId === parent.id && body.orbit ? moonOrbitRenderScale(parent) : 1;
+  const scale = body.parentId === parent.id && body.orbit ? moonOrbitRenderScale(parent, mode) : 1;
   const points: number[] = [];
   const maxRadius = 100000; // Render-space clipping only; never clamp simulation values.
   const add = (p: THREE.Vector3) => {

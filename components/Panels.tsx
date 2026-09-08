@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BodyType } from '../types';
 import { useStore } from '../utils/store';
 import {
-  Play, Pause, RotateCcw, Focus, Hexagon, MousePointer2, Sparkles, Globe,
-  AlertTriangle, X, ChevronUp, ChevronDown, Home, Activity,
+  Play, Pause, RotateCcw, Focus, MousePointer2, Sparkles,
+  AlertTriangle, X, ChevronUp, ChevronDown, Home, Settings,
 } from 'lucide-react';
-import { CREATABLE_TYPES, visualFor } from './bodyTypeVisuals';
+import { creatableTypesFor, visualFor } from './bodyTypeVisuals';
 
 /**
  * The Inspector now lives in components/inspector/. Re-exported here so the
@@ -17,13 +17,15 @@ export { InspectorPanel } from './inspector/InspectorPanel';
 
 export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: BodyType | null) => void, onTriggerGenerate: () => void, mobileHidden: boolean }> = ({ mode, setMode, onTriggerGenerate, mobileHidden }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const uiMode = useStore((s) => s.uiMode);
   // Icon, colour and label all come from components/bodyTypeVisuals.ts, which
   // is the single definition shared with the outliner. The order is the
-  // toolbar's own (stellar → planetary → small bodies).
-  const tools = CREATABLE_TYPES.map((id) => {
+  // toolbar's own (stellar → planetary → small bodies). Beginner Mode offers a
+  // smaller set; existing bodies of a hidden type are unaffected.
+  const tools = useMemo(() => creatableTypesFor(uiMode).map((id) => {
     const v = visualFor(id);
     return { id, label: v.short, icon: v.icon, color: v.text, bg: v.bg };
-  });
+  }), [uiMode]);
 
   return (
     <>
@@ -101,8 +103,8 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
 
 
 export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMenu: () => void, onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean }> = ({ creationMode, onReturnToMenu, onUndo, onRedo, canUndo, canRedo }) => {
-  const { paused, speed, showGrid, showDust, showHabitable, showStability, cameraLockedId, selectedId, isDebugMode } = useStore();
-  const { setPaused, setSpeed, toggleGrid, toggleDust, toggleHabitable, toggleStability, setCameraLock, toggleDebugMode } = useStore();
+  const { paused, speed, cameraLockedId, selectedId, settingsOpen } = useStore();
+  const { setPaused, setSpeed, setCameraLock, setSettingsOpen } = useStore();
   const [lockWarning, setLockWarning] = useState(false);
 
   const handleCameraLock = () => {
@@ -152,21 +154,22 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
 
         <div className="h-4 md:h-6 w-px bg-white/10 shrink-0"></div>
 
-        {/* Toggles Group */}
+        {/* View & session group.
+            The display toggles (grid / dust / habitable zone / orbit paths /
+            stability) used to sit here. They are preferences a user sets a few
+            times a session, so they moved into the settings sheet behind the
+            gear below; what remains is the per-interaction controls. */}
         <div className="flex items-center gap-0.5 md:gap-2 shrink-0">
-          <button onClick={toggleGrid} data-testid="toggle-grid" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${showGrid ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/30'}`}><Hexagon size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          <button onClick={toggleDust} data-testid="toggle-dust" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${showDust ? 'text-blue-400 bg-white/10' : 'text-pulsar-white/30'}`}><Sparkles size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          <button onClick={toggleHabitable} data-testid="toggle-habitable" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${showHabitable ? 'text-emerald-400 bg-white/10' : 'text-pulsar-white/30'}`}><Globe size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          <button onClick={handleCameraLock} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${cameraLockedId ? 'text-nebula-rust bg-nebula-rust/10' : 'text-pulsar-white/30'}`}><Focus size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          {import.meta.env.DEV && (
-            <button
-              onClick={toggleDebugMode}
-              title="Physics diagnostics HUD"
-              className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${isDebugMode ? 'text-emerald-400 bg-emerald-500/10' : 'text-pulsar-white/30'}`}
-            >
-              <Activity size={16} className="md:w-[18px] md:h-[18px]" />
-            </button>
-          )}
+          <button onClick={handleCameraLock} title="Lock camera to selection" aria-label="Lock camera to selection" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${cameraLockedId ? 'text-nebula-rust bg-nebula-rust/10' : 'text-pulsar-white/30'}`}><Focus size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            data-testid="open-settings"
+            title="Settings"
+            aria-label="Open settings"
+            className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${settingsOpen ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/30 hover:text-white hover:bg-white/10'}`}
+          >
+            <Settings size={16} className="md:w-[18px] md:h-[18px]" />
+          </button>
           <div className="h-4 md:h-6 w-px bg-white/10 mx-1"></div>
           {onReturnToMenu && (
             <button onClick={onReturnToMenu} className="touch-target p-1.5 md:p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>

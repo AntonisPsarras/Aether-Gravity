@@ -19,6 +19,12 @@ import type { DeviceTier } from './CanvasSetup';
 import './Planet/PlanetShaders';
 import { PlanetSurfaceMaterial } from './Planet/PlanetShaders';
 import { useStore } from '../utils/store';
+import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
+import {
+  CURVATURE_KNEE, CURVATURE_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
+  curvatureAmountFor, visualScaleFor,
+} from '../utils/displayMode';
+import { simElapsedForFrame } from '../utils/simRate';
 import HabitableZoneVisual from './HabitableZoneVisual';
 import BlackHoleRig from './BlackHole/BlackHoleRig';
 import { BlackHoleLensCapture, useBlackHoleLensTexture } from './BlackHole/BlackHoleLensCapture';
@@ -120,6 +126,13 @@ const GravityGridMaterial = shaderMaterial(
     uBodiesType: new Float32Array(50),
     uBodyCount: 0,
     uShowHabitable: 0.0,
+    // Presentation-only well-depth compression. 0 = raw physical depth, which
+    // is what Advanced Mode passes, so its geometry is unchanged.
+    uCurvatureAmount: 0.0,
+    uCurvatureKnee: CURVATURE_KNEE,
+    uCurvatureMax: CURVATURE_MAX_DEPTH,
+    uTidalKnee: TIDAL_KNEE,
+    uTidalMax: TIDAL_MAX,
   },
   `precision highp float;
 #include <common>
@@ -132,6 +145,13 @@ uniform float uBodiesRadius[50];
 uniform float uBodiesType[50];
 uniform int uBodyCount;
 uniform float uShowHabitable;
+uniform float uCurvatureAmount;
+uniform float uCurvatureKnee;
+uniform float uCurvatureMax;
+uniform float uTidalKnee;
+uniform float uTidalMax;
+
+${CURVATURE_DISPLAY_GLSL}
 
 varying float vDisplacement;
 varying float vTidalMagnitude;
@@ -168,11 +188,18 @@ void main() {
         }
     }
   }
+  // displacement is negative (a well). Compress its magnitude for display,
+  // then restore the sign. Identity when uCurvatureAmount is 0.
+  displacement = -curvatureDisplayScale(-displacement, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
+
   vec3 newPos = position;
   newPos.z += displacement;
   vWorldPos = (modelMatrix * vec4(newPos, 1.0)).xyz;
   vDisplacement = displacement;
-  vTidalMagnitude = maxTidal;
+  // Same compressor, own knee: with the depth compressed, the high-tidal
+  // vertices near a primary are on screen for the first time and would
+  // otherwise saturate the whole plane. Identity at uCurvatureAmount 0.
+  vTidalMagnitude = curvatureDisplayScale(maxTidal, uTidalKnee, uCurvatureAmount, uTidalMax);
   vHabitableZone = habFactor;
   vHabitableDist = habDist;
   gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(newPos, 1.0);
@@ -600,7 +627,7 @@ const PhysicsEngine = ({
   const { camera, controls } = useThree();
   const shaderData = useMemo(() => ({ positions: new Float32Array(50 * 3), masses: new Float32Array(50), radii: new Float32Array(50), types: new Float32Array(50) }), []);
 
-  const { syncBodiesFromPhysics, paused, speed, selectBody, cameraLockedId, showGrid, showHabitable } = useStore();
+  const { syncBodiesFromPhysics, paused, speed, selectBody, cameraLockedId, showGrid, showHabitable, uiMode } = useStore();
 
   useFrame((state, delta) => {
     // Floating-origin recentre shifts render space; freeze it during slingshot drags
@@ -614,9 +641,12 @@ const PhysicsEngine = ({
       }
     }
     const currentTime = state.clock.getElapsedTime();
-    // Effective elapsed simulated time this frame, scaled by user speed.
-    // Sign of `speed` lets the user run physics in reverse for short bursts.
-    const simElapsed = Math.min(delta, 0.1) * speed;
+    // Elapsed simulated time this frame. `simElapsedForFrame` owns the mapping
+    // from real seconds to sim-years (utils/simRate.ts) — the speed slider is a
+    // multiplier on a base rate, not a raw years-per-second. Sign of `speed`
+    // lets the user run physics in reverse for short bursts. Beginner Mode
+    // consumes time more slowly; the timestep and integrator are identical.
+    const simElapsed = simElapsedForFrame(Math.min(delta, 0.1), speed, uiMode);
 
     let effectsChanged = false;
     for (let i = visualEffectsRef.current.length - 1; i >= 0; i--) {
@@ -744,7 +774,7 @@ const PhysicsEngine = ({
           // same exaggeration to keep the real orbit-to-radius ratio visible.
           const parent = body.parentId ? bodyByIdRef.current.get(body.parentId) : undefined;
           if (parent && body.orbit) {
-            satelliteRenderPosition(body, parent, scratchV1);
+            satelliteRenderPosition(body, parent, scratchV1, uiMode);
             toRenderSpace(scratchV0, scratchV1, floatingOffset.current);
           } else {
             toRenderSpace(scratchV0, body.position, floatingOffset.current);
@@ -801,6 +831,9 @@ const PhysicsEngine = ({
       gridMatRef.current.uBodyCount = count;
       gridMatRef.current.uTime = currentTime;
       gridMatRef.current.uShowHabitable = showHabitable ? 1.0 : 0.0;
+      // 0 in Advanced Mode, so the vertex shader takes the identity branch and
+      // the grid geometry is exactly what it was before this mode existed.
+      gridMatRef.current.uCurvatureAmount = curvatureAmountFor(uiMode);
     }
   });
 
@@ -1294,6 +1327,8 @@ const BodyMesh = ({
   const environment = useEnvironment();
   const haloRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
+  // Narrow selector: re-renders this mesh only when the mode itself flips.
+  const uiMode = useStore((s) => s.uiMode);
   const localScratch = useRef({
     relPos: new THREE.Vector3(),
     sunDir: new THREE.Vector3(),
@@ -1308,11 +1343,19 @@ const BodyMesh = ({
 
   const props = data.properties || {};
 
-  let visualRadius = data.radius;
+  /**
+   * Beginner Mode draws bodies larger so a system reads as a system rather than
+   * scattered dots. Exactly 1 in Advanced Mode. This must never be written back
+   * into `data.radius`: collision detection reads the visual radius on purpose
+   * (utils/physicsUtils.ts), so leaking it here would change the physics.
+   */
+  const modeScale = visualScaleFor(uiMode, data.type);
+
+  let visualRadius = data.radius * modeScale;
   let eventHorizonScale = 1.0;
 
-  if (isPlanet) visualRadius = data.radius * 1.35;
-  if (isNeutronStar) visualRadius = Math.max(data.radius * 5.0, 3.0);
+  if (isPlanet) visualRadius = data.radius * 1.35 * modeScale;
+  if (isNeutronStar) visualRadius = Math.max(data.radius * 5.0, 3.0) * modeScale;
 
   if (isBlackHole) {
     // Ratio of the Kerr outer horizon to the Schwarzschild radius,
@@ -1943,7 +1986,6 @@ const SpaceCanvas: React.FC<{
   const [creationDragging, setCreationDragging] = useState(false);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
   const [glEpoch, setGlEpoch] = useState(0);
-  const [showOrbitPaths, setShowOrbitPaths] = useState(true);
   const gasRemnants = useRef<GasRemnant[]>([]);
   const effectiveTier = gpuEffectsOk ? deviceTier : 'low';
 
@@ -1965,7 +2007,7 @@ const SpaceCanvas: React.FC<{
   const primaryStarIdRef = useRef<string | null>(null);
   const {
     bodies, selectedId, selectBody, openInspector, closeInspector,
-    showDust, showStability, historyVersion, isInteractingWithUI,
+    showDust, showStability, showOrbitPaths, historyVersion, isInteractingWithUI,
   } = useStore();
 
   const handleCreationDragChange = React.useCallback((active: boolean) => {
@@ -2150,13 +2192,9 @@ const SpaceCanvas: React.FC<{
       </BlackHoleLensCapture>
       </EnvironmentProvider>
     </Canvas>
-    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-10 w-max max-w-[calc(100%-1.5rem)] rounded-lg border border-white/10 bg-black/65 px-3 py-1 text-[11px] text-slate-300 pointer-events-auto">
-      <label className="flex min-h-[2.75rem] items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked={showOrbitPaths} onChange={e => setShowOrbitPaths(e.target.checked)} />
-        Orbit estimates — instantaneous two-body approximation.
-      </label>
-      {showOrbitPaths && <p className="pb-1 text-[10px] text-slate-400">Moon paths use the existing exaggerated display scale.</p>}
-    </div>
+    {/* The orbit-estimate toggle used to float here over the canvas. It now
+        lives in the settings sheet (components/SettingsPanel.tsx) with the rest
+        of the display options, backed by `showOrbitPaths` in the store. */}
     </div>
   );
 };

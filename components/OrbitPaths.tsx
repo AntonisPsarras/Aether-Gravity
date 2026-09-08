@@ -22,9 +22,13 @@ export default function OrbitPaths({ bodiesRef, floatingOffset, parentMapRef }: 
   const last = useRef(-Infinity);
   const byId = useRef(new Map<string, CelestialBody>()).current;
   const selected = useStore(s => s.selectedId);
+  const uiMode = useStore(s => s.uiMode);
   useEffect(() => useStore.subscribe((s, prev) => {
     if (s.bodies !== prev.bodies || s.historyVersion !== prev.historyVersion) dirty.current = true;
   }), []);
+  // Moon paths are drawn in the parent's exaggerated frame, which the mode
+  // scales — resample so the paths track the bodies after a switch.
+  useEffect(() => { dirty.current = true; }, [uiMode]);
   useEffect(() => { dirty.current = true; }, [quality]);
   useEffect(() => () => {
     lines.current.forEach(({ line }) => { line.geometry.dispose(); (line.material as THREE.Material).dispose(); });
@@ -50,7 +54,7 @@ export default function OrbitPaths({ bodiesRef, floatingOffset, parentMapRef }: 
       for (const body of live) {
         const parent = body.parentId ? byId.get(body.parentId) : source.get(body.id);
         if (!parent) continue;
-        const points = sampleOrbitPath(body, parent, quality.orbitSegments, getSimTime());
+        const points = sampleOrbitPath(body, parent, quality.orbitSegments, getSimTime(), uiMode);
         if (!points.length) continue;
         retained.add(body.id);
         let entry = lines.current.get(body.id);

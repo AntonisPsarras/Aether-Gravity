@@ -33,6 +33,7 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
   const historyVersion = useStore((s) => s.historyVersion);
   const outlinerOpen = useStore((s) => s.outlinerOpen);
   const setOutlinerOpen = useStore((s) => s.setOutlinerOpen);
+  const uiMode = useStore((s) => s.uiMode);
   const handleGesture = useBodySelectionGesture();
 
   /**
@@ -196,6 +197,7 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
             flat={flat}
             flatForced={flatForced}
             onToggleFlat={() => setFlatPreference((f) => !f)}
+            showListOptions={uiMode === 'advanced'}
           />
 
           <div className="flex-1 overflow-y-auto p-2 scrollbar-custom panel-scroll">

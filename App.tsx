@@ -18,6 +18,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { consumeBackPress } from './utils/backNavigation';
 import LiveHelper from './components/LiveHelper';
+import SettingsPanel from './components/SettingsPanel';
 import {
   enqueueUnseenHelpers, getOnboardingProgress, helperDefinition, markHelperSeen,
   type HelperId, type HelperTrigger, type QueuedHelper,
@@ -99,6 +100,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         showDust: state.showDust,
         showHabitable: state.showHabitable,
         showStability: state.showStability,
+        showOrbitPaths: state.showOrbitPaths,
       },
     });
     if (result === 'quota') {
@@ -151,6 +153,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       const action = resolveSimBackAction({
         storageNotice: !!storageNotice,
         confirmOpen: showConfirmGenerate,
+        settingsOpen: state.settingsOpen,
         helperOpen: helperQueue.length > 0,
         creationMode: !!creationMode,
         isPhone: window.matchMedia(`(max-width: ${BREAKPOINTS.phone}px)`).matches,
@@ -165,6 +168,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       switch (action) {
         case 'dismissNotice': setStorageNotice(null); return true;
         case 'cancelConfirm': setShowConfirmGenerate(false); return true;
+        case 'closeSettings': state.setSettingsOpen(false); return true;
         case 'dismissHelper': acknowledgeHelper(); return true;
         case 'exitCreationMode': setCreationMode(null); return true;
         case 'collapseInspector': {
@@ -267,6 +271,9 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         </div>
       </div>
       <ConfirmationModal isOpen={showConfirmGenerate} onConfirm={handleGenerate} onCancel={() => setShowConfirmGenerate(false)} />
+      {/* Renders nothing until opened; reads `settingsOpen` from the store so
+          the control-bar gear and the Android back handler share one source. */}
+      <SettingsPanel />
     </div>
   );
 };

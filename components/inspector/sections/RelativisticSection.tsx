@@ -10,7 +10,7 @@ import { useInspectorCtx } from '../InspectorContext';
 
 /** Black hole spin and accretion, plus the Kerr geometry they determine. */
 export const RelativisticSection: React.FC = () => {
-  const { body, props, setProp, propEditStart, propEditEnd } = useInspectorCtx();
+  const { body, props, setProp, propEditStart, propEditEnd, showField } = useInspectorCtx();
   const spin = props.spinParameter ?? 0;
 
   return (
@@ -24,12 +24,14 @@ export const RelativisticSection: React.FC = () => {
         onEditStart={propEditStart} onEditEnd={propEditEnd}
         onChange={(v) => setProp('spinParameter', v)}
       />
-      <RangeInput
-        label="Accretion Rate" min={0} max={1.0} step={0.01}
-        value={props.accretionRate ?? 0.5}
-        onEditStart={propEditStart} onEditEnd={propEditEnd}
-        onChange={(v) => setProp('accretionRate', v)}
-      />
+      {showField('accretionRate') && (
+        <RangeInput
+          label="Accretion Rate" min={0} max={1.0} step={0.01}
+          value={props.accretionRate ?? 0.5}
+          onEditStart={propEditStart} onEditEnd={propEditEnd}
+          onChange={(v) => setProp('accretionRate', v)}
+        />
+      )}
 
       {/* Everything below is derived Kerr geometry — read-only, recomputed
           from mass and spin. */}
@@ -41,9 +43,15 @@ export const RelativisticSection: React.FC = () => {
       >
         <DerivedRow label="Schwarzschild r_s" value={fmtRadiusKm(schwarzschildRadiusKm(body.mass))} flash />
         <DerivedRow label="Event horizon r₊" value={fmtRadiusKm(kerrOuterHorizonKm(body.mass, spin))} flash />
-        <DerivedRow label="Photon sphere" value={fmtRadiusKm(photonSphereRadiusKm(body.mass, spin))} flash />
-        <DerivedRow label="ISCO (prograde)" value={fmtRadiusKm(iscoRadiusKm(body.mass, spin, true))} flash />
-        <DerivedRow label="Disk efficiency η" value={`${(diskEfficiency(spin) * 100).toFixed(1)} %`} flash />
+        {showField('photonSphere') && (
+          <DerivedRow label="Photon sphere" value={fmtRadiusKm(photonSphereRadiusKm(body.mass, spin))} flash />
+        )}
+        {showField('isco') && (
+          <DerivedRow label="ISCO (prograde)" value={fmtRadiusKm(iscoRadiusKm(body.mass, spin, true))} flash />
+        )}
+        {showField('diskEfficiency') && (
+          <DerivedRow label="Disk efficiency η" value={`${(diskEfficiency(spin) * 100).toFixed(1)} %`} flash />
+        )}
       </DerivedGroup>
     </div>
   );

@@ -18,8 +18,9 @@ import { useInspectorCtx, LOCK_SETS } from '../InspectorContext';
  * that are physical rather than thermal or orbital.
  */
 export const PhysicalSection: React.FC = () => {
-  const { body, props, updateBody, setProp, lockFields, unlockFields, propEditStart, propEditEnd } =
-    useInspectorCtx();
+  const {
+    body, props, updateBody, setProp, lockFields, unlockFields, propEditStart, propEditEnd, showField,
+  } = useInspectorCtx();
   const setInteractingWithUI = useStore((s) => s.setInteractingWithUI);
 
   const physicalStart = () => lockFields(LOCK_SETS.physical);
@@ -92,7 +93,7 @@ export const PhysicalSection: React.FC = () => {
         <DerivedRow label="Esc. Velocity" value={fmtEscVel(props.escapeVelocity ?? NaN)} flash />
       </DerivedGroup>
 
-      {body.type === 'Star' && (
+      {body.type === 'Star' && showField('metallicity') && (
         <>
           <RangeInput label="Metallicity (Z)" min={0} max={1} step={0.01} value={props.metallicity ?? 0.2} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('metallicity', v)} />
           <RangeInput label="Rotation (Oblateness)" min={0} max={0.5} step={0.01} value={props.oblateness ?? 0} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('oblateness', v)} />
@@ -100,7 +101,7 @@ export const PhysicalSection: React.FC = () => {
         </>
       )}
 
-      {body.type === 'Red Giant' && (
+      {body.type === 'Red Giant' && showField('massLoss') && (
         <>
           <RangeInput label="Mass Loss Rate" min={0} max={1} step={0.01} value={props.massLoss ?? 0.1} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('massLoss', v)} />
           <RangeInput label="Pulsation Freq" min={0} max={5} step={0.1} value={props.pulsationSpeed ?? 0.5} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('pulsationSpeed', v)} />
@@ -119,7 +120,9 @@ export const PhysicalSection: React.FC = () => {
 
       {body.type === 'Planet' && (
         <>
-          <RangeInput label="Tectonic Activity" min={0} max={1} step={0.01} value={props.tectonics ?? 0} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('tectonics', v)} />
+          {showField('tectonics') && (
+            <RangeInput label="Tectonic Activity" min={0} max={1} step={0.01} value={props.tectonics ?? 0} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('tectonics', v)} />
+          )}
           <RangeInput label="Water Level" min={0} max={1} step={0.01} value={props.waterLevel ?? 0.5} onEditStart={propEditStart} onEditEnd={propEditEnd} onChange={(v) => setProp('waterLevel', v)} />
         </>
       )}
