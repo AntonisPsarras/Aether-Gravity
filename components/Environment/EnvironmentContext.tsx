@@ -1,17 +1,10 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { DeviceTier, environmentQualityForDevice, EnvironmentQuality } from '../CanvasSetup';
+import { useReducedMotion as useReducedMotionHook } from '../hooks/useReducedMotion';
 
-export function useReducedMotion() {
-  const [reduced, setReduced] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setReduced(query.matches);
-    update(); query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  }, []);
-  return reduced;
-}
+/** Re-exported from the shared hooks module; DOM panels need it too. */
+export { useReducedMotion } from '../hooks/useReducedMotion';
 
 /** Dim, already blurred radiance field, not a reflection probe or a body texture. */
 export function createEnvironmentTexture(width: number) {
@@ -43,7 +36,7 @@ export const useEnvironment = () => useContext(EnvironmentContext);
 
 export function EnvironmentProvider({ tier, isTouch, children }: { tier: DeviceTier; isTouch: boolean; children: React.ReactNode }) {
   const quality = useMemo(() => environmentQualityForDevice(tier, isTouch), [tier, isTouch]);
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = useReducedMotionHook();
   const texture = useMemo(() => createEnvironmentTexture(quality.reflectionResolution), [quality.reflectionResolution]);
   useEffect(() => () => texture.dispose(), [texture]);
   const value = useMemo(() => ({ quality, texture, reducedMotion }), [quality, texture, reducedMotion]);

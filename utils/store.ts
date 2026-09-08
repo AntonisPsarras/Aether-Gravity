@@ -27,6 +27,19 @@ import {
 
 let uiInteractionSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Detents of the phone bottom sheet, smallest first. `peek` shows the header
+ * and key stats with the simulation still visible; `full` is the working view.
+ */
+export const SHEET_DETENTS = ['peek', 'half', 'full'] as const;
+export type SheetDetent = (typeof SHEET_DETENTS)[number];
+
+/** The next detent down, or null when already at the smallest. */
+export function detentBelow(detent: SheetDetent): SheetDetent | null {
+  const i = SHEET_DETENTS.indexOf(detent);
+  return i > 0 ? SHEET_DETENTS[i - 1] : null;
+}
+
 interface AppState {
   // World State
   bodies: CelestialBody[];
@@ -56,6 +69,16 @@ interface AppState {
   isInteractingWithUI: boolean;
   /** User-visible notice when localStorage save fails (quota, etc.). */
   storageNotice: string | null;
+  /**
+   * How far the phone inspector sheet is opened. Lives in the store rather than
+   * in the panel because the single Android back handler in App.tsx has to be
+   * able to step it down, and it must stay consistent with `outlinerOpen`.
+   * Ignored on tablet and desktop, which have no detents.
+   */
+  inspectorDetent: SheetDetent;
+  /** Phone: whether the outliner sheet is expanded. Mutually exclusive with a
+   *  fully-open inspector, enforced in the actions below. */
+  outlinerOpen: boolean;
 
   // Actions
   setBodies: (bodies: CelestialBody[] | ((prev: CelestialBody[]) => CelestialBody[])) => void;
@@ -80,6 +103,8 @@ interface AppState {
   unlockInspectorFields: (bodyId: string, fields?: string[]) => void;
   setInteractingWithUI: (v: boolean) => void;
   setStorageNotice: (msg: string | null) => void;
+  setInspectorDetent: (detent: SheetDetent) => void;
+  setOutlinerOpen: (open: boolean) => void;
   syncBodiesFromPhysics: (physicsBodies: CelestialBody[]) => void;
 
   // System Actions
@@ -117,6 +142,10 @@ export const useStore = create<AppState>((set, get) => ({
   inspectorLocks: {},
   isInteractingWithUI: false,
   storageNotice: null,
+  inspectorDetent: 'half',
+  // Open by default so the body list is the first thing available on a fresh
+  // world. Opening the inspector closes it again on phone (see setOutlinerOpen).
+  outlinerOpen: true,
 
   typeCounts: {},
 
@@ -385,12 +414,39 @@ export const useStore = create<AppState>((set, get) => ({
       worldId: null,
       isInteractingWithUI: false,
       storageNotice: null,
+      inspectorDetent: 'half',
+      outlinerOpen: false,
     }),
 
   setStorageNotice: (msg) => set({ storageNotice: msg }),
 
+  setInspectorDetent: (detent) => set({ inspectorDetent: detent }),
+
+  /**
+   * On phone the outliner and the inspector are two presentations of the same
+   * bottom edge, so they cannot both own it. Enforcing that here rather than in
+   * component effects means the back handler always reads a consistent state.
+   */
+  setOutlinerOpen: (open) =>
+    set((state) => {
+      const onPhone = typeof window !== 'undefined' && window.innerWidth <= 767;
+      return {
+        outlinerOpen: open,
+        inspectorDetent:
+          onPhone && open && state.inspectorDetent !== 'peek' ? 'peek' : state.inspectorDetent,
+      };
+    }),
+
   selectBody: (id) => set({ selectedId: id }),
-  openInspector: (id) => set({ inspectorBodyId: id }),
+  openInspector: (id) =>
+    set((state) => ({
+      inspectorBodyId: id,
+      inspectorDetent: 'half',
+      // Only phone has to give up the bottom edge; on wider layouts the
+      // outliner rail and the inspector coexist.
+      outlinerOpen:
+        typeof window !== 'undefined' && window.innerWidth <= 767 ? false : state.outlinerOpen,
+    })),
   closeInspector: () => set({ inspectorBodyId: null }),
   setCameraLock: (id) => set({ cameraLockedId: id }),
 

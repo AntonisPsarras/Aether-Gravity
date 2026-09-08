@@ -145,6 +145,111 @@ export function createBodyGestureController({
   };
 }
 
+/** Minimal pointer shape the DOM detector needs — a React or native event. */
+export type DomPointerLike = { clientX: number; clientY: number };
+
+/**
+ * DOM-event variant of the same tap / long-press detector, for list rows.
+ *
+ * The outliner used to re-implement this against DOM events with different
+ * semantics: it measured elapsed time on pointer-**up** instead of firing a
+ * timer, so a 600 ms hold that ended outside the row still counted as a long
+ * press, and it never joined the cancel registry — meaning a canvas
+ * pointer-missed could not cancel an in-flight row press. This shares the
+ * thresholds, the timer semantics and the registry with the 3D hitbox path.
+ */
+export function createDomTapLongPress({
+  getBodyId,
+  onGesture,
+}: {
+  getBodyId: () => string;
+  onGesture: (bodyId: string, kind: BodyGestureKind) => void;
+}) {
+  const state: GestureState = createInitialGestureState();
+
+  const clearLongPressTimer = () => {
+    if (state.timerId != null) {
+      clearTimeout(state.timerId);
+      state.timerId = null;
+    }
+  };
+
+  const resetGesture = () => {
+    clearLongPressTimer();
+    state.startX = 0;
+    state.startY = 0;
+    state.active = false;
+    state.longPressFired = false;
+  };
+
+  const onPointerDown = (e: DomPointerLike) => {
+    resetGesture();
+    state.active = true;
+    state.startX = e.clientX;
+    state.startY = e.clientY;
+    state.timerId = setTimeout(() => {
+      state.timerId = null;
+      if (!state.active) return;
+      state.longPressFired = true;
+      onGesture(getBodyId(), 'longPress');
+    }, BODY_LONG_PRESS_MS);
+  };
+
+  const onPointerUp = (e: DomPointerLike) => {
+    if (!state.active) {
+      resetGesture();
+      return;
+    }
+    clearLongPressTimer();
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+    const wasLongPress = state.longPressFired;
+    resetGesture();
+
+    if (wasLongPress) return;
+    if (Math.hypot(dx, dy) > BODY_DRAG_THRESHOLD_PX) return;
+    onGesture(getBodyId(), 'tap');
+  };
+
+  return { onPointerDown, onPointerUp, resetGesture };
+}
+
+/** React binding for `createDomTapLongPress`, wired into the cancel registry. */
+export function useDomTapLongPress(
+  bodyId: string,
+  onGesture: (bodyId: string, kind: BodyGestureKind) => void,
+) {
+  const bodyIdRef = useRef(bodyId);
+  bodyIdRef.current = bodyId;
+  const onGestureRef = useRef(onGesture);
+  onGestureRef.current = onGesture;
+
+  const controllerRef = useRef<ReturnType<typeof createDomTapLongPress> | null>(null);
+  if (!controllerRef.current) {
+    controllerRef.current = createDomTapLongPress({
+      getBodyId: () => bodyIdRef.current,
+      onGesture: (id, kind) => onGestureRef.current(id, kind),
+    });
+  }
+
+  const reset = useCallback(() => controllerRef.current?.resetGesture(), []);
+
+  useEffect(() => {
+    cancelRegistry.add(reset);
+    return () => {
+      cancelRegistry.delete(reset);
+      reset();
+    };
+  }, [reset]);
+
+  const controller = controllerRef.current;
+  return {
+    onPointerDown: controller.onPointerDown,
+    onPointerUp: controller.onPointerUp,
+    onPointerCancel: reset,
+  };
+}
+
 /**
  * Ref-backed pointer gesture hook for celestial body hitboxes.
  * Long-press fires from a pointerdown-only timer; all cancel paths clear it.

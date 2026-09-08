@@ -35,6 +35,12 @@ import {
   type RingVisual,
 } from '../utils/bodyAppearance';
 import { surfaceGravitySi } from '../utils/units';
+import {
+  dampFactor, framingDistanceFor, arrivalEpsilonSq, FLY_TO_LAMBDA, FOLLOW_LAMBDA,
+} from '../utils/cameraFly';
+import { useMediaQuery } from './hooks/useMediaQuery';
+import { useReducedMotion } from './hooks/useReducedMotion';
+import { useBodySelectionGesture } from './hooks/useBodySelectionGesture';
 import { EnvironmentProvider, useEnvironment } from './Environment/EnvironmentContext';
 import { GasClouds, GasRemnant } from './Environment/GasClouds';
 import DecorativeDust from './Environment/DecorativeDust';
@@ -349,7 +355,7 @@ const snapCameraToBody = (
   bodyObjectsRef.current.clear();
 
   toRenderSpace(scratchV1, target.position, floatingOffset);
-  const dist = Math.max(140, target.radius * 32);
+  const dist = framingDistanceFor(target.radius);
   controls.target.set(scratchV1.x, scratchV1.y, scratchV1.z);
   camera.position.set(
     scratchV1.x + dist * 0.22,
@@ -357,6 +363,98 @@ const snapCameraToBody = (
     scratchV1.z + dist * 0.88,
   );
   controls.update();
+};
+
+/**
+ * Eases the camera onto a newly selected body.
+ *
+ * Selection previously did nothing to the camera — you had to hunt for the
+ * body you had just picked in the outliner. This watches `selectedId` so every
+ * route into a selection (canvas tap, outliner row, anything future) gets the
+ * same motion.
+ *
+ * The tween is exponential damping keyed on the frame delta, so it feels
+ * identical at 60 and 120 fps. It yields immediately to any user input: an
+ * OrbitControls drag, a creation drag, or a panel interaction cancels it.
+ * Under `prefers-reduced-motion` it does not tween at all — it uses the same
+ * instant snap the recenter path has always used.
+ */
+const CameraFlyTo = ({
+  floatingOffset,
+  bodyObjectsRef,
+}: {
+  floatingOffset: React.MutableRefObject<THREE.Vector3>;
+  bodyObjectsRef: React.MutableRefObject<Map<string, THREE.Object3D>>;
+}) => {
+  const selectedId = useStore((s) => s.selectedId);
+  const recenterNonce = useStore((s) => s.cameraRecenterNonce);
+  const reducedMotion = useReducedMotion();
+  const { camera, controls } = useThree();
+
+  const flying = useRef<{ id: string; distance: number } | null>(null);
+  const lastRecenter = useRef(recenterNonce);
+
+  useEffect(() => {
+    if (!selectedId) { flying.current = null; return; }
+
+    // A recenter is its own framing decision; don't fight it with a fly-to.
+    if (recenterNonce !== lastRecenter.current) {
+      lastRecenter.current = recenterNonce;
+      flying.current = null;
+      return;
+    }
+
+    const body = useStore.getState().bodies.find((b) => b.id === selectedId);
+    if (!body || !isOrbitControlsLike(controls)) return;
+
+    if (reducedMotion) {
+      snapCameraToBody(camera, controls, body, floatingOffset.current, bodyObjectsRef);
+      return;
+    }
+    flying.current = { id: selectedId, distance: framingDistanceFor(body.radius) };
+  }, [selectedId, recenterNonce, reducedMotion, controls, camera, floatingOffset, bodyObjectsRef]);
+
+  // Any deliberate camera input wins over the tween.
+  useEffect(() => {
+    if (!isOrbitControlsLike(controls)) return;
+    const target = controls as unknown as { addEventListener?: Function; removeEventListener?: Function };
+    if (typeof target.addEventListener !== 'function') return;
+    const cancel = () => { flying.current = null; };
+    target.addEventListener('start', cancel);
+    return () => target.removeEventListener?.('start', cancel);
+  }, [controls]);
+
+  useFrame((_, dt) => {
+    const fly = flying.current;
+    if (!fly || !isOrbitControlsLike(controls)) return;
+    if (useStore.getState().isInteractingWithUI) return;
+
+    const body = useStore.getState().bodies.find((b) => b.id === fly.id);
+    if (!body) { flying.current = null; return; }
+
+    toRenderSpace(scratchV1, body.position, floatingOffset.current);
+    if (scratchV1.x !== scratchV1.x) return; // NaN guard
+
+    scratchV3.set(
+      scratchV1.x + fly.distance * 0.22,
+      scratchV1.y + fly.distance * 0.42,
+      scratchV1.z + fly.distance * 0.88,
+    );
+
+    const k = dampFactor(FLY_TO_LAMBDA, dt);
+    controls.target.lerp(scratchV1, k);
+    camera.position.lerp(scratchV3, k);
+    controls.update();
+
+    if (camera.position.distanceToSquared(scratchV3) < arrivalEpsilonSq(fly.distance)) {
+      controls.target.copy(scratchV1);
+      camera.position.copy(scratchV3);
+      controls.update();
+      flying.current = null;
+    }
+  });
+
+  return null;
 };
 
 /** Snap orbit camera to the primary star after generate / new universe only. */
@@ -666,9 +764,12 @@ const PhysicsEngine = ({
         toRenderSpace(scratchV1, target.position, floatingOffset.current);
         scratchV2.copy(camera.position).sub(controls.target);
         if (scratchV1.x === scratchV1.x) {
-          controls.target.lerp(scratchV1, 0.1);
+          // Exponential damping keyed on the frame delta. The old fixed 0.1
+          // alpha converged twice as fast on a 120 Hz display as on a 60 Hz one.
+          const k = dampFactor(FOLLOW_LAMBDA, delta);
+          controls.target.lerp(scratchV1, k);
           scratchV3.copy(controls.target).add(scratchV2);
-          camera.position.lerp(scratchV3, 0.1);
+          camera.position.lerp(scratchV3, k);
           controls.update();
         }
       }
@@ -1791,6 +1892,7 @@ const BodyMesh = ({
 
 /** Narrow-viewport breakpoint — matches Tailwind `md` and inspector/outliner layout. */
 const NARROW_VIEWPORT_PX = 768;
+const NARROW_VIEWPORT_QUERY = `(max-width: ${NARROW_VIEWPORT_PX - 1}px)`;
 
 /** Baseline orbit speeds on desktop-width canvases. */
 const ORBIT_ROTATE_SPEED = 0.35;
@@ -1800,8 +1902,12 @@ const ORBIT_PAN_SPEED = 0.65;
 const NARROW_VIEWPORT_SENSITIVITY = 1.75;
 
 const AdaptiveOrbitControls = ({ enabled }: { enabled: boolean }) => {
-  const canvasWidth = useThree((s) => s.size.width);
-  const isNarrowViewport = canvasWidth < NARROW_VIEWPORT_PX;
+  // Measured against the *window*, not the canvas. The canvas now insets when
+  // the desktop rails open, so a canvas-width test would flip rotate/pan speed
+  // by 1.75x the moment a panel opened — which is exactly the "narrow screen,
+  // shorter swipe travel" heuristic being applied to a screen that is not
+  // narrow. "Narrow" here means phone, which is what this constant always meant.
+  const isNarrowViewport = useMediaQuery(NARROW_VIEWPORT_QUERY);
   const sensitivity = isNarrowViewport ? NARROW_VIEWPORT_SENSITIVITY : 1;
 
   return (
@@ -1867,18 +1973,8 @@ const SpaceCanvas: React.FC<{
     setCreationDragging(active);
   }, []);
 
-  const handleBodyGesture = React.useCallback((id: string, kind: BodyGestureKind) => {
-    if (kind === 'longPress') {
-      selectBody(id);
-      openInspector(id);
-      return;
-    }
-    selectBody(id);
-    const { inspectorBodyId } = useStore.getState();
-    if (inspectorBodyId && inspectorBodyId !== id) {
-      closeInspector();
-    }
-  }, [selectBody, openInspector, closeInspector]);
+  // Shared with the outliner so the two selection surfaces cannot drift apart.
+  const handleBodyGesture = useBodySelectionGesture();
 
   const handleCanvasPointerMissed = React.useCallback(() => {
     cancelAllBodyPointerGestures();
@@ -1995,6 +2091,7 @@ const SpaceCanvas: React.FC<{
           speed={1}
         />
         <CameraRecenter floatingOffset={floatingOffset} bodyObjectsRef={bodyObjectsRef} />
+        <CameraFlyTo floatingOffset={floatingOffset} bodyObjectsRef={bodyObjectsRef} />
         {isE2EMode() && <TestMetricsCollector />}
         <PhysicsEngine
           bodiesRef={bodiesRef}

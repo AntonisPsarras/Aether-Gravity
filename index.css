@@ -30,14 +30,52 @@
   --creation-toolbar-stack: 5.75rem;
   /* Creation bar height on phone (expanded row + container padding) */
   --creation-toolbar-height: 5.5rem;
-  /* Global HUD scale for floating UI */
+  /* Width of the vertical creation rail on md+ (matches md:min-w-[8.75rem]). */
+  --creation-rail-width: 8.75rem;
+
+  /* Global HUD scale for floating UI.
+     MUST stay a valid unitless <number>: it feeds `transform: scale()` and the
+     `.touch-target` compensation divisor below. These were previously written
+     as `clamp(0.84, calc(100vw / 430), 1)`, which is invalid CSS — clamp cannot
+     mix a unitless number with a length, and `calc(100vw / 430)` is a length.
+     The whole custom property therefore failed to resolve, which silently took
+     `transform: scale(var(--hud-scale))` down to `none` AND collapsed
+     `min-height: calc(2.75rem / var(--hud-scale))` to `0`, removing the 44px
+     touch floor on exactly the phones it exists for. The value below is 1,
+     which is the behaviour that has actually been shipping. Reintroducing a
+     fluid scale needs stepped media queries (CSS has no valid unitless
+     viewport ratio), and would have to be re-tested against every panel. */
   --hud-scale: 1;
-  /* Dedicated control bar scale */
+  /* Dedicated control bar scale — same constraint as --hud-scale above. */
   --control-bar-scale: 1;
   /* Universe outliner sits above the creation toolbar on small screens */
   --universe-outliner-mobile-bottom: calc(
     var(--creation-toolbar-bottom-pad) + var(--creation-toolbar-height) + 0.5rem
   );
+
+  /* ── Docked rails (desktop ≥1280 only) ──────────────────────────────────
+     Both offsets default to 0px so a typo in a consumer degrades to today's
+     full-bleed layout rather than to an invalid `left:` declaration. They are
+     promoted to their real widths only by the `.sim-shell.rail-*-open` rules
+     inside the ≥1280 block below. */
+  --rail-left:    0px;
+  --rail-right:   0px;
+  --rail-left-w:  18rem;   /* universe outliner */
+  --rail-right-w: 22rem;   /* inspector — matches the old md:w-[min(22rem,92vw)] */
+
+  /* ── Phone bottom-sheet detents ─────────────────────────────────────────
+     Fractions of the dynamic viewport. `peek` shows the header and key stats
+     with the simulation still visible; `full` leaves the control bar reachable. */
+  --sheet-peek: 34dvh;
+  --sheet-half: 60dvh;
+  --sheet-full: 86dvh;
+
+  /* Panel motion timing, shared so every surface eases identically. */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-panel: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-sheet: 380ms;
+  --dur-rail: 320ms;
+  --dur-collapse: 240ms;
 
   /* Palette tokens */
   --color-void-navy:      #10141C;
@@ -131,15 +169,12 @@ canvas {
   :root {
     --control-bar-gap: max(0.75rem, 12px);
     --creation-toolbar-gap: max(2rem, 24px);
-    --hud-scale: clamp(0.84, calc(100vw / 430), 1);
-    --control-bar-scale: clamp(0.72, calc(100vw / 520), 0.9);
     --control-bar-anchor-top: calc(var(--safe-top) + var(--control-bar-gap));
   }
 
   /* Extra clearance on very narrow phones (e.g. 360px) — outliner vs creation bar */
   @media (max-width: 24rem) {
     :root {
-      --hud-scale: clamp(0.8, calc(100vw / 430), 0.92);
       --universe-outliner-mobile-bottom: calc(
         var(--creation-toolbar-bottom-pad) + var(--creation-toolbar-height) + 0.85rem
       );
@@ -150,15 +185,27 @@ canvas {
     top: var(--control-bar-anchor-top);
   }
 
+  /* Full-bleed bottom sheet. The height comes from the active detent, which
+     the sheet writes to --sheet-h; the max-height keeps even the `full` detent
+     clear of the control bar at the top of the screen. */
   .inspector-panel-anchor {
-    /* Full-bleed bottom sheet; top inset keeps room for the control bar */
+    height: var(--sheet-h, var(--sheet-full));
     max-height: calc(100dvh - var(--control-bar-top) - var(--control-bar-mobile-height));
+    transition: height var(--dur-sheet) var(--ease-sheet);
+  }
+
+  /* While a finger is on the sheet, height must not lag behind the drag. */
+  .inspector-panel-anchor[data-dragging='true'] {
+    transition: none;
   }
 }
 
+/* Tablet band kept at 1: see the --hud-scale note in :root. A non-1 value here
+   is valid CSS and would work, but it is out of scope for this pass and would
+   need the .touch-target compensation extended to this range to stay WCAG-safe. */
 @media (min-width: 768px) and (max-width: 1100px) {
   :root {
-    --hud-scale: 0.95;
+    --hud-scale: 1;
   }
 }
 
@@ -202,7 +249,9 @@ canvas {
   .universe-outliner-anchor {
     bottom: auto;
     top: var(--universe-outliner-desktop-top);
-    left: max(1rem, var(--safe-left));
+    /* Clear the vertical creation rail, which is bottom-left anchored and tall
+       enough (14 body types) to reach the outliner on a tablet-height screen. */
+    left: calc(max(1rem, var(--safe-left)) + var(--creation-rail-width) + 0.75rem);
     right: auto;
     margin-left: 0;
     margin-right: 0;
@@ -538,6 +587,179 @@ input[type="range"]::-moz-range-thumb {
   touch-action: pan-y;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Motion ─────────────────────────────────────────────────────────────────
+   There is no animation library in this project — `animate-in`, `fade-in`,
+   `slide-in-from-*` and friends are tailwindcss-animate utilities and the
+   plugin is not installed, so those class names compile to nothing. Every
+   animation the UI actually plays is defined here.
+────────────────────────────────────────────────────────────────────────────── */
+@keyframes ag-tab-in {
+  from { opacity: 0; transform: translateX(calc(0.75rem * var(--ag-tab-dir, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes ag-fade-in {
+  from { opacity: 0; transform: translateY(0.375rem); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Nova-gold pulse on a derived readout when the value it is computed from
+   changes. Opt-in per field — see utils/inspectorSections.ts. */
+@keyframes ag-flash {
+  0%   { color: rgba(244, 244, 251, 0.8); }
+  30%  { color: var(--color-nova-gold); }
+  100% { color: rgba(244, 244, 251, 0.8); }
+}
+
+/* Panel entrances.
+   These are CSS animations rather than a JS "mount hidden, flip visible next
+   frame" dance on purpose: requestAnimationFrame does not fire in a
+   backgrounded or throttled tab, which would leave a panel stranded off-screen
+   until the tab was focused again. A keyframe always lands on its `to` state. */
+@keyframes ag-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes ag-rail-in  { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ag-card-in  { from { transform: translateY(1.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* No `animation-fill-mode` anywhere below, deliberately.
+   With `both`, an animation that never advances — a throttled background tab,
+   a compositor that never composites — leaves the element frozen on its `from`
+   keyframe, i.e. a panel stranded off-screen with no way back. Without a fill
+   mode the un-animated state *is* the finished state, so the worst case is
+   that the motion is skipped rather than that the UI breaks. */
+.ag-tab-in  { animation: ag-tab-in 220ms var(--ease-panel); }
+.ag-fade-in { animation: ag-fade-in 200ms var(--ease-panel); }
+.ag-flash   { animation: ag-flash 420ms ease-out 1; }
+.ag-enter-sheet { animation: ag-sheet-in var(--dur-sheet) var(--ease-sheet); }
+.ag-enter-rail  { animation: ag-rail-in var(--dur-rail) var(--ease-sheet); }
+.ag-enter-card  { animation: ag-card-in var(--dur-rail) var(--ease-sheet); }
+
+/* Collapsible body: 0fr → 1fr animates without measuring scrollHeight, so it
+   works with content-driven children (the visx charts) and needs no JS. */
+.ag-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-collapse) ease;
+}
+.ag-collapse[data-open='true'] { grid-template-rows: 1fr; }
+.ag-collapse > * { overflow: hidden; min-height: 0; }
+.ag-collapse-chevron { transition: transform 200ms ease; }
+.ag-collapse-chevron[data-open='true'] { transform: rotate(180deg); }
+
+/* Slide-in surfaces (desktop rails, tablet cards). */
+.ag-slide {
+  transition:
+    transform var(--dur-rail) var(--ease-sheet),
+    opacity 200ms ease;
+}
+
+/* Phone scrim behind a fully-expanded sheet. */
+.ag-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.ag-scrim[data-visible='true'] { opacity: 1; pointer-events: auto; }
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────────
+   Blanket suppression. rAF-driven motion (the camera fly-to) additionally
+   branches in JS via components/hooks/useReducedMotion.ts, because a CSS rule
+   cannot reach it. 1ms rather than 0 keeps transitionend listeners firing.
+────────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Same suppression, forced by the ?e2e=motion:none flag so tests are
+   deterministic without OS-level emulation. */
+html[data-reduced-motion='true'] *,
+html[data-reduced-motion='true'] *::before,
+html[data-reduced-motion='true'] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ─── Docked rails (desktop only) ────────────────────────────────────────────
+   The canvas wrapper reads --rail-left / --rail-right directly, so opening a
+   rail insets the WebGL surface instead of covering it. The wrapper must NOT
+   transition those offsets: each change reallocates the framebuffer, so it has
+   to happen once per toggle rather than once per animation frame.
+────────────────────────────────────────────────────────────────────────────── */
+.canvas-viewport {
+  transition: none !important;
+}
+
+@media (min-width: 1280px) {
+  .sim-shell.rail-right-open { --rail-right: var(--rail-right-w); }
+  .sim-shell.rail-left-open  { --rail-left:  var(--rail-left-w);  }
+
+  /* Rails are laid out in real space, so the --hud-scale transform that the
+     floating phone/tablet HUD needs would only blur them. Dropping it here is
+     safe *because* the .touch-target compensation rule that pairs with that
+     transform is itself nested inside @media (max-width: 767px) — the two can
+     never disagree. Move one and you must move the other. */
+  .inspector-panel-anchor,
+  .universe-outliner-anchor {
+    transform: none;
+  }
+
+  /* Outliner becomes a full-height left rail. Kept as a max-height override
+     rather than a new selector so the collapsed-header state still works. */
+  .universe-outliner-anchor {
+    top: 0;
+    bottom: 0;
+    /* The tablet band nudges this right to clear the creation rail; at rail
+       width the outliner IS the left edge, and the creation rail is offset by
+       --rail-left instead. */
+    left: 0;
+    width: var(--rail-left-w);
+    max-width: var(--rail-left-w);
+    max-height: none;
+    border-radius: 0;
+    border-left: 0;
+    border-top: 0;
+    border-bottom: 0;
+  }
+  .universe-outliner-anchor:not(.is-expanded) {
+    top: var(--universe-outliner-desktop-top);
+    bottom: auto;
+    left: calc(max(1rem, var(--safe-left)) + var(--creation-rail-width) + 0.75rem);
+    width: 16rem;
+    max-width: 16rem;
+    max-height: 3.75rem;
+    border-radius: 0.75rem;
+    border-width: 1px;
+  }
+
+  /* Keep the floating chrome inside the free area between the rails. */
+  .creation-toolbar-anchor {
+    left: calc(var(--rail-left) + max(1rem, var(--safe-left)));
+    right: calc(var(--rail-right) + max(1rem, var(--safe-right)));
+  }
+  /* Re-centre the control bar in the space the rails leave, and cap it there.
+     Without the cap it keeps its intrinsic ~44rem width and slides underneath
+     the rails; the inner container already scrolls horizontally, so clamping
+     it degrades gracefully rather than clipping controls. */
+  .control-bar-anchor {
+    margin-left: calc((var(--rail-left) - var(--rail-right)) / 2);
+    max-width: calc(100vw - var(--rail-left) - var(--rail-right) - 2rem);
+  }
+  .control-bar-anchor > .sim-toolbar {
+    max-width: 100%;
+  }
 }
 
 /* ─── Fluid UI tokens (used by panels when not relying on Tailwind classes) ──

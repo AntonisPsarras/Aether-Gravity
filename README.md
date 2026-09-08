@@ -48,6 +48,26 @@ Aether Gravity follows a strict, minimalist design system — every panel, orbit
 
 These colors are enforced across the app shell (`index.html`, CSS variables, Capacitor status bar) and UI components. Third-party themes or ad-hoc palette swaps are intentionally out of scope — the void is the brand.
 
+### Layout tiers
+
+The in-game HUD adapts across three tiers, defined once in `components/hooks/useMediaQuery.ts` and mirrored by the media queries in `index.css`:
+
+| Tier | Width | Inspector | Outliner |
+|------|-------|-----------|----------|
+| **Phone** | `< 768` | Multi-detent bottom sheet — peek / half / full, draggable, back-button steps down | Bottom sheet; mutually exclusive with the inspector |
+| **Tablet** | `768–1279` | Floating card with tabs | Floating card, top-left |
+| **Desktop** | `≥ 1280` | Docked right rail (22rem), every section in one scroll | Docked left rail (18rem) |
+
+On desktop the rails are real layout, not overlay: `--rail-left` / `--rail-right` inset the canvas container so the WebGL surface is never occluded.
+
+### Primaries vs derived
+
+The Inspector groups fields by category (physical, thermal, composition, atmosphere, rings, dynamics, relativistic, orbital, analysis) in collapsible sections driven by `utils/inspectorSections.ts`. Within each, **primaries** — the degrees of freedom you set — are filled, bordered controls; **derived** values, recomputed by `utils/bodyDerivation.ts`, sit in a lock-marked read-only group. The distinction is carried by structure and opacity; hue stays reserved for state.
+
+### Motion
+
+All motion is CSS (`@keyframes` in `index.css`) plus one frame-rate-independent camera tween in `utils/cameraFly.ts` — there is no animation library. Everything respects `prefers-reduced-motion`: a global suppression rule plus explicit JS fallbacks where CSS cannot reach (the camera snaps instead of easing, and derived-value flashes are disabled).
+
 ---
 
 ## Local Installation

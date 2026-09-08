@@ -6,11 +6,12 @@ import MainMenu from './components/MainMenu';
 import UniverseOutliner from './components/UniverseOutliner';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getWorld, saveWorld, serializeBodies, markWorldOpened, parseWorldData } from './utils/worldStorage';
-import { useStore } from './utils/store';
+import { useStore, detentBelow } from './utils/store';
+import { BREAKPOINTS, useBreakpoint } from './components/hooks/useMediaQuery';
 import { getE2EConfig } from './utils/e2eConfig';
 import { markTestBridgeAppReady } from './utils/testBridge';
 import { deferDoubleFrame } from './utils/deferFrames';
-import { registerBackHandler } from './utils/backNavigation';
+import { registerBackHandler, resolveSimBackAction } from './utils/backNavigation';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
@@ -25,6 +26,9 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   const inspectorOpen = useStore(
     (s) => s.inspectorBodyId != null && s.bodies.some((b) => b.id === s.inspectorBodyId),
   );
+  const outlinerOpen = useStore((s) => s.outlinerOpen);
+  const breakpoint = useBreakpoint();
+  const isPhone = breakpoint === 'phone';
 
   const [creationMode, setCreationMode] = useState<BodyType | null>(null);
   const [showConfirmGenerate, setShowConfirmGenerate] = useState(false);
@@ -100,33 +104,37 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 
   useEffect(() => {
     return registerBackHandler(() => {
-      if (storageNotice) {
-        setStorageNotice(null);
-        return true;
-      }
-      if (showConfirmGenerate) {
-        setShowConfirmGenerate(false);
-        return true;
-      }
-      if (creationMode) {
-        setCreationMode(null);
-        return true;
-      }
       const state = useStore.getState();
-      const inspectorOpen =
-        state.inspectorBodyId != null &&
-        state.bodies.some((b) => b.id === state.inspectorBodyId);
-      if (inspectorOpen) {
-        state.closeInspector();
-        state.selectBody(null);
-        return true;
+      const action = resolveSimBackAction({
+        storageNotice: !!storageNotice,
+        confirmOpen: showConfirmGenerate,
+        creationMode: !!creationMode,
+        isPhone: window.matchMedia(`(max-width: ${BREAKPOINTS.phone}px)`).matches,
+        inspectorOpen:
+          state.inspectorBodyId != null &&
+          state.bodies.some((b) => b.id === state.inspectorBodyId),
+        inspectorDetent: state.inspectorDetent,
+        outlinerOpen: state.outlinerOpen,
+        hasSelection: !!state.selectedId,
+      });
+
+      switch (action) {
+        case 'dismissNotice': setStorageNotice(null); return true;
+        case 'cancelConfirm': setShowConfirmGenerate(false); return true;
+        case 'exitCreationMode': setCreationMode(null); return true;
+        case 'collapseInspector': {
+          const below = detentBelow(state.inspectorDetent);
+          if (below) state.setInspectorDetent(below);
+          return true;
+        }
+        case 'closeOutliner': state.setOutlinerOpen(false); return true;
+        case 'closeInspector':
+          state.closeInspector();
+          state.selectBody(null);
+          return true;
+        case 'clearSelection': state.selectBody(null); return true;
+        case 'returnToMenu': handleReturnToMenu(); return true;
       }
-      if (state.selectedId) {
-        state.selectBody(null);
-        return true;
-      }
-      handleReturnToMenu();
-      return true;
     });
   }, [
     storageNotice,
@@ -137,8 +145,26 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   ]);
 
   return (
-    <div className={`sim-shell bg-void-navy text-pulsar-white font-sans select-none${inspectorOpen ? ' inspector-open' : ''}`} data-testid="simulation-root">
-      <div className="absolute inset-0 z-0">
+    <div
+      className={[
+        'sim-shell bg-void-navy text-pulsar-white font-sans select-none',
+        inspectorOpen ? 'inspector-open' : '',
+        // The rail classes only do anything inside the >=1280 media query, so
+        // they are safe to set at every width.
+        inspectorOpen ? 'rail-right-open' : '',
+        outlinerOpen ? 'rail-left-open' : '',
+      ].filter(Boolean).join(' ')}
+      data-testid="simulation-root"
+      data-breakpoint={breakpoint}
+    >
+      {/* Inset by the docked rails so the WebGL surface is never occluded.
+          index.css pins `transition: none` here on purpose: each width change
+          reallocates the framebuffer, so it must happen once per toggle rather
+          than once per animation frame. */}
+      <div
+        className="canvas-viewport absolute inset-y-0 z-0"
+        style={{ left: 'var(--rail-left)', right: 'var(--rail-right)' }}
+      >
         <SpaceCanvas
           creationMode={creationMode}
           setCreationMode={setCreationMode}
@@ -161,10 +187,18 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         </div>
       )}
       <div className="absolute inset-0 z-10 pointer-events-none safe-pad">
-        <div className="pointer-events-auto"><CreationToolbar mode={creationMode} setMode={setCreationMode} onTriggerGenerate={() => setShowConfirmGenerate(true)} mobileHidden={inspectorOpen} /></div>
-        {!inspectorOpen && (
-          <div className="pointer-events-auto"><UniverseOutliner /></div>
-        )}
+        <div className="pointer-events-auto">
+          <CreationToolbar
+            mode={creationMode}
+            setMode={setCreationMode}
+            onTriggerGenerate={() => setShowConfirmGenerate(true)}
+            mobileHidden={isPhone && (inspectorOpen || outlinerOpen)}
+          />
+        </div>
+        {/* The outliner stays mounted alongside the inspector now. On phone the
+            two are mutually exclusive presentations of the bottom edge, which
+            the store actions enforce. */}
+        <div className="pointer-events-auto"><UniverseOutliner /></div>
         <div className="pointer-events-auto"><InspectorPanel /></div>
         <div className="pointer-events-auto">
           <ControlBar

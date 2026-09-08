@@ -34,6 +34,27 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      /**
+       * Phone-width layout coverage.
+       *
+       * A plain chromium project with an explicit viewport rather than
+       * `devices['Pixel 7']`: the device descriptor also swaps the user agent
+       * and enables full mobile emulation, which changes what
+       * `detectIsTouch()` and the device-tier heuristics see. Keeping those
+       * under our own control means a failure here is a layout failure, not a
+       * tier-detection one. Tests that need the touch path opt in explicitly
+       * via `?e2e=1&touch=1`.
+       */
+      name: 'mobile-chrome',
+      testMatch: /(layout|editlock)\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 390, height: 844 },
+        hasTouch: true,
+        isMobile: false,
+      },
+    },
   ],
   webServer: {
     command: 'npx vite --configLoader runner',

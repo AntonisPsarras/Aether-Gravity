@@ -5,6 +5,7 @@ import {
   BODY_LONG_PRESS_MS,
   cancelAllBodyPointerGestures,
   createBodyGestureController,
+  createDomTapLongPress,
   type BodyGestureKind,
 } from './bodyPointerGesture';
 
@@ -123,6 +124,78 @@ describe('createBodyGestureController', () => {
     controller.resetGesture();
     vi.advanceTimersByTime(BODY_LONG_PRESS_MS);
 
+    expect(gestures).toEqual([]);
+  });
+});
+
+describe('createDomTapLongPress', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const run = () => {
+    const gestures: BodyGestureKind[] = [];
+    const c = createDomTapLongPress({
+      getBodyId: () => 'row-1',
+      onGesture: (_id, kind) => gestures.push(kind),
+    });
+    return { c, gestures };
+  };
+
+  it('fires a tap for a short, stationary press', () => {
+    const { c, gestures } = run();
+    c.onPointerDown({ clientX: 10, clientY: 10 });
+    vi.advanceTimersByTime(100);
+    c.onPointerUp({ clientX: 10, clientY: 10 });
+    expect(gestures).toEqual(['tap']);
+  });
+
+  it('fires the long press from a timer, not on release', () => {
+    // The previous outliner measured elapsed time on pointerup, so a hold that
+    // ended elsewhere still counted. The timer fires while the finger is down.
+    const { c, gestures } = run();
+    c.onPointerDown({ clientX: 10, clientY: 10 });
+    vi.advanceTimersByTime(BODY_LONG_PRESS_MS);
+    expect(gestures).toEqual(['longPress']);
+    c.onPointerUp({ clientX: 10, clientY: 10 });
+    expect(gestures).toEqual(['longPress']);
+  });
+
+  it('does not double-fire at exactly the long-press boundary', () => {
+    const { c, gestures } = run();
+    c.onPointerDown({ clientX: 0, clientY: 0 });
+    vi.advanceTimersByTime(BODY_LONG_PRESS_MS);
+    c.onPointerUp({ clientX: 0, clientY: 0 });
+    expect(gestures).toEqual(['longPress']);
+  });
+
+  it('suppresses the tap when the pointer moved past the drag threshold', () => {
+    const { c, gestures } = run();
+    c.onPointerDown({ clientX: 0, clientY: 0 });
+    vi.advanceTimersByTime(50);
+    c.onPointerUp({ clientX: BODY_DRAG_THRESHOLD_PX + 5, clientY: 0 });
+    expect(gestures).toEqual([]);
+  });
+
+  it('still taps for movement inside the threshold', () => {
+    const { c, gestures } = run();
+    c.onPointerDown({ clientX: 0, clientY: 0 });
+    vi.advanceTimersByTime(50);
+    c.onPointerUp({ clientX: BODY_DRAG_THRESHOLD_PX - 1, clientY: 0 });
+    expect(gestures).toEqual(['tap']);
+  });
+
+  it('resetGesture cancels a pending long press', () => {
+    const { c, gestures } = run();
+    c.onPointerDown({ clientX: 0, clientY: 0 });
+    c.resetGesture();
+    vi.advanceTimersByTime(BODY_LONG_PRESS_MS * 2);
+    c.onPointerUp({ clientX: 0, clientY: 0 });
+    expect(gestures).toEqual([]);
+  });
+
+  it('ignores a pointerup with no matching pointerdown', () => {
+    const { c, gestures } = run();
+    c.onPointerUp({ clientX: 0, clientY: 0 });
     expect(gestures).toEqual([]);
   });
 });
