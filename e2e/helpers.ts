@@ -11,7 +11,7 @@ export const FIXTURE_STRESS = 'stress-20b';
 export const FIXTURE_SOLAR = 'preset:solar-system';
 
 export function e2eUrl(fixture: string, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ e2e: '1', fixture, ...extra });
+  const params = new URLSearchParams({ e2e: '1', fixture, onboarding: 'seen', ...extra });
   return `/?${params.toString()}`;
 }
 

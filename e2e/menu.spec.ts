@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const menuUrl = (tier: 'low' | 'high' = 'high') => `/?e2e=1&tier=${tier}`;
+const menuUrl = (tier: 'low' | 'high' = 'high') => `/?e2e=1&tier=${tier}&onboarding=seen`;
 
 test.describe('premium main menu', () => {
   test('opens the creator with the Solar System selected and exposes every origin', async ({ page }, testInfo) => {

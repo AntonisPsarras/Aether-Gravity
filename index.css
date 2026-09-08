@@ -136,6 +136,25 @@ canvas {
   padding-left: var(--safe-left);
 }
 
+/* Contextual education lives inside .canvas-viewport, so desktop rails resize
+   its coordinate space automatically. The shared control/safe-area variables
+   keep it clear of adaptive chrome without assuming a particular panel width. */
+.live-helper-host {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: calc(var(--control-bar-anchor-top) + var(--control-bar-mobile-height) + 0.75rem);
+  padding-inline: max(0.75rem, var(--safe-left)) max(0.75rem, var(--safe-right));
+}
+
+.live-helper-card {
+  max-height: min(52dvh, 25rem);
+  overflow-y: auto;
+}
+
+/* TODO(low-end): if richer callout illustrations are added, gate them through
+   the existing CanvasSetup device quality tier; the text card stays cheap. */
+
 .safe-top  { top:    max(0.5rem, var(--safe-top)); }
 .safe-bottom { bottom: max(0.5rem, var(--safe-bottom)); }
 

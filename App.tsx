@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { CelestialBody, BodyType } from './types';
 import SpaceCanvas from './components/SpaceCanvas';
 import { InspectorPanel, ControlBar, CreationToolbar, ConfirmationModal } from './components/Panels';
@@ -17,6 +17,11 @@ import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { consumeBackPress } from './utils/backNavigation';
+import LiveHelper from './components/LiveHelper';
+import {
+  enqueueUnseenHelpers, getOnboardingProgress, helperDefinition, markHelperSeen,
+  type HelperId, type HelperTrigger, type QueuedHelper,
+} from './utils/onboarding';
 
 const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu }) => {
   const {
@@ -34,6 +39,44 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   const [showConfirmGenerate, setShowConfirmGenerate] = useState(false);
   const [history, setHistory] = useState<CelestialBody[][]>([]);
   const [redoStack, setRedoStack] = useState<CelestialBody[][]>([]);
+  const seenHelpersRef = useRef(new Set<HelperId>(getOnboardingProgress().seenHelperIds));
+  const [helperQueue, setHelperQueue] = useState<QueuedHelper[]>([]);
+
+  const enqueueHelperTrigger = useCallback((trigger: HelperTrigger) => {
+    setHelperQueue((queue) => enqueueUnseenHelpers(queue, trigger, [...seenHelpersRef.current]));
+  }, []);
+  const handleOutlinerInteract = useCallback(
+    () => enqueueHelperTrigger({ kind: 'outliner-interaction' }),
+    [enqueueHelperTrigger],
+  );
+  const handleInspectorOpen = useCallback(
+    (body: CelestialBody) => enqueueHelperTrigger({ kind: 'inspector-open', body }),
+    [enqueueHelperTrigger],
+  );
+  const handleInspectorTabVisit = useCallback(
+    (tab: 'orbit' | 'analysis') => enqueueHelperTrigger({ kind: 'inspector-tab', tab }),
+    [enqueueHelperTrigger],
+  );
+
+  const acknowledgeHelper = useCallback(() => {
+    setHelperQueue((queue) => {
+      const [current, ...remaining] = queue;
+      if (current) {
+        seenHelpersRef.current.add(current.id);
+        markHelperSeen(current.id);
+      }
+      return remaining;
+    });
+  }, []);
+
+  const activeHelper = useMemo(
+    () => helperQueue[0] ? helperDefinition(helperQueue[0], bodies) : null,
+    [helperQueue, bodies],
+  );
+
+  useEffect(() => {
+    if (creationMode) enqueueHelperTrigger({ kind: 'creation-mode' });
+  }, [creationMode, enqueueHelperTrigger]);
 
   const pushToHistory = (currentBodies: CelestialBody[]) => {
     setHistory(prev => [...prev.slice(-19), currentBodies.map(b => ({ ...b, position: b.position.clone(), velocity: b.velocity.clone() }))]);
@@ -108,6 +151,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       const action = resolveSimBackAction({
         storageNotice: !!storageNotice,
         confirmOpen: showConfirmGenerate,
+        helperOpen: helperQueue.length > 0,
         creationMode: !!creationMode,
         isPhone: window.matchMedia(`(max-width: ${BREAKPOINTS.phone}px)`).matches,
         inspectorOpen:
@@ -121,6 +165,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       switch (action) {
         case 'dismissNotice': setStorageNotice(null); return true;
         case 'cancelConfirm': setShowConfirmGenerate(false); return true;
+        case 'dismissHelper': acknowledgeHelper(); return true;
         case 'exitCreationMode': setCreationMode(null); return true;
         case 'collapseInspector': {
           const below = detentBelow(state.inspectorDetent);
@@ -140,6 +185,8 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
     storageNotice,
     showConfirmGenerate,
     creationMode,
+    helperQueue.length,
+    acknowledgeHelper,
     handleReturnToMenu,
     setStorageNotice,
   ]);
@@ -168,8 +215,12 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         <SpaceCanvas
           creationMode={creationMode}
           setCreationMode={setCreationMode}
-          onBodyCreate={(snapshot: CelestialBody[]) => pushToHistory(snapshot)}
+          onBodyCreate={(snapshot: CelestialBody[], createdBody: CelestialBody) => {
+            pushToHistory(snapshot);
+            enqueueHelperTrigger({ kind: 'body-created', body: createdBody });
+          }}
         />
+        {activeHelper && <LiveHelper helper={activeHelper} onAcknowledge={acknowledgeHelper} />}
       </div>
       {storageNotice && (
         <div
@@ -198,8 +249,15 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         {/* The outliner stays mounted alongside the inspector now. On phone the
             two are mutually exclusive presentations of the bottom edge, which
             the store actions enforce. */}
-        <div className="pointer-events-auto"><UniverseOutliner /></div>
-        <div className="pointer-events-auto"><InspectorPanel /></div>
+        <div className="pointer-events-auto">
+          <UniverseOutliner onInteract={handleOutlinerInteract} />
+        </div>
+        <div className="pointer-events-auto">
+          <InspectorPanel
+            onOpen={handleInspectorOpen}
+            onTabVisit={handleInspectorTabVisit}
+          />
+        </div>
         <div className="pointer-events-auto">
           <ControlBar
             creationMode={creationMode}

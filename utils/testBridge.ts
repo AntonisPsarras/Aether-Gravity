@@ -68,6 +68,7 @@ export interface AetherTestAPI {
   loadFixture: (world: WorldData) => void;
   setPaused: (paused: boolean) => void;
   setSpeed: (speed: number) => void;
+  openInspector: (bodyId: string) => void;
   getMetrics: () => TestMetricsSnapshot;
   startMetricsCollection: () => void;
   stopMetricsCollection: () => PerfReport;
@@ -198,6 +199,10 @@ function buildApi(): AetherTestAPI {
 
     setPaused: (paused) => useStore.getState().setPaused(paused),
     setSpeed: (speed) => useStore.getState().setSpeed(speed),
+    openInspector: (bodyId) => {
+      useStore.getState().selectBody(bodyId);
+      useStore.getState().openInspector(bodyId);
+    },
 
     getMetrics: () => ({
       ready: appReady && canvasReady,

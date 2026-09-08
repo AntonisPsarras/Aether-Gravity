@@ -26,7 +26,7 @@ const HABITABLE_CANDIDATES = ['Planet', 'Ice Giant', 'Dwarf'];
  */
 const HIERARCHY_REFRESH_MS = 500;
 
-const UniverseOutliner: React.FC = () => {
+const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract }) => {
   const breakpoint = useBreakpoint();
   const isPhone = breakpoint === 'phone';
   const selectedId = useStore((s) => s.selectedId);
@@ -149,6 +149,8 @@ const UniverseOutliner: React.FC = () => {
   return (
     <div
       data-testid="outliner-panel"
+      onPointerDownCapture={onInteract}
+      onKeyDownCapture={onInteract}
       data-mode={flat ? 'flat' : 'tree'}
       data-open={isOpen ? 'true' : 'false'}
       className={cn(

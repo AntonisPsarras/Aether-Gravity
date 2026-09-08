@@ -47,6 +47,7 @@ describe('resolveSimBackAction', () => {
   const base: SimBackState = {
     storageNotice: false,
     confirmOpen: false,
+    helperOpen: false,
     creationMode: false,
     isPhone: false,
     inspectorOpen: false,
@@ -62,13 +63,15 @@ describe('resolveSimBackAction', () => {
   it('honours the transient-overlay priority order', () => {
     // Everything open at once: the most transient thing must go first.
     const all: SimBackState = {
-      ...base, storageNotice: true, confirmOpen: true, creationMode: true,
+      ...base, storageNotice: true, confirmOpen: true, helperOpen: true, creationMode: true,
       isPhone: true, inspectorOpen: true, inspectorDetent: 'full',
       outlinerOpen: true, hasSelection: true,
     };
     expect(resolveSimBackAction(all)).toBe('dismissNotice');
     expect(resolveSimBackAction({ ...all, storageNotice: false })).toBe('cancelConfirm');
     expect(resolveSimBackAction({ ...all, storageNotice: false, confirmOpen: false }))
+      .toBe('dismissHelper');
+    expect(resolveSimBackAction({ ...all, storageNotice: false, confirmOpen: false, helperOpen: false }))
       .toBe('exitCreationMode');
   });
 
@@ -105,7 +108,7 @@ describe('resolveSimBackAction', () => {
     // Guards against a back-stack sink. Collapsible sections are deliberately
     // not participants for exactly this reason.
     let state: SimBackState = {
-      storageNotice: true, confirmOpen: true, creationMode: true, isPhone: true,
+      storageNotice: true, confirmOpen: true, helperOpen: true, creationMode: true, isPhone: true,
       inspectorOpen: true, inspectorDetent: 'full', outlinerOpen: true, hasSelection: true,
     };
     const seen: SimBackAction[] = [];
@@ -116,6 +119,7 @@ describe('resolveSimBackAction', () => {
       switch (action) {
         case 'dismissNotice': state = { ...state, storageNotice: false }; break;
         case 'cancelConfirm': state = { ...state, confirmOpen: false }; break;
+        case 'dismissHelper': state = { ...state, helperOpen: false }; break;
         case 'exitCreationMode': state = { ...state, creationMode: false }; break;
         case 'collapseInspector':
           state = { ...state, inspectorDetent: detentBelowName(state.inspectorDetent)! };
@@ -126,7 +130,7 @@ describe('resolveSimBackAction', () => {
       }
     }
     expect(seen[seen.length - 1]).toBe('returnToMenu');
-    expect(seen.length).toBeLessThanOrEqual(9);
+    expect(seen.length).toBeLessThanOrEqual(10);
   });
 });
 

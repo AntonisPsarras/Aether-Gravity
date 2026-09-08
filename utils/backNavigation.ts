@@ -36,6 +36,7 @@ export function resetBackHandlers(): void {
 export type SimBackState = {
   storageNotice: boolean;
   confirmOpen: boolean;
+  helperOpen: boolean;
   creationMode: boolean;
   /** Phone tiers get sheet detents; wider layouts have none. */
   isPhone: boolean;
@@ -49,6 +50,7 @@ export type SimBackState = {
 export type SimBackAction =
   | 'dismissNotice'
   | 'cancelConfirm'
+  | 'dismissHelper'
   | 'exitCreationMode'
   | 'collapseInspector'
   | 'closeOutliner'
@@ -75,6 +77,7 @@ export function detentBelowName(detent: string): string | null {
 export function resolveSimBackAction(state: SimBackState): SimBackAction {
   if (state.storageNotice) return 'dismissNotice';
   if (state.confirmOpen) return 'cancelConfirm';
+  if (state.helperOpen) return 'dismissHelper';
   if (state.creationMode) return 'exitCreationMode';
   if (state.isPhone && state.inspectorOpen && detentBelowName(state.inspectorDetent)) {
     return 'collapseInspector';

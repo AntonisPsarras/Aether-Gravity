@@ -26,6 +26,7 @@ import { DynamicsSection } from './sections/DynamicsSection';
 import { RelativisticSection } from './sections/RelativisticSection';
 import { OrbitSection } from './sections/OrbitSection';
 import { AnalysisSection } from './sections/AnalysisSection';
+import type { CelestialBody } from '../../types';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   settings: Settings, thermometer: Thermometer, layers: Layers, wind: Wind,
@@ -63,7 +64,10 @@ const DirtyDot: React.FC = () => (
   />
 );
 
-export const InspectorPanel: React.FC = () => {
+export const InspectorPanel: React.FC<{
+  onOpen?: (body: CelestialBody) => void;
+  onTabVisit?: (tab: 'orbit' | 'analysis') => void;
+}> = ({ onOpen, onTabVisit }) => {
   const breakpoint = useBreakpoint();
   const isPhone = breakpoint === 'phone';
   const isDesktop = breakpoint === 'desktop';
@@ -106,6 +110,11 @@ export const InspectorPanel: React.FC = () => {
   useEffect(() => { setOpenSections({}); }, [breakpoint]);
   useEffect(() => { setOrbitDirty(false); }, [bodyId]);
   useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [bodyId, activeTab]);
+  useEffect(() => {
+    if (!bodyId) return;
+    const openedBody = useStore.getState().bodies.find((candidate) => candidate.id === bodyId);
+    if (openedBody) onOpen?.(openedBody);
+  }, [bodyId, onOpen]);
 
   const parent = useMemo(
     () => (body ? findDominantParent(body, bodies) : null),
@@ -147,6 +156,7 @@ export const InspectorPanel: React.FC = () => {
   const changeTab = (next: InspectorTab) => {
     setTabDir(tabDirection(tabItems, activeTab, next));
     setActiveTab(next);
+    if (next === 'orbit' || next === 'analysis') onTabVisit?.(next);
   };
 
   const tabItems: TabItem<InspectorTab>[] = tabs.map((id) => ({

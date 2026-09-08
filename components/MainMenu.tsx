@@ -4,6 +4,7 @@ import { WorldMeta, FolderMeta } from '../types';
 import { getWorldList, createWorld, deleteWorld, renameWorld, getFolderList, createFolder, deleteFolder, renameFolder, moveWorldToFolder } from '../utils/worldStorage';
 import { registerBackHandler } from '../utils/backNavigation';
 import { REAL_SYSTEMS } from '../content/realSystems';
+import { getOnboardingProgress, markTutorialSeen } from '../utils/onboarding';
 
 const MenuSpaceBackground = lazy(() => import('./MenuSpaceBackground'));
 const PortfolioPanel = lazy(() => import('./PortfolioPanel'));
@@ -382,7 +383,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const [folders, setFolders] = useState<FolderMeta[]>([]);
     const [showCredits, setShowCredits] = useState(false);
     const [showPrivacy, setShowPrivacy] = useState(false);
-    const [showTutorial, setShowTutorial] = useState(false);
+    const [showTutorial, setShowTutorial] = useState(() => !getOnboardingProgress().tutorialSeen);
     const [isCreating, setIsCreating] = useState<'world' | 'folder' | null>(null);
     const [preset, setPreset] = useState<string | null>(defaultPresetId);
     const [newWorldName, setNewWorldName] = useState('');
@@ -442,9 +443,13 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const handleMoveWorld = (worldId: string, folderId?: string) => { moveWorldToFolder(worldId, folderId); setWorlds(getWorldList()); };
     const handleDelete = (id: string) => { deleteWorld(id); setWorlds(getWorldList()); };
     const handleDeleteFolder = (id: string) => { deleteFolder(id); setFolders(getFolderList()); setWorlds(getWorldList()); };
+    const closeTutorial = () => {
+        markTutorialSeen();
+        setShowTutorial(false);
+    };
 
     useEffect(() => registerBackHandler(() => {
-        if (showTutorial) { setShowTutorial(false); return true; }
+        if (showTutorial) { closeTutorial(); return true; }
         if (showPrivacy) { setShowPrivacy(false); return true; }
         if (showCredits) { setShowCredits(false); return true; }
         if (isCreating) { closeCreator(); return true; }
@@ -611,7 +616,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
 
             {showPrivacy && <Suspense fallback={null}><PrivacyPolicyPanel onClose={() => setShowPrivacy(false)} /></Suspense>}
             {showCredits && <Suspense fallback={null}><PortfolioPanel onClose={() => setShowCredits(false)} /></Suspense>}
-            <Suspense fallback={null}><TutorialOverlay isOpen={showTutorial} onClose={() => setShowTutorial(false)} /></Suspense>
+            <Suspense fallback={null}><TutorialOverlay isOpen={showTutorial} onClose={closeTutorial} /></Suspense>
         </div>
     );
 };

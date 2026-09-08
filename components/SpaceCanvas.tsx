@@ -900,7 +900,7 @@ const SlingshotIndicator = ({
 const ObjectCreator: React.FC<{
   creationMode: BodyType | null;
   setCreationMode: (mode: BodyType | null) => void;
-  onBodyCreate: (snapshot: CelestialBody[]) => void;
+  onBodyCreate: (snapshot: CelestialBody[], createdBody: CelestialBody) => void;
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
   onDragActiveChange: (active: boolean) => void;
 }> = ({
@@ -1053,7 +1053,7 @@ const ObjectCreator: React.FC<{
     resetVerletCache();
     resetAccumulator();
 
-    onBodyCreate(snapshot);
+    onBodyCreate(snapshot, newBody);
     cancelAllBodyPointerGestures();
     setCreationMode(null);
     endDrag();
@@ -1933,7 +1933,7 @@ const AdaptiveOrbitControls = ({ enabled }: { enabled: boolean }) => {
 const SpaceCanvas: React.FC<{
   creationMode: BodyType | null;
   setCreationMode: (mode: BodyType | null) => void;
-  onBodyCreate: (snapshot: CelestialBody[]) => void;
+  onBodyCreate: (snapshot: CelestialBody[], createdBody: CelestialBody) => void;
 }> = ({ creationMode, setCreationMode, onBodyCreate }) => {
   const isTouchDevice = detectIsTouch();
   const deviceTier = useDeviceTier();
