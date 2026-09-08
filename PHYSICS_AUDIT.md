@@ -1,5 +1,7 @@
 # Aether Gravity — Physics & Data Audit Report
 
+> **Environmental rendering update (September 2026):** The unused GPGPU source files and null visualizer are now removed as well. `components/Environment/DecorativeDust.tsx` replaces the old CPU attraction-based dust with one seeded shader point field, with no physics feedback. Gas/remnants, radiation and reflected ambient light share the existing device tiers and bloom pipeline. Persistent orbit estimates read live state and are explicitly labeled as instantaneous two-body approximations; moon paths use the existing display exaggeration. The only simulation-state handoff fix forwards user-edited satellite `orbit` values through `updateBody` to the live body. No integrator, gravitational constants, physical units, body textures or relativistic calculations were changed. Rendering budgets are documented in `components/Environment/README.md`.
+
 > **Note (May 2026):** This document describes an **earlier** engine snapshot. Several items below have since been addressed: Velocity-Verlet fixed stepping (`utils/physicsSoA.ts`), property persistence, input clamping (`utils/physicsBounds.ts`), the disconnected GPGPU path was **removed**, and hot-path GC in `HabitableZoneVisual` / collision FX was reduced. Treat remaining open items (unit-system consistency, SI display calibration) as backlog, not current blockers.
 
 **Audit scope:** `utils/physicsUtils.ts`, `utils/store.ts`, `components/SpaceCanvas.tsx` (`PhysicsEngine`), `components/Panels.tsx`, `components/UniverseOutliner.tsx`, `constants.ts`, `types.ts`.

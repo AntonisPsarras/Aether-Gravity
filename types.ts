@@ -15,14 +15,12 @@ declare global {
       shockwaveMaterial: any;
       supernovaMaterial: any;
       neutronStarMaterial: any;
-      pulsarJetMaterial: any;
       relativisticDiskMaterial: any;
       kerrEventHorizonMaterial: any;
       ergosphereMaterial: any;
       selectionHaloMaterial: any;
       planetTerrainMaterial: any;
       habitableZoneMaterial: any;
-      nebulaMaterial: any;
     }
   }
 }
@@ -39,14 +37,12 @@ declare module 'react' {
       shockwaveMaterial: any;
       supernovaMaterial: any;
       neutronStarMaterial: any;
-      pulsarJetMaterial: any;
       relativisticDiskMaterial: any;
       kerrEventHorizonMaterial: any;
       ergosphereMaterial: any;
       selectionHaloMaterial: any;
       planetTerrainMaterial: any;
       habitableZoneMaterial: any;
-      nebulaMaterial: any;
     }
   }
 }

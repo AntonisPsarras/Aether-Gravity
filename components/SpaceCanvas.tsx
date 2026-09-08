@@ -8,7 +8,7 @@ import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentM
 import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime } from '../utils/physicsSoA';
 import { propagateSatellites, promoteEscapedMoons, satelliteRenderPosition } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
-import { DUST_CONFIG, TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS, LUMINOUS_TYPES } from '../constants';
+import { TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS, LUMINOUS_TYPES } from '../constants';
 import {
   PHYSICS_LIMITS,
   clampLaunchVelocity,
@@ -35,6 +35,11 @@ import {
   type RingVisual,
 } from '../utils/bodyAppearance';
 import { surfaceGravitySi } from '../utils/units';
+import { EnvironmentProvider, useEnvironment } from './Environment/EnvironmentContext';
+import { GasClouds, GasRemnant } from './Environment/GasClouds';
+import DecorativeDust from './Environment/DecorativeDust';
+import RadiationEffects from './Environment/RadiationEffects';
+import OrbitPaths from './OrbitPaths';
 import DevPhysicsDiagnostics from './DevPhysicsDiagnostics';
 import TestMetricsCollector from './TestMetricsCollector';
 import { registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
@@ -93,7 +98,7 @@ const _bhScaleVec = new THREE.Vector3(1, 1, 1);
 /** Shared material colors — avoid per-render `new THREE.Color()` in BodyMesh. */
 const _WHITE = new THREE.Color(1, 1, 1);
 const _NEUTRON_COLOR = new THREE.Color(0.2, 0.5, 1.0);
-const _PULSAR_COLOR = new THREE.Color(0.5, 0, 1.0);
+
 
 // --- BASIC SHADERS (Lightweight) ---
 
@@ -261,125 +266,6 @@ void main() {
 );
 
 extend({ GravityGridMaterial, ShockwaveMaterial, SupernovaMaterial });
-
-const DustSystem = ({
-  floatingOffset,
-  deviceTier,
-}: {
-  floatingOffset: React.MutableRefObject<THREE.Vector3>;
-  deviceTier: import('./CanvasSetup').DeviceTier;
-}) => {
-  const paused = useStore((s) => s.paused);
-  const isTouchDevice = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
-  const countRef = useRef<number>(0);
-  if (countRef.current === 0) {
-    if (deviceTier === 'low') {
-      countRef.current = 240;
-    } else if (isTouchDevice) {
-      countRef.current = Math.max(320, Math.floor(DUST_CONFIG.COUNT * 0.35));
-    } else {
-      countRef.current = DUST_CONFIG.COUNT;
-    }
-  }
-  const count = countRef.current;
-  const positionsRef = useRef<Float32Array | null>(null);
-  if (!positionsRef.current) positionsRef.current = new Float32Array(count * 3);
-  const colorsRef = useRef<Float32Array | null>(null);
-  if (!colorsRef.current) colorsRef.current = new Float32Array(count * 3);
-  const velocitiesRef = useRef<Float32Array | null>(null);
-  if (!velocitiesRef.current) velocitiesRef.current = new Float32Array(count * 3);
-  const pointsRef = useRef<THREE.Points>(null);
-  const lastOffset = useRef(new THREE.Vector3().copy(floatingOffset.current));
-  const frameSkipRef = useRef(0);
-  const { camera } = useThree();
-
-  useEffect(() => {
-    const positions = positionsRef.current!;
-    const colors = colorsRef.current!;
-    const velocities = velocitiesRef.current!;
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * DUST_CONFIG.AREA;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 40;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * DUST_CONFIG.AREA;
-      velocities[i * 3] = (Math.random() - 0.5) * 0.2;
-      velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.05;
-      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.2;
-      colors[i * 3] = 1; colors[i * 3 + 1] = 1; colors[i * 3 + 2] = 1;
-    }
-  }, [count]);
-
-  useEffect(() => {
-    return () => {
-      if (!pointsRef.current) return;
-      pointsRef.current.geometry.dispose();
-      const mat = pointsRef.current.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(mat)) {
-        for (let i = 0; i < mat.length; i++) mat[i]?.dispose();
-      } else {
-        mat?.dispose();
-      }
-    };
-  }, []);
-
-  useFrame((state, delta) => {
-    if (!pointsRef.current) return;
-    const positions = positionsRef.current;
-    const velocities = velocitiesRef.current;
-    if (!positions || !velocities) return;
-    const positionAttr = pointsRef.current.geometry.attributes.position;
-    if (!positionAttr || positionAttr.array.length !== positions.length) return;
-
-    if (isTouchDevice) {
-      frameSkipRef.current = (frameSkipRef.current + 1) % 2;
-      if (frameSkipRef.current !== 0) return;
-    }
-    if (floatingOffset.current.distanceToSquared(lastOffset.current) > 0.001) {
-      scratchV1.copy(floatingOffset.current).sub(lastOffset.current);
-      const shift = scratchV1;
-      for (let i = 0; i < count; i++) {
-        positions[i * 3] -= shift.x; positions[i * 3 + 1] -= shift.y; positions[i * 3 + 2] -= shift.z;
-      }
-      lastOffset.current.copy(floatingOffset.current);
-    }
-    if (paused) { positionAttr.needsUpdate = true; return; }
-
-    const dt = Math.min(delta, 0.05);
-    const range = DUST_CONFIG.AREA / 2;
-    const cx = camera.position.x;
-    const cz = camera.position.z;
-
-    // We grab bodies directly from store ref to avoid re-render loop, 
-    // or pass them in. passing in is cleaner for React, but dust is decorative.
-    const currentBodies = useStore.getState().bodies;
-
-    for (let i = 0; i < count; i++) {
-      const ix = i * 3, iy = ix + 1, iz = ix + 2;
-      let px = positions[ix], py = positions[iy], pz = positions[iz];
-
-      if (px > cx + range) positions[ix] -= range * 2;
-      if (px < cx - range) positions[ix] += range * 2;
-      if (pz > cz + range) positions[iz] -= range * 2;
-      if (pz < cz - range) positions[iz] += range * 2;
-
-      let ax = 0, ay = 0, az = 0;
-      for (const body of currentBodies) {
-        if (!body || !body.position) continue;
-        toRenderSpace(scratchV0, body.position, floatingOffset.current);
-        const dx = scratchV0.x - px, dy = scratchV0.y - py, dz = scratchV0.z - pz;
-        const distSq = dx * dx + dy * dy + dz * dz + 0.1;
-        const f = (G_CONSTANT * body.mass * 0.01) / distSq;
-        const d = Math.sqrt(distSq);
-        ax += (dx / d) * f; ay += (dy / d) * f; az += (dz / d) * f;
-      }
-
-      velocities[ix] += ax * dt; velocities[iy] += ay * dt; velocities[iz] += az * dt;
-      positions[ix] += velocities[ix] * dt * 20; positions[iy] += velocities[iy] * dt * 20; positions[iz] += velocities[iz] * dt * 20;
-    }
-    positionAttr.needsUpdate = true;
-  });
-
-  return <points ref={pointsRef} raycast={NO_RAYCAST}><bufferGeometry><bufferAttribute attach="attributes-position" count={count} array={positionsRef.current} itemSize={3} /><bufferAttribute attach="attributes-color" count={count} array={colorsRef.current} itemSize={3} /></bufferGeometry><pointsMaterial vertexColors size={0.8} transparent opacity={0.6} blending={THREE.AdditiveBlending} /></points>;
-};
 
 const StabilityOverlay = ({ floatingOffset, bodiesRef, parentMapRef }: {
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
@@ -592,6 +478,7 @@ const PhysicsEngine = ({
   deviceTier,
   gridVisualBoost,
   creationDragActiveRef,
+  gasRemnants,
 }: {
   bodiesRef: React.MutableRefObject<CelestialBody[]>;
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
@@ -602,6 +489,7 @@ const PhysicsEngine = ({
   deviceTier: import('./CanvasSetup').DeviceTier;
   gridVisualBoost: number;
   creationDragActiveRef: React.MutableRefObject<boolean>;
+  gasRemnants: React.MutableRefObject<GasRemnant[]>;
 }) => {
   const gridMatRef = useRef<any>(null);
   const gridMeshRef = useRef<THREE.Mesh>(null);
@@ -663,6 +551,10 @@ const PhysicsEngine = ({
         bodiesRef.current = evolvedBodies;
 
         newEvents.forEach(e => {
+          if (e.type === 'supernova') {
+            gasRemnants.current.unshift({ position: e.position.clone(), age: 0 });
+            gasRemnants.current.length = Math.min(gasRemnants.current.length, 2);
+          }
           if (e.type === 'evolution' || e.type === 'collision' || e.type === 'supernova') {
             visualEffectsRef.current.push({
               id: Math.random(),
@@ -1298,7 +1190,7 @@ const BodyMesh = ({
   const atmosphereRef = useRef<THREE.Mesh>(null);
   const cloudRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
-  const jetsRef = useRef<THREE.Group>(null);
+  const environment = useEnvironment();
   const haloRef = useRef<THREE.Mesh>(null);
   const { camera } = useThree();
   const localScratch = useRef({
@@ -1577,19 +1469,6 @@ const BodyMesh = ({
         }
       }
     }
-    if (jetsRef.current) {
-      jetsRef.current.rotation.y += 20.0 * dt;
-      jetsRef.current.children.forEach((child: any) => {
-        const childMaterial = child?.material as any;
-        if (childMaterial && typeof childMaterial === 'object') {
-          if ('uniforms' in childMaterial && childMaterial.uniforms?.uTime) {
-            childMaterial.uniforms.uTime.value = t;
-          } else if ('uTime' in childMaterial) {
-            childMaterial.uTime = t;
-          }
-        }
-      });
-    }
     if (atmosphereRef.current) {
       const mat = atmosphereRef.current.material as any;
       if (!mat || typeof mat !== 'object') {
@@ -1665,6 +1544,15 @@ const BodyMesh = ({
     ).normalize();
   }, [obliquityRad, tiltAzimuth]);
 
+  useEffect(() => {
+    if (meshRef.current) {
+      const material = meshRef.current.material as THREE.ShaderMaterial;
+      if (material.uniforms?.uEnvironment) {
+        material.uniforms.uEnvironment.value = environment.texture;
+        material.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
+      }
+    }
+  }, [environment, data.id, data.type]);
   const usesPlanetSurface = !isStar && !isNeutronStar;
 
   const planetSurfaceMaterial = useMemo(() => {
@@ -1851,6 +1739,7 @@ const BodyMesh = ({
       </group>
 
       {isBlackHole && (
+        <group rotation={[0, tiltAzimuth, obliquityRad]}>
         <BlackHoleBody
           visualRadius={visualRadius}
           eventHorizonScale={eventHorizonScale}
@@ -1858,6 +1747,7 @@ const BodyMesh = ({
           accretion={props.accretionRate ?? 0.5}
           mass={data.mass}
         />
+        </group>
       )}
 
       {/* Invisible hitbox for forgiving tap/click body selection. */}
@@ -1894,12 +1784,7 @@ const BodyMesh = ({
         </div>
       </Html>
 
-      {isNeutronStar && (
-        <group ref={jetsRef}>
-          <mesh position={[0, visualRadius * 6, 0]} raycast={NO_RAYCAST}><coneGeometry args={[visualRadius * 0.5, visualRadius * 12, 16, 4, true]} /><pulsarJetMaterial transparent side={THREE.DoubleSide} uColor={_PULSAR_COLOR} blending={THREE.AdditiveBlending} logarithmicDepthBuffer={true} /></mesh>
-          <mesh position={[0, -visualRadius * 6, 0]} rotation={[Math.PI, 0, 0]} raycast={NO_RAYCAST}><coneGeometry args={[visualRadius * 0.5, visualRadius * 12, 16, 4, true]} /><pulsarJetMaterial transparent side={THREE.DoubleSide} uColor={_PULSAR_COLOR} blending={THREE.AdditiveBlending} logarithmicDepthBuffer={true} /></mesh>
-        </group>
-      )}
+
     </group>
   );
 };
@@ -1952,6 +1837,8 @@ const SpaceCanvas: React.FC<{
   const [creationDragging, setCreationDragging] = useState(false);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
   const [glEpoch, setGlEpoch] = useState(0);
+  const [showOrbitPaths, setShowOrbitPaths] = useState(true);
+  const gasRemnants = useRef<GasRemnant[]>([]);
   const effectiveTier = gpuEffectsOk ? deviceTier : 'low';
 
   useEffect(() => {
@@ -2090,6 +1977,7 @@ const SpaceCanvas: React.FC<{
           setGlEpoch((n) => n + 1);
         }}
       />
+      <EnvironmentProvider tier={effectiveTier} isTouch={isTouchDevice}>
       <BlackHoleLensCapture
         enabled={hasBlackHole && effectiveTier !== 'low' && gpuEffectsOk}
         lowQuality={effectiveTier === 'low'}
@@ -2118,9 +2006,12 @@ const SpaceCanvas: React.FC<{
           deviceTier={deviceTier}
           gridVisualBoost={gridVisualBoost}
           creationDragActiveRef={creationDragActiveRef}
+          gasRemnants={gasRemnants}
         />
         <DevPhysicsDiagnostics bodiesRef={bodiesRef} />
-        {showDust && <DustSystem floatingOffset={floatingOffset} deviceTier={effectiveTier} />}
+        <GasClouds bodiesRef={bodiesRef} floatingOffset={floatingOffset} remnants={gasRemnants} />
+        {showDust && <DecorativeDust floatingOffset={floatingOffset} />}
+        {showOrbitPaths && <OrbitPaths bodiesRef={bodiesRef} floatingOffset={floatingOffset} parentMapRef={parentMapRef} />}
         <ObjectCreator
           creationMode={creationMode}
           setCreationMode={setCreationMode}
@@ -2156,10 +2047,19 @@ const SpaceCanvas: React.FC<{
             <HabitableZoneVisual key={`hz-${star.id}`} star={star} floatingOffset={floatingOffset} />
           ))}
         </group>
+        <RadiationEffects bodiesRef={bodiesRef} bodyObjectsRef={bodyObjectsRef} />
         <AdaptiveOrbitControls enabled={!creationDragging && !isInteractingWithUI} />
         {gpuEffectsOk && <AdaptivePostFX tier={deviceTier} isTouch={isTouchDevice} />}
       </BlackHoleLensCapture>
+      </EnvironmentProvider>
     </Canvas>
+    <div className="absolute top-24 left-1/2 -translate-x-1/2 z-10 w-max max-w-[calc(100%-1.5rem)] rounded-lg border border-white/10 bg-black/65 px-3 py-1 text-[11px] text-slate-300 pointer-events-auto">
+      <label className="flex min-h-[2.75rem] items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={showOrbitPaths} onChange={e => setShowOrbitPaths(e.target.checked)} />
+        Orbit estimates — instantaneous two-body approximation.
+      </label>
+      {showOrbitPaths && <p className="pb-1 text-[10px] text-slate-400">Moon paths use the existing exaggerated display scale.</p>}
+    </div>
     </div>
   );
 };

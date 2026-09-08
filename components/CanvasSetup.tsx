@@ -15,6 +15,30 @@ import { getE2EConfig } from '../utils/e2eConfig';
  */
 export type DeviceTier = 'low' | 'high';
 
+/** Rendering-only budgets. TODO: profile fill rate on older GPUs before further tuning. */
+export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
+  const low = tier === 'low';
+  return {
+    gasBackgroundLayers: low ? 2 : 4,
+    gasLocalLayers: low ? 1 : 2,
+    gasEmitterCap: 2,
+    gasOctaves: low ? 3 : 5,
+    gasOpacity: low ? 0.10 : 0.12,
+    reflectionResolution: low ? 32 : 64,
+    reflectionIntensity: low ? 0.12 : 0.18,
+    radiationEmitterCap: low ? 4 : 8,
+    radiationSegments: low ? 12 : 24,
+    radiationDetail: low ? 0 : 1,
+    radiationAnimationRate: 1,
+    dustCount: low ? 240 : isTouch ? 525 : 1500,
+    dustSize: low ? 2 : 3,
+    dustMotion: low ? 0.5 : 1,
+    orbitSegments: low ? 64 : 128,
+    orbitRefreshHz: low ? 2 : 5,
+  };
+}
+export type EnvironmentQuality = ReturnType<typeof environmentQualityForDevice>;
+
 const MOBILE_UA_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 export function detectIsTouch(): boolean {

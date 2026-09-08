@@ -627,6 +627,8 @@ export const PlanetSurfaceMaterial = shaderMaterial(
         uMass: 10.0,
         uState: 0,
         uEmissiveStrength: 0.12,
+        uEnvironment: null as THREE.Texture | null,
+        uEnvironmentIntensity: 0,
         uNorthPole: new THREE.Vector3(0, 1, 0),
         uSunDirection: new THREE.Vector3(1, 0.5, 0.5).normalize(),
         // Physical primaries, pushed straight through from
@@ -723,6 +725,8 @@ uniform float uTemperature;
 uniform float uRadius;
 uniform int uState;
 uniform float uEmissiveStrength;
+uniform sampler2D uEnvironment;
+uniform float uEnvironmentIntensity;
 uniform vec3 uNorthPole;
 uniform vec3 uSunDirection;
 uniform float uCompIron;
@@ -973,6 +977,19 @@ void main() {
   vec3 rimLit = uColor1 * rim * uAtmosphere * rimAtmos * (diff * 0.55 + 0.06);
 
   vec3 lit = finalColor * (diff * 0.85 + 0.05) + vec3(spec) + rimLit;
+  // Lighting only: retain the existing terrain, cloud masks and direct GGX lobe.
+  if (uEnvironmentIntensity > 0.0) {
+    vec3 reflected = reflect(-viewDir, normal);
+    vec2 envUv = vec2(atan(reflected.z, reflected.x) / 6.2831853 + 0.5,
+      asin(clamp(reflected.y, -1.0, 1.0)) / 3.14159265 + 0.5);
+    float roughness = isGiant ? 0.85 : surfaceRoughness(iron, silicate, water, T);
+    float liquidPhase = smoothstep(273.0, 290.0, T) * (1.0 - smoothstep(360.0, 400.0, T));
+    roughness = mix(roughness, 0.055, waterMask * liquidPhase * (1.0 - cap));
+    float f0 = isGiant ? 0.015 : mix(0.04 + iron * 0.12, 0.02, waterMask * liquidPhase);
+    float fresnel = f0 + (1.0 - f0) * pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
+    lit += texture2D(uEnvironment, envUv).rgb * uEnvironmentIntensity * fresnel
+      * (1.0 - roughness * 0.8) * (1.0 - cover * 0.8);
+  }
   vec3 result = lit + emissive;
   gl_FragColor = vec4(clamp(result, 0.0, 2.0), 1.0);
   #include <logdepthbuf_fragment>
@@ -1304,34 +1321,6 @@ export const NeutronStarMaterial = shaderMaterial(
     `
 );
 
-export const PulsarJetMaterial = shaderMaterial(
-    {
-        uColor: new THREE.Color(0.5, 0.0, 1.0),
-        uTime: 0
-    },
-    `
-    varying vec2 vUv;
-    void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-    `,
-    `
-    precision highp float;
-    uniform vec3 uColor;
-    uniform float uTime;
-    varying vec2 vUv;
-    ${noise3DChunk}
-    void main() {
-        float n = fbm(vec3(vUv * 10.0, uTime * 5.0), 3);
-        float alpha = (1.0 - vUv.y) * n; 
-        alpha *= smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x); 
-        if (alpha < 0.01) discard;
-        gl_FragColor = vec4(uColor, alpha);
-    }
-    `
-);
-
 export const RelativisticDiskMaterial = shaderMaterial(
     {
         uColorInner: new THREE.Color(1.0, 0.8, 0.2),
@@ -1439,4 +1428,4 @@ export const ErgosphereMaterial = shaderMaterial(
     `
 );
 
-extend({ NeutronStarMaterial, PulsarJetMaterial, RelativisticDiskMaterial, KerrEventHorizonMaterial, PlanetTerrainMaterial, StarSurfaceMaterial, PlanetSurfaceMaterial, PlanetAtmosphereMaterial, PlanetCloudMaterial, PlanetRingMaterial, ErgosphereMaterial, SelectionHaloMaterial });
+extend({ NeutronStarMaterial, RelativisticDiskMaterial, KerrEventHorizonMaterial, PlanetTerrainMaterial, StarSurfaceMaterial, PlanetSurfaceMaterial, PlanetAtmosphereMaterial, PlanetCloudMaterial, PlanetRingMaterial, ErgosphereMaterial, SelectionHaloMaterial });

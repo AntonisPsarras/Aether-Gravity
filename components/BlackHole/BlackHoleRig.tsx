@@ -10,6 +10,7 @@ import {
 } from '../../utils/relativity';
 import { displayDiskTemperatureK } from '../../utils/bodyAppearance';
 import { relativityChunk } from '../Planet/PlanetShaders';
+import { environmentReflectionGLSL, useEnvironment } from '../Environment/EnvironmentContext';
 
 export type BlackHoleRigProps = {
   radius: number;
@@ -114,6 +115,7 @@ varying vec3 vRadialWorld;
 varying vec3 vDiskNormalWorld;
 
 ${relativityChunk}
+${environmentReflectionGLSL}
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 345.45));
@@ -214,6 +216,9 @@ void main() {
 
   float innerHole = smoothstep(u_inner * 1.15, u_inner, r);
   vec3 color = lensedBg * 0.25 + accretion;
+  // Dim scattered illumination in the cool outskirts, not a metallic plasma mirror.
+  color += environmentLight(reflect(-viewDir, normalize(vDiskNormalWorld)))
+    * smoothstep(0.55, 0.95, r) * u_accretion * 0.12;
   color = mix(color, vec3(0.0), innerHole);
 
   // ---- Photon ring ---------------------------------------------------------
@@ -235,6 +240,7 @@ void main() {
 
 const parallaxDiskFragment = `
 precision highp float;
+${environmentReflectionGLSL}
 uniform float u_time;
 uniform float u_spin;
 uniform float u_accretion;
@@ -243,6 +249,7 @@ uniform float u_layer;
 uniform float u_inner;
 varying vec2 vUv;
 varying vec3 vWorldPos;
+varying vec3 vDiskNormalWorld;
 
 void main() {
   vec3 viewDir = normalize(cameraPosition - vWorldPos);
@@ -260,6 +267,8 @@ void main() {
   vec3 coldColor = vec3(0.06, 0.08, 0.11);
   float heat = smoothstep(1.0, 0.25, r);
   vec3 diskColor = mix(coldColor, hotColor, heat) * intensity * (1.1 + u_accretion);
+  diskColor += environmentLight(reflect(-viewDir, normalize(vDiskNormalWorld)))
+    * (1.0 - heat) * diskMask * u_accretion * 0.08;
 
   float horizon = smoothstep(u_inner * 1.2, u_inner, r);
   vec3 color = mix(diskColor, vec3(0.0), horizon);
@@ -305,6 +314,8 @@ export default function BlackHoleRig({
   interactive,
   lensTexture,
 }: BlackHoleRigProps): React.ReactElement {
+  const environment = useEnvironment();
+  const decorativeTime = useRef(0);
   const [qualityTier, setQualityTier] = useState<QualityTier>('high');
   const frameProbeRef = useRef<number[]>([]);
   const lowStreakRef = useRef(0);
@@ -369,6 +380,8 @@ export default function BlackHoleRig({
           u_spin: { value: spin },
           u_accretion: { value: accretion },
           u_bg_texture: { value: bgTexture },
+          uEnvironment: { value: environment.texture },
+          uEnvironmentIntensity: { value: environment.quality.reflectionIntensity },
           u_resolution: { value: new THREE.Vector2(size.width, size.height) },
           u_inner: { value: 0.2 },
           u_diskTempPeak: { value: 1.0e7 },
@@ -393,6 +406,8 @@ export default function BlackHoleRig({
         u_spin: { value: spin },
         u_accretion: { value: accretion },
         u_parallax: { value: parallax },
+        uEnvironment: { value: environment.texture },
+        uEnvironmentIntensity: { value: environment.quality.reflectionIntensity },
         u_layer: { value: layer },
         u_inner: { value: 0.2 },
       },
@@ -488,7 +503,8 @@ export default function BlackHoleRig({
   }, []);
 
   useFrame((state, delta) => {
-    const t = state.clock.elapsedTime;
+    if (!environment.reducedMotion) decorativeTime.current += Math.min(delta, 0.05);
+    const t = decorativeTime.current;
     let nextTier = qualityTier;
 
     // Brightness tracks the disk's radiative efficiency, which rises from 5.7%
@@ -508,6 +524,8 @@ export default function BlackHoleRig({
     diskMatHigh.uniforms.u_accretion.value = luminous;
     diskMatHigh.uniforms.u_inner.value = innerFraction;
     diskMatHigh.uniforms.u_bg_texture.value = bgTexture;
+    diskMatHigh.uniforms.uEnvironment.value = environment.texture;
+    diskMatHigh.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
     diskMatHigh.uniforms.u_resolution.value.set(size.width, size.height);
 
     // Geometry in quad units. The quad's `r` runs 0..1 across the disk, and
@@ -527,6 +545,8 @@ export default function BlackHoleRig({
     );
 
     lowDiskMats.forEach((m) => {
+      m.uniforms.uEnvironment.value = environment.texture;
+      m.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
       m.uniforms.u_time.value = t;
       m.uniforms.u_spin.value = spin;
       m.uniforms.u_accretion.value = luminous;
@@ -545,7 +565,7 @@ export default function BlackHoleRig({
       // static one's, instead of the previous linear 0.15 + 0.85a fudge.
       const isco = iscoRadiusRg(spin, true);
       const omegaRel = Math.pow(6, 1.5) / (Math.pow(isco, 1.5) + spin);
-      diskGroupRef.current.rotation.y += delta * 0.15 * Math.min(omegaRel, 20);
+      if (!environment.reducedMotion) diskGroupRef.current.rotation.y += delta * 0.15 * Math.min(omegaRel, 20);
     }
 
     if (qualityTier === 'high' && frameProbeRef.current.length < 60) {

@@ -1,12 +1,14 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
-import { Canvas, useFrame, extend } from '@react-three/fiber';
-import { Stars, shaderMaterial } from '@react-three/drei';
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Stars } from '@react-three/drei';
+
 import * as THREE from 'three';
 import './Planet/PlanetShaders';
 import { PlanetSurfaceMaterial } from './Planet/PlanetShaders';
 import { TEXTURE_IDS } from '../constants';
-import { RendererConfig, useDeviceTier } from './CanvasSetup';
+import { RendererConfig, useDeviceTier, detectIsTouch, AdaptivePostFX, exposureForTier } from './CanvasSetup';
+import { EnvironmentProvider, useEnvironment, useReducedMotion } from './Environment/EnvironmentContext';
+import { GasClouds } from './Environment/GasClouds';
 
 type PlanetSurfaceMat = THREE.ShaderMaterial & {
   uColor1: THREE.Color;
@@ -26,114 +28,6 @@ type PlanetSurfaceMat = THREE.ShaderMaterial & {
   uNorthPole: THREE.Vector3;
   uTime: number;
   logarithmicDepthBuffer: boolean;
-};
-
-const NebulaMaterial = shaderMaterial(
-  {
-    uTime: 0,
-    uColorA: new THREE.Color('#1a1035'),
-    uColorB: new THREE.Color('#B57335'),
-    uColorC: new THREE.Color('#F9D423'),
-  },
-  /* glsl */ `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  /* glsl */ `
-    uniform float uTime;
-    uniform vec3 uColorA;
-    uniform vec3 uColorB;
-    uniform vec3 uColorC;
-    varying vec2 vUv;
-
-    float hash(vec2 p) {
-      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-    }
-
-    float noise(vec2 p) {
-      vec2 i = floor(p);
-      vec2 f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      float a = hash(i);
-      float b = hash(i + vec2(1.0, 0.0));
-      float c = hash(i + vec2(0.0, 1.0));
-      float d = hash(i + vec2(1.0, 1.0));
-      return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-    }
-
-    float fbm(vec2 p) {
-      float v = 0.0;
-      float a = 0.5;
-      for (int i = 0; i < 5; i++) {
-        v += a * noise(p);
-        p *= 2.1;
-        a *= 0.5;
-      }
-      return v;
-    }
-
-    void main() {
-      vec2 uv = vUv - 0.5;
-      float t = uTime * 0.04;
-      float n = fbm(uv * 2.5 + vec2(t, t * 0.7));
-      float n2 = fbm(uv * 4.0 - vec2(t * 0.5, t));
-      float mist = smoothstep(0.15, 0.85, n * 0.65 + n2 * 0.35);
-      vec3 col = mix(uColorA, uColorB, mist);
-      col = mix(col, uColorC, pow(mist, 2.5) * 0.35);
-      float vignette = 1.0 - length(uv) * 1.1;
-      float alpha = mist * 0.22 * max(0.0, vignette);
-      gl_FragColor = vec4(col, alpha);
-    }
-  `
-);
-
-extend({ NebulaMaterial });
-
-/** Tear down GPU allocations when leaving the main menu for a simulation. */
-function MenuGpuCleanup(): null {
-  // R3F disposes the scene on unmount; avoid double-dispose of shared materials.
-  return null;
-}
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduced(mq.matches);
-    const onChange = () => setReduced(mq.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-  return reduced;
-}
-
-const MenuNebula: React.FC<{ reducedMotion: boolean }> = ({ reducedMotion }) => {
-  const matRef = useRef<THREE.ShaderMaterial & { uTime: number }>(null);
-  useFrame((_, dt) => {
-    if (reducedMotion || !matRef.current) return;
-    matRef.current.uTime += dt;
-  });
-  return (
-    <>
-      <mesh position={[-8, 2, -18]} rotation={[0, 0.3, 0.1]}>
-        <planeGeometry args={[55, 40]} />
-        <nebulaMaterial ref={matRef} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <mesh position={[10, -4, -22]} rotation={[0, -0.5, -0.15]}>
-        <planeGeometry args={[48, 36]} />
-        <nebulaMaterial
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          uColorB={new THREE.Color('#2d1b4e')}
-          uColorC={new THREE.Color('#6b8cff')}
-        />
-      </mesh>
-    </>
-  );
 };
 
 const MenuStar: React.FC<{ reducedMotion: boolean }> = ({ reducedMotion }) => {
@@ -167,6 +61,7 @@ const MenuStar: React.FC<{ reducedMotion: boolean }> = ({ reducedMotion }) => {
 const MenuPlanet: React.FC<{ reducedMotion: boolean }> = ({ reducedMotion }) => {
   const groupRef = useRef<THREE.Group>(null);
   const matRef = useRef<PlanetSurfaceMat>(null);
+  const environment = useEnvironment();
   const northPole = useMemo(() => new THREE.Vector3(0.2, 0.97, 0.1).normalize(), []);
 
   const surfaceMat = useMemo(() => {
@@ -189,6 +84,10 @@ const MenuPlanet: React.FC<{ reducedMotion: boolean }> = ({ reducedMotion }) => 
     return mat;
   }, [northPole]);
 
+  useEffect(() => {
+    surfaceMat.uniforms.uEnvironment.value = environment.texture;
+    surfaceMat.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
+  }, [surfaceMat, environment]);
   useEffect(() => () => { surfaceMat.dispose(); }, [surfaceMat]);
 
   useFrame((state, dt) => {
@@ -253,8 +152,9 @@ const MenuScene: React.FC<{
   onContextLost: () => void;
   onContextRestored: () => void;
 }> = ({ gpuEffectsOk, onContextLost, onContextRestored }) => {
-  const reducedMotion = usePrefersReducedMotion();
-  const deviceTier = useDeviceTier();
+  const reducedMotion = useReducedMotion();
+  const detectedTier = useDeviceTier();
+  const deviceTier = gpuEffectsOk ? detectedTier : 'low';
   const rigRef = useRef<THREE.Group>(null);
   const starCount = deviceTier === 'low' ? 1200 : 2800;
 
@@ -267,8 +167,8 @@ const MenuScene: React.FC<{
 
   return (
     <>
-      <MenuGpuCleanup />
-      <RendererConfig
+
+      <RendererConfig exposure={exposureForTier(deviceTier, detectIsTouch())}
         managePixelRatio={false}
         onContextLost={onContextLost}
         onContextRestored={onContextRestored}
@@ -277,23 +177,19 @@ const MenuScene: React.FC<{
       <ambientLight intensity={0.15} />
       <directionalLight position={[8, 12, 6]} intensity={0.35} color="#a8c4ff" />
       <Stars radius={120} depth={60} count={starCount} factor={3.5} saturation={0.15} fade speed={reducedMotion ? 0 : 0.4} />
-      <MenuNebula reducedMotion={reducedMotion} />
+      <GasClouds menu />
       <MenuStar reducedMotion={reducedMotion} />
       <group ref={rigRef}>
         <MenuPlanet reducedMotion={reducedMotion} />
         <MenuMoon reducedMotion={reducedMotion} />
       </group>
-      {deviceTier === 'high' && gpuEffectsOk && (
-        <EffectComposer multisampling={0}>
-          <Bloom luminanceThreshold={0.45} mipmapBlur intensity={0.9} />
-          <Vignette eskil={false} offset={0.12} darkness={0.55} />
-        </EffectComposer>
-      )}
+      {gpuEffectsOk && <AdaptivePostFX tier={deviceTier} isTouch={detectIsTouch()} />}
     </>
   );
 };
 
 const MenuSpaceBackground: React.FC = () => {
+  const deviceTier = useDeviceTier();
   const [glEpoch, setGlEpoch] = useState(0);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
 
@@ -306,6 +202,7 @@ const MenuSpaceBackground: React.FC = () => {
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
     >
+      <EnvironmentProvider tier={gpuEffectsOk ? deviceTier : 'low'} isTouch={detectIsTouch()}>
       <MenuScene
         gpuEffectsOk={gpuEffectsOk}
         onContextLost={() => setGpuEffectsOk(false)}
@@ -314,6 +211,7 @@ const MenuSpaceBackground: React.FC = () => {
           setGlEpoch((n) => n + 1);
         }}
       />
+      </EnvironmentProvider>
     </Canvas>
     <div
       className="absolute inset-0"

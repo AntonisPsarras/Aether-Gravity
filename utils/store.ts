@@ -346,6 +346,9 @@ export const useStore = create<AppState>((set, get) => ({
       patch.position = final.position;
       patch.velocity = final.velocity;
     }
+    // The Orbit tab edits satellite elements directly; forward the prescribed
+    // orbit so the live moon and its read-only path agree even while paused.
+    if ('orbit' in updates) patch.orbit = final.orbit;
     patchPhysicsBody(id, patch);
 
     if (updates.mass !== undefined) {

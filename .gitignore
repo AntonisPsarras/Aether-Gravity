@@ -9,6 +9,7 @@ lerna-debug.log*
 
 # Workspace
 node_modules
+.cache/
 dist
 dist-ssr
 *.local
