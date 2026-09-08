@@ -2,7 +2,7 @@
 export const PRIVACY_POLICY_URL =
   'https://www.termsfeed.com/live/cded6b3e-c46c-465e-a562-f1a73cd79f1c';
 
-export const PRIVACY_POLICY_LAST_UPDATED = 'June 2, 2026';
+export const PRIVACY_POLICY_LAST_UPDATED = 'September 8, 2026';
 
 export const PRIVACY_CONTACT_EMAIL = 'antonpsar10@gmail.com';
 
@@ -47,7 +47,8 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
   {
     title: 'How Data Is Stored',
     paragraphs: [
-      'The items listed above are stored locally on your device using browser or WebView storage (for example localStorage). Data stays on your device unless you clear app storage, uninstall the app, or use device backup features provided by your operating system.',
+      'The items listed above are stored locally on your device using browser or WebView storage (for example localStorage). This includes migration backups of older universe saves. Data stays on your device unless you clear app storage or uninstall the Application.',
+      'The Android Application excludes its app data from cloud backup and device-transfer backup.',
       'We do not sync this data to our servers.',
     ],
   },
@@ -65,13 +66,14 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
   {
     title: 'Internet Access',
     paragraphs: [
-      'The Application may request network access for general connectivity (for example opening external links you choose, such as GitHub). Routine gameplay and universe management do not require uploading your saves to us.',
+      'The Android Application does not request Internet or network-state permission. Routine gameplay and universe management do not use a network connection or upload your saves.',
+      'If you choose a hosted-policy, GitHub, or email link, the Application hands that action to your browser or email application. The external application may use a network connection under its own privacy practices.',
     ],
   },
   {
     title: 'Third-Party Links',
     paragraphs: [
-      'The Application may link to external websites (for example GitHub). Those sites have their own privacy practices. We are not responsible for third-party sites you open from the Application.',
+      'The Application links to a hosted copy of this policy and may link to external services such as GitHub or your email application. These links open only when you choose them, do not attach your universe data, and are governed by the external service\'s privacy practices.',
     ],
   },
   {

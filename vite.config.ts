@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     base: './',
     server: {
       port: 3000,
-      host: '0.0.0.0',
+      host: '127.0.0.1',
     },
     build: {
       outDir: 'dist',
@@ -30,11 +30,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     esbuild: {
-      drop: mode === 'production' ? ['debugger'] : [],
-      pure:
-        mode === 'production'
-          ? ['console.log', 'console.debug', 'console.info', 'console.warn']
-          : [],
+      drop: mode === 'production' ? ['debugger', 'console'] : [],
     },
     plugins: [react()],
     resolve: {

@@ -287,7 +287,7 @@ const App: React.FC = () => {
   const { loadWorld, setBodies, generateNewSystem, loadRealSystem, resetSessionUiState } = useStore();
 
   useEffect(() => {
-    if (!e2eConfig.enabled || !e2eConfig.fixture) {
+    if (!import.meta.env.DEV || !e2eConfig.enabled || !e2eConfig.fixture) {
       markTestBridgeAppReady();
       return;
     }

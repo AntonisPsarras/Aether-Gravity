@@ -47,6 +47,8 @@ export function parseE2ESearchParams(search: string): E2EConfig {
 }
 
 export function getE2EConfig(): E2EConfig {
+  // Never expose fixture loading or the test bridge in a production bundle.
+  if (!import.meta.env.DEV) return { ...DISABLED };
   if (typeof window === 'undefined') return { ...DISABLED };
   return parseE2ESearchParams(window.location.search);
 }

@@ -12,6 +12,16 @@ describe('parseE2ESearchParams', () => {
     });
   });
 
+  it('requires the explicit e2e opt-in flag', () => {
+    expect(parseE2ESearchParams('?fixture=minimal-3body')).toEqual({
+      enabled: false,
+      fixture: null,
+      tier: null,
+      touch: null,
+      dpr: null,
+    });
+  });
+
   it('parses full e2e query string', () => {
     expect(
       parseE2ESearchParams('?e2e=1&fixture=minimal-3body&tier=low&touch=1&dpr=1.5'),

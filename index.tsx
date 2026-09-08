@@ -1,9 +1,11 @@
+import './utils/productionConsole';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { installTestBridge } from './utils/testBridge';
+import { isE2EMode } from './utils/e2eConfig';
 
-installTestBridge();
+if (import.meta.env.DEV && isE2EMode()) installTestBridge();
 
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
