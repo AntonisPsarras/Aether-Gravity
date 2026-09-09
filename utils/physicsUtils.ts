@@ -530,6 +530,8 @@ export const getSpectralType = (temp: number): string => {
 const SOFTENING_FLOOR_SQ = 1e-8;
 
 export const pairSofteningSq = (a: CelestialBody, b: CelestialBody): number => {
+  // Newtonian point masses outside physical contact for scientific presets.
+  if (a.properties?.physicalCollisions || b.properties?.physicalCollisions) return SOFTENING_FLOOR_SQ;
   // Defensive on radiusKm specifically: this runs N²/2 times per step and its
   // result is added to every pair's distSq, so ONE body with a missing or
   // non-finite radiusKm used to turn the entire acceleration buffer into NaN —
@@ -723,7 +725,10 @@ export const scanCollisionsInPlace = (
       const minSepSq = r0Sq - 2 * u * r0w + u * u * wSq;
       if (!Number.isFinite(minSepSq)) continue;
 
-      const contactRadius = CONTACT_FRACTION * (b1.radius + b2.radius);
+      const physicalContact = b1.properties?.physicalCollisions || b2.properties?.physicalCollisions;
+      const contactRadius = physicalContact
+        ? kmToDist(b1.radiusKm + b2.radiusKm)
+        : CONTACT_FRACTION * (b1.radius + b2.radius);
       if (minSepSq >= contactRadius * contactRadius) continue;
 
       const totalMass = b1.mass + b2.mass;
@@ -1096,6 +1101,8 @@ const STELLAR_TYPES: readonly BodyType[] = LUMINOUS_TYPES;
  * dwarf or a neutron star (whose luminosity has nothing to do with their mass).
  */
 export const bodyLuminositySolar = (b: CelestialBody): number => {
+    const measured = b.properties?.luminositySolar;
+    if (measured !== undefined && Number.isFinite(measured) && measured >= 0) return measured;
     if (b.type === 'Star') return luminositySolarFromMass(b.mass);
     const cached = b.properties?.luminositySolarDerived;
     if (cached !== undefined && Number.isFinite(cached)) return cached;
@@ -1112,27 +1119,18 @@ export const updateEquilibriumTemperatures = (bodies: CelestialBody[]): void => 
         if (!b || STELLAR_TYPES.includes(b.type) || b.type === 'Black Hole') continue;
         if (b.properties?.userTempOverride) continue;
 
-        // Pick the star delivering the most flux. This must use luminosity, not
-        // mass: a white dwarf is far less luminous than a main-sequence star of
-        // the same mass, and a red giant far more so.
-        let bestStar: CelestialBody | null = null;
-        let bestFlux = 0;
-        let bestDistAU = 0;
-        let bestLum = 0;
+        // Fluxes add in a multiple-star system; luminosity overrides are
+        // measurements, not estimates from the generic mass relation.
+        let totalFlux = 0;
         for (let j = 0; j < stars.length; j++) {
             const s = stars[j];
             const dAU = distToAU(b.position.distanceTo(s.position));
             if (!(dAU > 1e-6)) continue;
             const L = bodyLuminositySolar(s);
             const flux = L / (dAU * dAU);
-            if (flux > bestFlux) {
-                bestFlux = flux;
-                bestStar = s;
-                bestDistAU = dAU;
-                bestLum = L;
-            }
+            totalFlux += flux;
         }
-        if (!bestStar) continue;
+        if (!(totalFlux > 0)) continue;
 
         const props = b.properties || {};
         const albedo = props.albedo ?? albedoFromComposition(
@@ -1141,7 +1139,7 @@ export const updateEquilibriumTemperatures = (bodies: CelestialBody[]): void => 
             props.compositionWater ?? 0.1,
         );
         const greenhouse = props.atmosphere ?? 0;
-        const T = equilibriumTemperatureFromLuminosity(bestLum, bestDistAU, albedo, greenhouse);
+        const T = equilibriumTemperatureFromLuminosity(totalFlux, 1, albedo, greenhouse);
         // Exponential smoothing so user doesn't see instant snaps
         b.temperature = isFinite(b.temperature)
             ? b.temperature * 0.85 + T * 0.15

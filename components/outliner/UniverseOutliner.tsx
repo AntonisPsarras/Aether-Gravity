@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { ChevronDown, List } from 'lucide-react';
 import type { BodyCategory } from '../../constants';
+import type { CelestialBody } from '../../types';
 import { useStore } from '../../utils/store';
 import { checkHabitability } from '../../utils/HabitabilityService';
-import { findPrimaryStar } from '../../utils/physicsUtils';
+import { findPrimaryStar, bodyLuminositySolar } from '../../utils/physicsUtils';
 import {
   buildHierarchy, flattenHierarchy, filterBodies, sortBodies, hierarchySignature,
   categoryOf, forcesFlatMode, capRows, AUTO_COLLAPSE_CHILD_COUNT,
@@ -78,11 +79,17 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
     const bodies = useStore.getState().bodies;
     const primary = findPrimaryStar(bodies);
 
-    // One pass for habitability instead of an O(n) star scan inside every row.
+    // A Proxima planet must be evaluated against Proxima, not the first star
+    // in the universe. Use the dominant irradiator for this single-star badge.
+    const stars = bodies.filter(b => ['Star', 'Red Giant', 'White Dwarf', 'Brown Dwarf'].includes(b.type));
     const habitable = new Map<string, boolean>();
     for (const body of bodies) {
       if (HABITABLE_CANDIDATES.includes(body.type)) {
-        habitable.set(body.id, primary ? checkHabitability(body, primary) : false);
+        const irradiator = stars.reduce<CelestialBody | null>((best, star) => {
+          const flux = (s: CelestialBody) => bodyLuminositySolar(s) / Math.max(1e-20, s.position.distanceToSquared(body.position));
+          return !best || flux(star) > flux(best) ? star : best;
+        }, null);
+        habitable.set(body.id, irradiator ? checkHabitability(body, irradiator) : false);
       }
     }
 

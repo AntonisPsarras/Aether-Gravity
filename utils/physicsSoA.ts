@@ -13,7 +13,7 @@
  *     a(t+dt)  = ∑ G·m_j·(x_j - x_i) / |r|³   (one O(N²) pass)
  *     v(t+dt)  = v(t) + ½·(a(t) + a(t+dt))·dt
  *
- * Memory: all hot-loop data lives in reusable `Float32Array`s indexed by
+ * Memory: all hot-loop data lives in reusable `Float64Array`s indexed by
  * body order so we touch zero allocations per step. Previous accelerations
  * are carried across calls in a module-scope buffer keyed by body id, so
  * adds/removes/reorders survive correctly without re-priming.
@@ -25,6 +25,7 @@ import { clampBodiesInPlace } from './physicsBounds';
 import { pairSofteningSq } from './physicsUtils';
 import { isSatellite } from './moonSystem';
 import type { DeviceTier } from './deviceCapabilities';
+import { scientificStepLimit } from './scientificStep';
 
 /**
  * Bodies the integrator owns. Satellites on Kepler rails are excluded: they are
@@ -46,8 +47,8 @@ const isValid = (b: CelestialBody | null | undefined): b is CelestialBody =>
 
 // Reusable typed buffers (resized on demand, never shrunk).
 let bufCapacity = 0;
-let accelCurr: Float32Array = new Float32Array(0);
-let accelNext: Float32Array = new Float32Array(0);
+let accelCurr: Float64Array = new Float64Array(0);
+let accelNext: Float64Array = new Float64Array(0);
 
 // Persistent per-body acceleration state across frames, keyed by id.
 // Stores the LAST computed acceleration so that on the next step we
@@ -58,8 +59,8 @@ const ensureCapacity = (n: number) => {
   const need = n * 3;
   if (need > bufCapacity) {
     bufCapacity = need;
-    accelCurr = new Float32Array(need);
-    accelNext = new Float32Array(need);
+    accelCurr = new Float64Array(need);
+    accelNext = new Float64Array(need);
   } else {
     accelCurr.fill(0, 0, need);
     accelNext.fill(0, 0, need);
@@ -87,7 +88,7 @@ const primeCurrentAccel = (bodies: CelestialBody[]): boolean => {
 };
 
 /** Write computed accelerations back to the persistent store. */
-const storeAccel = (bodies: CelestialBody[], src: Float32Array) => {
+const storeAccel = (bodies: CelestialBody[], src: Float64Array) => {
   // Structural changes call resetVerletCache, so pruning does not belong in
   // the steady-state tick (where building a Set used to allocate).
   for (let i = 0; i < bodies.length; i++) {
@@ -109,7 +110,7 @@ const storeAccel = (bodies: CelestialBody[], src: Float32Array) => {
  * callers can use the same call pattern as before.
  */
 /** Pairwise accelerations over the live array — skips invalid bodies without allocating. */
-const computeAccelerationsInArray = (bodies: CelestialBody[], out: Float32Array): void => {
+const computeAccelerationsInArray = (bodies: CelestialBody[], out: Float64Array): void => {
   const n = bodies.length;
   out.fill(0, 0, n * 3);
 
@@ -264,7 +265,8 @@ export const runFixedSteps = (
   if (!isFinite(elapsed) || elapsed === 0 || !bodiesRef.current) {
     return 0;
   }
-  const policy = physicsStepPolicy(tier);
+  const basePolicy = physicsStepPolicy(tier);
+  const policy = { ...basePolicy, fixedDt: Math.min(basePolicy.fixedDt, scientificStepLimit(bodiesRef.current)) };
   // Velocity-Verlet is time-symmetric, so running it with a negative dt
   // integrates backwards. The pre-2.0 loop returned early on elapsed <= 0, so
   // the reverse half of the speed slider silently did nothing.

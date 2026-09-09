@@ -370,11 +370,11 @@ export const deriveBodyState = (
 
   return {
     radiusKm,
-    radius: visualRadiusFromKm(type, radiusKm),
+    radius: visualRadiusFromKm(type, radiusKm) * (p.renderRadiusScale ?? 1),
     bulkDensity: bulkDensityGcm3(mass, radiusKm),
     surfaceGravity: surfaceGravitySi(mass, radiusKm),
     escapeVelocity: escapeVelocityKms(mass, radiusKm),
-    luminositySolar: derivedLuminositySolar(type, mass, radiusKm, temperature),
+    luminositySolar: p.luminositySolar ?? derivedLuminositySolar(type, mass, radiusKm, temperature),
     temperature,
   };
 };

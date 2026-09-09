@@ -4,7 +4,8 @@ import { getE2EConfig, isE2EMode } from './e2eConfig';
 import { getPhysicsBodiesSnapshot } from './physicsBridge';
 import { getRenderSnapshot, type RenderSnapshot } from './renderBridge';
 import { isSatellite } from './moonSystem';
-import { parseWorldData } from './worldStorage';
+import { parseWorldData, serializeBodies } from './worldStorage';
+import { getSimTime } from './physicsSoA';
 import { useStore } from './store';
 import type { UiMode } from './displayMode';
 
@@ -71,6 +72,7 @@ export interface AetherTestAPI {
   isE2E: boolean;
   getStore: () => StoreSnapshot;
   getPhysicsSnapshot: () => SerializedBody[];
+  getWorldSnapshot: () => WorldData;
   /** What is actually drawn: each body mesh's render-space position. */
   getRenderSnapshot: () => RenderSnapshot;
   getEnergy: () => PhysicsEnergySample;
@@ -182,6 +184,12 @@ function computeEnergy(bodies: readonly CelestialBody[]): PhysicsEnergySample {
 
 function buildApi(): AetherTestAPI {
   return {
+    getWorldSnapshot: () => {
+      const s = useStore.getState();
+      return { id: s.worldId ?? 'test', version: 2, bodies: serializeBodies(getPhysicsBodiesSnapshot()),
+        settings: { simTime: getSimTime(), speed: s.speed, showGrid: s.showGrid, showDust: s.showDust,
+          showHabitable: s.showHabitable, showStability: s.showStability, showOrbitPaths: s.showOrbitPaths } };
+    },
     isE2E: isE2EMode(),
 
     getStore: () => {

@@ -18,9 +18,9 @@ export function sampleOrbitPath(
   const r = body.position.clone().sub(parent.position);
   const v = body.velocity.clone().sub(parent.velocity);
   if (![...r.toArray(), ...v.toArray()].every(Number.isFinite)) return empty();
-  const scale = body.parentId === parent.id && body.orbit ? moonOrbitRenderScale(parent, mode) : 1;
+  const scale = body.parentId === parent.id && body.orbit ? moonOrbitRenderScale(parent, mode, body) : 1;
   const points: number[] = [];
-  const maxRadius = 100000; // Render-space clipping only; never clamp simulation values.
+  const maxRadius = body.properties?.presetId ? 2000000 : 100000;
   const add = (p: THREE.Vector3) => {
     if (!p.toArray().every(Number.isFinite) || p.length() * scale > maxRadius) return false;
     points.push(p.x * scale, p.y * scale, p.z * scale);

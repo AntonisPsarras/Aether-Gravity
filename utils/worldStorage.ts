@@ -625,6 +625,7 @@ const sanitizeOrbit = (orbit: unknown): CelestialBody['orbit'] => {
 
 /** Sanitize persisted simulation settings before applying to the store. */
 export const sanitizeWorldSettings = (settings: WorldData['settings']): WorldData['settings'] => ({
+    simTime: safeNum(settings?.simTime, 0),
     speed: clampSpeed(safeNum(settings?.speed, 1)),
     showGrid: Boolean(settings?.showGrid ?? true),
     showDust: Boolean(settings?.showDust ?? true),

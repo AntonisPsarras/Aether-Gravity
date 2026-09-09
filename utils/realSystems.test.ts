@@ -337,8 +337,8 @@ describe('Alpha Centauri preset', () => {
     const bodies = buildRealSystem(getRealSystem('alpha-centauri')!);
     const a = bodies.find((x) => x.name === 'Alpha Centauri A')!;
     const b = bodies.find((x) => x.name === 'Alpha Centauri B')!;
-    within(a.mass / M_SUN_IN_EARTH, 1.0788, 0.5, 'A mass');
-    within(b.mass / M_SUN_IN_EARTH, 0.9092, 0.5, 'B mass');
+    within(a.mass / M_SUN_IN_EARTH, 1.1055, 0.5, 'A mass');
+    within(b.mass / M_SUN_IN_EARTH, 0.9373, 0.5, 'B mass');
     expect(a.properties?.luminositySolarDerived).toBeGreaterThan(1.0);
     expect(b.properties?.luminositySolarDerived).toBeLessThan(1.0);
   });

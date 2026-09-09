@@ -17,6 +17,10 @@
  */
 import type { UiMode } from './displayMode';
 import { FIXED_DT, MAX_CATCHUP_STEPS } from './physicsSoA';
+import { physicsStepPolicy } from './physicsSoA';
+import { scientificPacingScale } from './scientificStep';
+import type { CelestialBody } from '../types';
+import type { DeviceTier } from './deviceCapabilities';
 
 /**
  * Simulated years consumed per real second at speed = 1 in Advanced Mode —
@@ -38,22 +42,22 @@ export const BASE_YEARS_PER_REAL_SECOND = 0.04;
 export const BEGINNER_TIME_SCALE = 0.35;
 
 /** Sim-years consumed per real second at the given slider position and mode. */
-export const simYearsPerRealSecond = (speed: number, mode: UiMode): number => {
+export const simYearsPerRealSecond = (speed: number, mode: UiMode, bodies: readonly CelestialBody[] = [], tier: DeviceTier = 'high'): number => {
   if (!isFinite(speed)) return 0;
   const modeScale = mode === 'beginner' ? BEGINNER_TIME_SCALE : 1;
-  return speed * BASE_YEARS_PER_REAL_SECOND * modeScale;
+  return speed * BASE_YEARS_PER_REAL_SECOND * modeScale * scientificPacingScale(bodies, physicsStepPolicy(tier).maxCatchupSteps);
 };
 
 /**
  * Simulated years to advance for one rendered frame.
  * `delta` is the frame time in real seconds, already capped by the caller.
  */
-export const simElapsedForFrame = (delta: number, speed: number, mode: UiMode): number =>
-  delta * simYearsPerRealSecond(speed, mode);
+export const simElapsedForFrame = (delta: number, speed: number, mode: UiMode, bodies: readonly CelestialBody[] = [], tier: DeviceTier = 'high'): number =>
+  delta * simYearsPerRealSecond(speed, mode, bodies, tier);
 
 /** Real seconds one Earth year takes on screen. Used by the settings UI copy. */
-export const realSecondsPerEarthYear = (speed: number, mode: UiMode): number => {
-  const rate = Math.abs(simYearsPerRealSecond(speed, mode));
+export const realSecondsPerEarthYear = (speed: number, mode: UiMode, bodies: readonly CelestialBody[] = [], tier: DeviceTier = 'high'): number => {
+  const rate = Math.abs(simYearsPerRealSecond(speed, mode, bodies, tier));
   return rate > 0 ? 1 / rate : Infinity;
 };
 

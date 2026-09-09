@@ -42,7 +42,7 @@
 import * as THREE from 'three';
 import type { CelestialBody, BodyType } from '../types';
 import { COLLISION_PHYSICS, EVOLUTION_THRESHOLDS, G_CONSTANT } from '../constants';
-import { bulkDensityGcm3, rocheLimitRadii } from './units';
+import { bulkDensityGcm3, rocheLimitRadii, kmToDist } from './units';
 import { blackHoleRadiusKm, classifyBody, classifyByMass } from './bodyDerivation';
 import { PHYSICS_LIMITS, clampMass } from './physicsBounds';
 
@@ -223,7 +223,8 @@ export const classifyImpact = (
     // other's Roche zone is a merger, not a disruption.
     if (secondary.mass < TIDAL_MASS_RATIO * primary.mass && primary.radius > 0) {
       const limit = rocheLimitRadii(densityOf(primary), densityOf(secondary));
-      if (Number.isFinite(limit) && contactRadius < limit * primary.radius) {
+      const primaryContactRadius = a.properties?.physicalCollisions || b.properties?.physicalCollisions ? kmToDist(primary.radiusKm) : primary.radius;
+      if (Number.isFinite(limit) && contactRadius < limit * primaryContactRadius) {
         c.outcome = 'shatter';
         c.tidalDisruption = true;
         return c;
@@ -457,6 +458,8 @@ export const spawnFragments = (
       temperature: source.temperature,
       habitability: 'N/A',
       population: 0,
+      properties: cls.primary.properties?.physicalCollisions || source.properties?.physicalCollisions
+        ? { physicalCollisions: true } : undefined,
       // Deliberately NO parentId and NO orbit: `isSatellite` needs both, and a
       // satellite is excluded from the integrator AND from collision scanning,
       // and is teleported every frame by propagateSatellites. Debris must be a

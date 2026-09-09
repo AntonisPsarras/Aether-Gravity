@@ -15,7 +15,7 @@
  * exactly 1. It is NOT the identity for (2) any more — see the curvature
  * section below for why the raw path had to go.
  */
-import type { BodyType } from '../types';
+import type { BodyType, CelestialBody } from '../types';
 
 export type UiMode = 'beginner' | 'advanced';
 
@@ -54,6 +54,14 @@ export const beginnerVisualScale = (type: BodyType): number =>
  */
 export const visualScaleFor = (mode: UiMode, type: BodyType): number =>
   mode === 'beginner' ? beginnerVisualScale(type) : 1;
+
+/** Shared mesh, picking, satellite and camera radius. */
+export const bodyVisualRadius = (body: CelestialBody, mode: UiMode): number => {
+  const solid = ['Planet', 'Dwarf', 'Ice Giant', 'Gas Giant', 'Moon', 'Asteroid', 'Comet'].includes(body.type);
+  const radius = body.type === 'Neutron Star' || body.type === 'Pulsar' ? Math.max(body.radius * 5, 3)
+    : body.radius * (solid ? 1.35 : 1);
+  return radius * visualScaleFor(mode, body.type);
+};
 
 // ---- Curvature grid presentation parameters ----
 //

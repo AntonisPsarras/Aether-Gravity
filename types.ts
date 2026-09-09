@@ -112,6 +112,14 @@ export interface CelestialBody {
   /** Persisted Keplerian elements relative to `parentId`. */
   orbit?: OrbitalElements;
   properties?: {
+    /** Optional scientific preset provenance; absent in legacy sandbox worlds. */
+    presetId?: string;
+    scienceNote?: string;
+    epochJD?: number;
+    referencePlane?: string;
+    physicalCollisions?: boolean;
+    /** Multiplicative display compression, independent of physical radius. */
+    renderRadiusScale?: number;
     // Composition (Terrestrial) - Sums to 1.0
     compositionIron?: number;
     compositionSilicates?: number;
@@ -265,6 +273,7 @@ export interface WorldData {
   version: number;
   bodies: CelestialBodyData[];
   settings: {
+    simTime?: number;
     speed: number;
     showGrid: boolean;
     showDust: boolean;

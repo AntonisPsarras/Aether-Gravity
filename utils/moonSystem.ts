@@ -30,7 +30,7 @@
 import * as THREE from 'three';
 import type { CelestialBody } from '../types';
 import { G_AETHER, kmToDist, visualRadiusFromKm } from './units';
-import { visualScaleFor, type UiMode } from './displayMode';
+import { visualScaleFor, bodyVisualRadius, type UiMode } from './displayMode';
 import {
   elementsFromState,
   gravitationalParameter,
@@ -60,9 +60,11 @@ export const isSatellite = (b: CelestialBody): boolean =>
  * true radius in the same units — so a moon that really sits at 60 parent
  * radii is drawn at 60 parent radii.
  */
-export const moonOrbitRenderScale = (parent: CelestialBody, mode: UiMode = 'advanced'): number => {
+export const moonOrbitRenderScale = (parent: CelestialBody, mode: UiMode = 'advanced', satellite?: CelestialBody): number => {
+  if (satellite?.properties?.presetId && satellite.type !== 'Moon') return 1;
   const trueRadiusUnits = kmToDist(parent.radiusKm);
   if (!(trueRadiusUnits > 0)) return 1;
+  if (parent.properties?.presetId) return bodyVisualRadius(parent, mode) / trueRadiusUnits;
   const drawn = parent.radius || visualRadiusFromKm(parent.type, parent.radiusKm);
   // Beginner Mode draws the parent larger, so the orbit has to inflate by the
   // same factor or the moon would be swallowed by its parent's sphere. The
@@ -107,7 +109,7 @@ export const satelliteRenderPosition = (
   mode: UiMode = 'advanced',
 ): THREE.Vector3 => {
   out.subVectors(satellite.position, parent.position);
-  out.multiplyScalar(moonOrbitRenderScale(parent, mode));
+  out.multiplyScalar(moonOrbitRenderScale(parent, mode, satellite));
   return out.add(parent.position);
 };
 

@@ -5,7 +5,7 @@ import { OrbitControls, Stars, shaderMaterial, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialBody, BodyType, WaveEvent, PhysicsEvent } from '../types';
 import { scanCollisionsInPlace, checkEvolutionInPlace, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState, bodyLuminositySolar } from '../utils/physicsUtils';
-import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime } from '../utils/physicsSoA';
+import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime, setSimTime } from '../utils/physicsSoA';
 import { propagateSatellites, promoteEscapedMoons } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
 import { bodyRenderPosition } from '../utils/renderPosition';
@@ -27,6 +27,8 @@ import {
   visualScaleFor,
 } from '../utils/displayMode';
 import { simElapsedForFrame } from '../utils/simRate';
+import { presetViewFrame } from '../utils/presetViews';
+import { bodyVisualRadius } from '../utils/displayMode';
 import HabitableZoneVisual from './HabitableZoneVisual';
 import BlackHoleRig from './BlackHole/BlackHoleRig';
 import { BlackHoleLensCapture, useBlackHoleLensTexture } from './BlackHole/BlackHoleLensCapture';
@@ -507,7 +509,9 @@ const snapCameraToBody = (
   floatingOffset.set(0, 0, 0);
 
   toRenderSpace(scratchV1, target.position, floatingOffset);
-  const dist = framingDistanceFor(target.radius);
+  const { uiMode, bodies } = useStore.getState();
+  bodyRenderPosition(scratchV1, target, bodies.find(b => b.id === target.parentId), floatingOffset, uiMode);
+  const dist = target.properties?.presetId ? Math.max(0.2, bodyVisualRadius(target, uiMode) * 6) : framingDistanceFor(target.radius);
   controls.target.set(scratchV1.x, scratchV1.y, scratchV1.z);
   camera.position.set(
     scratchV1.x + dist * 0.22,
@@ -561,7 +565,7 @@ const CameraFlyTo = ({
       snapCameraToBody(camera, controls, body, floatingOffset.current);
       return;
     }
-    flying.current = { id: selectedId, distance: framingDistanceFor(body.radius) };
+    flying.current = { id: selectedId, distance: body.properties?.presetId ? Math.max(0.2, bodyVisualRadius(body, useStore.getState().uiMode) * 6) : framingDistanceFor(body.radius) };
   }, [selectedId, recenterNonce, reducedMotion, controls, camera, floatingOffset]);
 
   // Any deliberate camera input wins over the tween.
@@ -582,7 +586,7 @@ const CameraFlyTo = ({
     const body = useStore.getState().bodies.find((b) => b.id === fly.id);
     if (!body) { flying.current = null; return; }
 
-    toRenderSpace(scratchV1, body.position, floatingOffset.current);
+    bodyRenderPosition(scratchV1, body, useStore.getState().bodies.find(b => b.id === body.parentId), floatingOffset.current, useStore.getState().uiMode);
     if (scratchV1.x !== scratchV1.x) return; // NaN guard
 
     scratchV3.set(
@@ -639,7 +643,15 @@ const CameraRecenter = ({
         return;
       }
 
-      snapCameraToBody(camera, controls, target, floatingOffset.current);
+      const state = useStore.getState();
+      const frame = presetViewFrame(bodies, state.guidedView, state.uiMode, (camera as THREE.PerspectiveCamera).aspect || 1);
+      if (frame) {
+        floatingOffset.current.copy(frame.centre);
+        controls.target.set(0, 0, 0);
+        camera.position.set(0, frame.distance * 0.85, frame.distance * 0.53);
+        controls.update();
+        useStore.setState({ cameraLockedId: null });
+      } else snapCameraToBody(camera, controls, target, floatingOffset.current);
     };
 
     const cancelDefer = deferDoubleFrame(trySnap);
@@ -978,12 +990,15 @@ const PhysicsEngine = ({
       }
     }
     const currentTime = state.clock.getElapsedTime();
+    // Store updates are synchronous; React's frame subscription can still have
+    // last render's props for one tick after pause/speed/mode changes.
+    const { paused, speed, uiMode } = useStore.getState();
     // Elapsed simulated time this frame. `simElapsedForFrame` owns the mapping
     // from real seconds to sim-years (utils/simRate.ts) — the speed slider is a
     // multiplier on a base rate, not a raw years-per-second. Sign of `speed`
     // lets the user run physics in reverse for short bursts. Beginner Mode
     // consumes time more slowly; the timestep and integrator are identical.
-    const simElapsed = simElapsedForFrame(Math.min(delta, 0.1), speed, uiMode);
+    const simElapsed = simElapsedForFrame(Math.min(delta, 0.1), speed, uiMode, bodiesRef.current, deviceTier);
 
     let effectsChanged = false;
     for (let i = visualEffectsRef.current.length - 1; i >= 0; i--) {
@@ -1170,7 +1185,7 @@ const PhysicsEngine = ({
     if (cameraLockedId && !creationDragActiveRef.current && physicsBodies && isOrbitControlsLike(controls)) {
       const target = bodyByIdRef.current.get(cameraLockedId);
       if (target) {
-        toRenderSpace(scratchV1, target.position, floatingOffset.current);
+        bodyRenderPosition(scratchV1, target, bodyByIdRef.current.get(target.parentId ?? ''), floatingOffset.current, uiMode);
         scratchV2.copy(camera.position).sub(controls.target);
         if (scratchV1.x === scratchV1.x) {
           // Exponential damping keyed on the frame delta. The old fixed 0.1
@@ -1474,7 +1489,9 @@ const ObjectCreator: React.FC<{
 
     appendBody(newBody);
     resetVerletCache();
+    const retainedTime = getSimTime();
     resetAccumulator();
+    setSimTime(retainedTime);
 
     onBodyCreate(snapshot, newBody);
     cancelAllBodyPointerGestures();
@@ -1745,11 +1762,9 @@ const BodyMesh = React.memo(({
    */
   const modeScale = visualScaleFor(uiMode, data.type);
 
-  let visualRadius = data.radius * modeScale;
+  let visualRadius = bodyVisualRadius(data, uiMode);
   let eventHorizonScale = 1.0;
 
-  if (isPlanet) visualRadius = data.radius * 1.35 * modeScale;
-  if (isNeutronStar) visualRadius = Math.max(data.radius * 5.0, 3.0) * modeScale;
 
   if (isBlackHole) {
     // Ratio of the Kerr outer horizon to the Schwarzschild radius,
@@ -1961,13 +1976,15 @@ const BodyMesh = React.memo(({
           spinRate = 0;
         } else {
           spinRate = 5.0 / (props.rotationPeriod || 24.0);
-          meshRef.current.rotation.y += spinRate * dt;
+          if (props.presetId) meshRef.current.rotation.y = getSimTime() * 8766 / (props.rotationPeriod || 24) * Math.PI * 2;
+          else meshRef.current.rotation.y += spinRate * dt;
         }
       } else {
         // Stars and remnants rotate too; use their own period rather than a
         // flat rate so a fast rotator visibly spins faster than a slow one.
         spinRate = 5.0 / (props.rotationPeriod || 240.0);
-        meshRef.current.rotation.y += spinRate * dt;
+        if (props.presetId) meshRef.current.rotation.y = getSimTime() * 8766 / (props.rotationPeriod || 24) * Math.PI * 2;
+        else meshRef.current.rotation.y += spinRate * dt;
       }
 
       // Cloud parallax: the deck super-rotates relative to the surface (Venus
@@ -2397,8 +2414,8 @@ const AdaptiveOrbitControls = ({ enabled }: { enabled: boolean }) => {
     <OrbitControls
       makeDefault
       enablePan={true}
-      minDistance={40}
-      maxDistance={500000}
+      minDistance={0.05}
+      maxDistance={5000000}
       enabled={enabled}
       enableDamping={true}
       dampingFactor={0.028}
@@ -2537,7 +2554,9 @@ const SpaceCanvas: React.FC<{
       })),
     );
     resetVerletCache();
+    const retainedTime = getSimTime();
     resetAccumulator();
+    setSimTime(retainedTime);
   }, [bodiesSignature, historyVersion]);
 
   // BodyMesh's mount/unmount is the *only* writer of this registry. PhysicsEngine
@@ -2557,7 +2576,7 @@ const SpaceCanvas: React.FC<{
       key={glEpoch}
       dpr={canvasDpr}
       style={{ touchAction: 'none', width: '100%', height: '100%' }}
-      camera={{ position: [0, 150, 250], fov: 45, far: 100000000 }}
+      camera={{ position: [0, 150, 250], fov: 45, near: 0.001, far: 100000000 }}
       gl={{
         logarithmicDepthBuffer: true,
         antialias: !isTouchDevice,

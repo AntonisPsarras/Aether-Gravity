@@ -1,0 +1,145 @@
+{
+    "Moon":  {
+                 "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027301\u0027\u0026CENTER=\u0027500@399\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                 "epochJD":  2451545,
+                 "aAU":  0.002552673531134616,
+                 "e":  0.063147216850943044,
+                 "iDeg":  5.2402730003092453,
+                 "lanDeg":  123.9580554371928,
+                 "argpDeg":  308.92267272065948,
+                 "mDeg":  146.6732747774804,
+                 "periodDays":  27.016161629986819
+             },
+    "Io":  {
+               "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027501\u0027\u0026CENTER=\u0027500@599\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+               "epochJD":  2451545,
+               "aAU":  0.0028211392950291481,
+               "e":  0.0047156889213458971,
+               "iDeg":  2.2126177635563771,
+               "lanDeg":  336.85244520856952,
+               "argpDeg":  66.16488500283468,
+               "mDeg":  335.153206478952,
+               "periodDays":  1.7713957574375161
+           },
+    "Europa":  {
+                   "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027502\u0027\u0026CENTER=\u0027500@599\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                   "epochJD":  2451545,
+                   "aAU":  0.0044870190635020943,
+                   "e":  0.0098128235755760816,
+                   "iDeg":  1.790971209716447,
+                   "lanDeg":  332.6287323572119,
+                   "argpDeg":  254.64714237312259,
+                   "mDeg":  345.411036769848,
+                   "periodDays":  3.5532061306696372
+               },
+    "Ganymede":  {
+                     "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027503\u0027\u0026CENTER=\u0027500@599\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                     "epochJD":  2451545,
+                     "aAU":  0.0071558336760425773,
+                     "e":  0.001457215292672099,
+                     "iDeg":  2.2141480418480808,
+                     "lanDeg":  343.1728455275238,
+                     "argpDeg":  319.80781272264488,
+                     "mDeg":  277.04876844612062,
+                     "periodDays":  7.1558697857472522
+                 },
+    "Callisto":  {
+                     "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027504\u0027\u0026CENTER=\u0027500@599\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                     "epochJD":  2451545,
+                     "aAU":  0.01258555984162885,
+                     "e":  0.0074394346009482339,
+                     "iDeg":  2.0169162208593119,
+                     "lanDeg":  337.94261034612441,
+                     "argpDeg":  16.126894978884749,
+                     "mDeg":  85.118888580792117,
+                     "periodDays":  16.691121689190041
+                 },
+    "Titan":  {
+                  "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027606\u0027\u0026CENTER=\u0027500@699\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                  "epochJD":  2451545,
+                  "aAU":  0.00816812963443584,
+                  "e":  0.028600662564325391,
+                  "iDeg":  27.718338873111652,
+                  "lanDeg":  169.23916028662791,
+                  "argpDeg":  164.40912857338219,
+                  "mDeg":  163.43619749442479,
+                  "periodDays":  15.947347507543819
+              },
+    "Enceladus":  {
+                      "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027602\u0027\u0026CENTER=\u0027500@699\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                      "epochJD":  2451545,
+                      "aAU":  0.00159373838496841,
+                      "e":  0.0063515973502123414,
+                      "iDeg":  28.052023105490932,
+                      "lanDeg":  169.5065956328603,
+                      "argpDeg":  135.48302519849639,
+                      "mDeg":  6.9533984747677344,
+                      "periodDays":  1.374616095618862
+                  },
+    "Titania":  {
+                    "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027703\u0027\u0026CENTER=\u0027500@799\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                    "epochJD":  2451545,
+                    "aAU":  0.002916436400823477,
+                    "e":  0.0024790003171467991,
+                    "iDeg":  97.818368383812,
+                    "lanDeg":  167.61781459458351,
+                    "argpDeg":  202.11677210660449,
+                    "mDeg":  74.416775542859156,
+                    "periodDays":  8.7063729076859051
+                },
+    "Triton":  {
+                   "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027801\u0027\u0026CENTER=\u0027500@899\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                   "epochJD":  2451545,
+                   "aAU":  0.0023714646489640251,
+                   "e":  0.00014610790958790481,
+                   "iDeg":  130.26140600733359,
+                   "lanDeg":  215.85911037022561,
+                   "argpDeg":  91.171381193998016,
+                   "mDeg":  343.46067121227219,
+                   "periodDays":  5.8770774416141123
+               },
+    "Charon":  {
+                   "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027901\u0027\u0026CENTER=\u0027500@999\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                   "epochJD":  2451545,
+                   "aAU":  0.00013098957859193061,
+                   "e":  0.00016106727909447191,
+                   "iDeg":  112.8908097641467,
+                   "lanDeg":  227.3916867008565,
+                   "argpDeg":  172.58550271651319,
+                   "mDeg":  148.66513448281029,
+                   "periodDays":  6.3872206125489983
+               },
+    "Phobos":  {
+                   "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027401\u0027\u0026CENTER=\u0027500@499\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                   "epochJD":  2451545,
+                   "aAU":  6.2692137826293986E-05,
+                   "e":  0.014698418519696549,
+                   "iDeg":  26.05670195883539,
+                   "lanDeg":  84.815142440565808,
+                   "argpDeg":  342.78486423913557,
+                   "mDeg":  189.82243422788679,
+                   "periodDays":  0.31915971038265017
+               },
+    "Earth":  {
+                  "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027399\u0027\u0026CENTER=\u0027500@10\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                  "epochJD":  2451545,
+                  "aAU":  1.0004488289341851,
+                  "e":  0.01711862906746885,
+                  "iDeg":  0.000418108606546181,
+                  "lanDeg":  135.0807182572469,
+                  "argpDeg":  326.72821885692713,
+                  "mDeg":  358.61725624164347,
+                  "periodDays":  365.50228382351918
+              },
+    "Pluto":  {
+                  "source":  "https://ssd.jpl.nasa.gov/api/horizons.api?format=json\u0026COMMAND=\u0027999\u0027\u0026CENTER=\u0027500@10\u0027\u0026MAKE_EPHEM=\u0027YES\u0027\u0026EPHEM_TYPE=\u0027ELEMENTS\u0027\u0026TLIST=\u00272451545.0\u0027\u0026REF_PLANE=\u0027ECLIPTIC\u0027\u0026OUT_UNITS=\u0027AU-D\u0027",
+                  "epochJD":  2451545,
+                  "aAU":  39.571261522429623,
+                  "e":  0.24944849522742529,
+                  "iDeg":  17.235653015721962,
+                  "lanDeg":  110.03993995362,
+                  "argpDeg":  115.178665976094,
+                  "mDeg":  14.143654536786769,
+                  "periodDays":  90921.851086745824
+              }
+}

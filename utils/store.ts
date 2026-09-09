@@ -10,7 +10,7 @@ import {
 import { patchPhysicsBody, replacePhysicsBodies, appendPhysicsBody } from './physicsBridge';
 import { G_CONSTANT } from '../constants';
 import { buildRealSystem, getRealSystem } from '../content/realSystems';
-import { resetAccumulator, resetVerletCache } from './physicsSoA';
+import { resetAccumulator, resetVerletCache, setSimTime } from './physicsSoA';
 import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
 import type { UiMode } from './displayMode';
 import { getUiMode, saveUiMode } from './displayPrefs';
@@ -73,6 +73,7 @@ interface AppState {
   settingsOpen: boolean;
   /** Bumped when the camera should snap to the primary star (e.g. after generate). */
   cameraRecenterNonce: number;
+  guidedView: string | null;
   /** Dev-only: energy-drift HUD on the simulation canvas */
   isDebugMode: boolean;
   /** Per-body inspector fields protected from physics→store overwrites while editing */
@@ -158,6 +159,7 @@ export const useStore = create<AppState>((set, get) => ({
   uiMode: getUiMode(),
   settingsOpen: false,
   cameraRecenterNonce: 0,
+  guidedView: null,
   isDebugMode: false,
   inspectorLocks: {},
   isInteractingWithUI: false,
@@ -549,6 +551,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     set({
       bodies: sanitized,
+      guidedView: null,
       selectedId: null,
       inspectorBodyId: null,
       cameraLockedId: star?.id ?? null,
@@ -583,9 +586,15 @@ export const useStore = create<AppState>((set, get) => ({
       loadedBodies.some((b) => b.id === state.selectedId);
 
     const settings = sanitizeWorldSettings(data.settings);
+    resetAccumulator();
+    resetVerletCache();
+    setSimTime(settings.simTime ?? 0);
+    replacePhysicsBodies(loadedBodies);
 
     set({
       worldId: data.id,
+      guidedView: null,
+      cameraRecenterNonce: state.cameraRecenterNonce + 1,
       bodies: loadedBodies,
       selectedId: keepSelection ? state.selectedId : star?.id ?? null,
       cameraLockedId:

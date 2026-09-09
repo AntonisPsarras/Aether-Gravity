@@ -28,7 +28,7 @@ export const PHYSICS_LIMITS = {
    */
   MAX_VELOCITY_MAGNITUDE: 300_000,
   /** Max |component| for world-space position before recentre. */
-  MAX_POSITION_ABS: 500_000,
+  MAX_POSITION_ABS: 5_000_000,
   /** Cap on fling velocity when placing a new body (≈ 8× Earth's orbital speed). */
   MAX_DRAG_LAUNCH_SPEED: 2000,
   STAR_TEMPERATURE_MIN: 1000,
@@ -185,6 +185,12 @@ export const sanitizeProperties = (
 
   const c01 = (v: unknown) => clamp(safeNum(v, 0), 0, 1);
   const out: NonNullable<CelestialBody['properties']> = {};
+  if (typeof props.presetId === 'string') out.presetId = props.presetId.slice(0, 64);
+  if (typeof props.scienceNote === 'string') out.scienceNote = props.scienceNote.slice(0, 2000);
+  if (typeof props.referencePlane === 'string') out.referencePlane = props.referencePlane.slice(0, 200);
+  if (Number.isFinite(props.epochJD)) out.epochJD = props.epochJD;
+  if (props.physicalCollisions === true) out.physicalCollisions = true;
+  if (props.renderRadiusScale !== undefined) out.renderRadiusScale = clamp(safeNum(props.renderRadiusScale, 1), 0.00001, 1);
 
   if (props.compositionIron !== undefined) out.compositionIron = c01(props.compositionIron);
   if (props.compositionSilicates !== undefined) out.compositionSilicates = c01(props.compositionSilicates);

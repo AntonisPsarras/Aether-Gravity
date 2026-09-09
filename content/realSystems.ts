@@ -1,31 +1,7 @@
-/**
- * Accurately parameterised real planetary systems.
- *
- * Every number here is a published measurement, not a tuned game value. Bodies
- * carry their real mass, real radius and real osculating orbital elements, and
- * because the engine now runs in real units (M⊕ / 0.025 AU / year with G
- * derived from SI) the resulting orbits reproduce the real periods without any
- * correction factor — `realSystems.test.ts` asserts exactly that.
- *
- * Sources
- * -------
- * Solar System : NASA/JPL planetary fact sheets (masses, radii, rotation) and
- *                the JPL "Approximate Positions of the Major Planets" Keplerian
- *                element set for 1800-2050 AD (Standish), referred to the mean
- *                ecliptic and equinox of J2000.
- *                https://ssd.jpl.nasa.gov/planets/approx_pos.html
- *                Satellite elements: JPL Solar System Dynamics planetary
- *                satellite mean elements.
- *                https://ssd.jpl.nasa.gov/sats/elem/
- * TRAPPIST-1   : Agol et al. (2021), PSJ 2, 1 — the dynamical (transit-timing)
- *                solution, cross-checked against the NASA Exoplanet Archive
- *                default parameter set.
- * Alpha Cen    : Kervella et al. (2017) for the masses and the visual binary
- *                orbit; Anglada-Escudé et al. (2016) for Proxima b.
- *
- * The JPL element set is published as longitude of perihelion ϖ and mean
- * longitude L; the argument of periapsis and mean anomaly stored below are
- * ω = ϖ − Ω and M = L − ϖ.
+/** Scientific starting conditions with explicit epochs, frames and assumptions.
+ * Runtime is offline. Source URLs are attached to each system; Horizons fixtures
+ * can be regenerated with scripts/fetch-satellite-elements.ps1.
+ * Positions use real distances; only drawn radii and moon displays are enlarged.
  */
 
 import type { BodyType, CelestialBody } from '../types';
@@ -38,6 +14,9 @@ import {
 } from '../utils/units';
 import { elementsFromDegrees, gravitationalParameter, propagateOrbit } from '../utils/keplerOrbit';
 import { deriveBodyState } from '../utils/bodyDerivation';
+import solarElements from './solarSatelliteElements.json';
+import { meanAnomalyFromTrueAnomaly } from '../utils/keplerOrbit';
+import { G_AETHER, distToAU, equilibriumTemperatureFromLuminosity } from '../utils/units';
 
 export interface RealOrbitSpec {
   /** Semi-major axis, in AU (planets) or km (satellites). Give exactly one. */
@@ -50,7 +29,7 @@ export interface RealOrbitSpec {
   lanDeg: number;
   /** Argument of periapsis ω, degrees. */
   argpDeg: number;
-  /** Mean anomaly at epoch J2000, degrees. */
+  /** Mean anomaly at the system's reference epoch, degrees. */
   mDeg: number;
 }
 
@@ -65,6 +44,8 @@ export interface RealBodySpec {
   texture: string;
   /** Name of the body this one orbits. Absent = system primary. */
   parent?: string;
+  /** Relative to the centre of mass of these already-placed free bodies. */
+  barycentreOf?: string[];
   orbit?: RealOrbitSpec;
   /**
    * Propagate analytically on Kepler rails rather than through the N-body sum.
@@ -87,6 +68,10 @@ export interface RealSystem {
   subtitle: string;
   description: string;
   source: string;
+  epochJD?: number;
+  referencePlane?: string;
+  sources?: string[];
+  notes?: string;
   bodies: RealBodySpec[];
 }
 
@@ -96,18 +81,22 @@ export interface RealSystem {
 
 const SOLAR_SYSTEM: RealSystem = {
   id: 'solar-system',
+  epochJD: 2451545,
+  referencePlane: 'J2000 mean ecliptic',
+  sources: ['https://ssd.jpl.nasa.gov/planets/approx_pos.html', 'https://ssd.jpl.nasa.gov/horizons/'],
+  notes: 'Planet elements are JPL approximations. Earth, Pluto and moon elements are geometric Horizons J2000 snapshots. Moons follow unperturbed Kepler ellipses, so osculating periods differ from long-term sidereal periods. Moon gravity and precession are omitted. Surfaces and enlarged moon displays are illustrative.',
   name: 'The Solar System',
   subtitle: 'Sun · 8 planets · Pluto · 11 major moons',
   description:
-    'Our own system at full precision: JPL masses, radii and J2000 orbital ' +
-    'elements. Every orbital period is reproduced from the physics, not scripted.',
-  source: 'NASA/JPL planetary fact sheets + approximate positions of the major planets (J2000)',
+    'Our system at J2000: measured masses and radii, approximate planetary ' +
+    'orbits and analytical moons. Physical distances with enlarged body displays.',
+  source: 'NASA/JPL physical parameters, approximate planetary elements and Horizons J2000 satellite snapshots',
   bodies: [
     {
       name: 'Sun', type: 'Star', mass: M_SUN_IN_EARTH, radiusKm: R_SUN_KM,
       color: '#fff4ea', texture: 'plasma', temperatureK: 5772,
       rotationHours: 609.12,
-      properties: { metallicity: 0.5, convectionScale: 5, oblateness: 0.0 },
+      properties: { luminositySolar: 1, metallicity: 0.5, convectionScale: 5, oblateness: 0.0 },
     },
 
     // --- Terrestrial planets -------------------------------------------------
@@ -163,7 +152,7 @@ const SOLAR_SYSTEM: RealSystem = {
       // limit for loose ice. Optically thick in the B ring.
       properties: {
         atmosphere: 1.0, cloudDepth: 0.7, oblateness: 0.098,
-        ringOpacity: 0.85, ringInnerRadius: 1.24, ringOuterRadius: 2.27,
+        ringOpacity: 0.85, ringInnerRadius: 74658 / 58232, ringOuterRadius: 136775 / 58232,
       },
     },
     {
@@ -286,63 +275,74 @@ const SOLAR_SYSTEM: RealSystem = {
 
 const TRAPPIST_1: RealSystem = {
   id: 'trappist-1',
+  epochJD: 2457257.93115525,
+  referencePlane: 'Coplanar Jacobi solution, rotated face-on for viewing',
+  sources: ['https://arxiv.org/abs/2010.01074', 'https://arxiv.org/abs/2409.11620'],
+  notes: 'Agol 2021 Table 2 posterior central parameters in Jacobi coordinates at BJD TDB 2457257.93115525; not a posterior sample or precision transit forecast. The 2024 timing update is cited for limitations, not mixed into these elements. Coplanarity and synchronous spins are model assumptions. Exoplanet surfaces, albedos and compositions are illustrative; atmospheres and habitability are unknown.',
   name: 'TRAPPIST-1',
   subtitle: 'Ultracool dwarf · 7 terrestrial planets',
   description:
     'Seven Earth-sized worlds around a 0.09 solar-mass star, three of them in ' +
     'the habitable zone. The whole system would fit inside Mercury’s orbit.',
-  source: 'Agol et al. (2021), PSJ 2, 1; NASA Exoplanet Archive default parameters',
+  source: 'Agol et al. (2021), PSJ 2, 1, Table 2 Jacobi parameters; Agol et al. (2024) timing limitations',
   bodies: [
     {
       name: 'TRAPPIST-1', type: 'Star', mass: 0.0898 * M_SUN_IN_EARTH, radiusKm: 0.1192 * R_SUN_KM,
       color: '#ff7043', texture: 'plasma', temperatureK: 2566,
       rotationHours: 3.3 * 24,
-      properties: { metallicity: 0.6, convectionScale: 8, flareActivity: 0.7 },
+      properties: { luminositySolar: 0.000553, metallicity: 0.6, convectionScale: 8, flareActivity: 0.7 },
     },
-    trappistPlanet('b', 1.374, 1.116, 0.01154, 0.00622, 89.728),
-    trappistPlanet('c', 1.308, 1.097, 0.01580, 0.00654, 89.778),
-    trappistPlanet('d', 0.388, 0.788, 0.02227, 0.00837, 89.896),
-    trappistPlanet('e', 0.692, 0.920, 0.02925, 0.00510, 89.793),
-    trappistPlanet('f', 1.039, 1.045, 0.03849, 0.01007, 89.740),
-    trappistPlanet('g', 1.321, 1.129, 0.04683, 0.00208, 89.742),
-    trappistPlanet('h', 0.326, 0.755, 0.06189, 0.00567, 89.805),
+    trappistPlanet('b', 1.116),
+    trappistPlanet('c', 1.097),
+    trappistPlanet('d', 0.788),
+    trappistPlanet('e', 0.920),
+    trappistPlanet('f', 1.045),
+    trappistPlanet('g', 1.129),
+    trappistPlanet('h', 0.755),
   ],
 };
 
-/**
- * TRAPPIST-1 planets are nearly coplanar and nearly circular. Orbital
- * inclinations are given relative to the sky plane in the literature (~89.7°,
- * i.e. edge-on to us); relative to the system's own plane they are < 0.3°, so
- * the system is laid out flat with a small spread and phased by the observed
- * resonant chain.
- */
+/** Coplanar Jacobi initial conditions from Agol 2021 Table 2. */
 function trappistPlanet(
   letter: string,
-  mass: number,
   radiusEarth: number,
-  aAU: number,
-  e: number,
-  _iSkyDeg: number,
 ): RealBodySpec {
-  const phases: Record<string, number> = {
-    b: 0, c: 137, d: 41, e: 233, f: 316, g: 92, h: 189,
+  // Agol 2021 Table 2: mass at 0.09 solar masses, P(days), t0(BJD-2450000), e cos w, e sin w.
+  const solution: Record<string, number[]> = {
+    b: [1.3771, 1.510826, 7257.55044, -0.00215, 0.00217],
+    c: [1.3105, 2.421937, 7258.58728, 0.00055, 0.00001],
+    d: [0.3885, 4.049219, 7257.06768, -0.00496, 0.00267],
+    e: [0.6932, 6.101013, 7257.82771, 0.00433, -0.00461],
+    f: [1.0411, 9.207540, 7257.07426, -0.00840, -0.00051],
+    g: [1.3238, 12.352446, 7257.71462, 0.00380, 0.00128],
+    h: [0.3261, 18.772866, 7249.60676, -0.00365, -0.00002],
   };
-  const isTemperate = ['e', 'f', 'g'].includes(letter);
+  const [mass09, period, transit, ecosw, esinw] = solution[letter];
+  const mass = mass09 * 0.0898 / 0.09;
+  const e = Math.hypot(ecosw, esinw);
+  const omega = Math.atan2(esinw, ecosw);
+  const mean = meanAnomalyFromTrueAnomaly(Math.PI / 2 - omega, e)
+    + 2 * Math.PI * (7257.93115525 - transit) / period;
+  const inner = Object.keys(solution).filter(l => l < letter);
+  const enclosedMass = 0.0898 * M_SUN_IN_EARTH + inner.reduce((sum, l) => sum + solution[l][0] * 0.0898 / 0.09, 0);
+  const aAU = distToAU(Math.cbrt(G_AETHER * (enclosedMass + mass) * (period / 365.25 / (2 * Math.PI)) ** 2));
   return {
     name: `TRAPPIST-1${letter}`,
     type: 'Planet',
     mass,
     radiusKm: radiusEarth * 6371,
-    color: isTemperate ? '#5b8fb9' : '#a1685a',
+    color: ['#b37d65', '#aa9681', '#80786f', '#9c8b7a', '#a99888', '#b8aca2', '#c1b8ae']['bcdefgh'.indexOf(letter)],
     texture: 'rock',
     temperatureK: 0,   // resolved by the equilibrium-temperature pass
-    rotationHours: 24,
-    orbit: { aAU, e, iDeg: (phases[letter] % 3) * 0.1, lanDeg: 0, argpDeg: 0, mDeg: phases[letter] },
+    rotationHours: period * 24,
+    barycentreOf: ['TRAPPIST-1', ...inner.map(l => `TRAPPIST-1${l}`)],
+    orbit: { aAU, e, iDeg: 0, lanDeg: 0, argpDeg: omega * 180 / Math.PI, mDeg: mean * 180 / Math.PI },
     properties: {
       compositionIron: 0.25,
-      compositionSilicates: 0.55,
-      compositionWater: 0.20,
-      atmosphere: isTemperate ? 0.3 : 0.05,
+      compositionSilicates: 0.75,
+      compositionWater: 0,
+      atmosphere: 0,
+      albedo: 0.3,
       isTidallyLocked: true,
     },
   };
@@ -354,49 +354,71 @@ function trappistPlanet(
 
 const ALPHA_CENTAURI: RealSystem = {
   id: 'alpha-centauri',
+  epochJD: 2451545,
+  referencePlane: 'Sky plane of the visual binary; Proxima orbit in the same observer frame',
+  sources: ['https://arxiv.org/abs/1610.06079', 'https://arxiv.org/abs/1611.03495', 'https://www.eso.org/public/news/eso2202/', 'https://www.aanda.org/articles/aa/pdf/2025/08/aa53728-25.pdf'],
+  notes: 'Kervella 2017 wide-orbit central estimate; very uncertain over hundreds of thousands of years. Proxima b/d use radial-velocity minimum masses, assumed edge-on orbits and estimated rocky radii. Their orientations, surface conditions and phases here are illustrative; circular analytical orbits and synchronous spins are assumptions. Planet perturbations are omitted.',
   name: 'Alpha Centauri',
-  subtitle: 'The nearest system · a real binary',
+  subtitle: 'Three stars · Proxima b and d · true separation',
   description:
     'A G2 and a K1 star on a wide, strongly eccentric 80-year orbit, closing ' +
     'from 35.6 AU to 11.2 AU and back. Proxima and its planet orbit far outside.',
-  source: 'Kervella et al. (2017) A&A 598, L7 (masses, visual orbit); Anglada-Escudé et al. (2016) for Proxima b',
+  source: 'Kervella et al. (2016, 2017) binary and wide orbit; Proxima b/d radial velocities (2020, 2022), d confirmed in 2025',
   bodies: [
     {
-      name: 'Alpha Centauri A', type: 'Star', mass: 1.0788 * M_SUN_IN_EARTH, radiusKm: 1.2234 * R_SUN_KM,
+      name: 'Alpha Centauri A', type: 'Star', mass: 1.1055 * M_SUN_IN_EARTH, radiusKm: 1.2234 * R_SUN_KM,
       color: '#fff6e8', texture: 'plasma', temperatureK: 5790,
-      properties: { metallicity: 0.7, convectionScale: 5 },
+      rotationHours: 22 * 24,
+      properties: { luminositySolar: 1.519, metallicity: 0.7, convectionScale: 5 },
     },
     {
-      name: 'Alpha Centauri B', type: 'Star', mass: 0.9092 * M_SUN_IN_EARTH, radiusKm: 0.8632 * R_SUN_KM,
+      name: 'Alpha Centauri B', type: 'Star', mass: 0.9373 * M_SUN_IN_EARTH, radiusKm: 0.8632 * R_SUN_KM,
       color: '#ffd9a0', texture: 'plasma', temperatureK: 5260,
       parent: 'Alpha Centauri A',
-      orbit: { aAU: 23.52, e: 0.5179, iDeg: 79.32, lanDeg: 204.85, argpDeg: 231.65, mDeg: 0 },
-      properties: { metallicity: 0.7, convectionScale: 6 },
+      orbit: { aAU: 17.592 / 0.74717, e: 0.5208, iDeg: 79.320, lanDeg: 205.064, argpDeg: 232.006, mDeg: 360 * (2000 - 1955.604) / 79.929 },
+      rotationHours: 36 * 24,
+      properties: { luminositySolar: 0.5, metallicity: 0.7, convectionScale: 6 },
     },
     {
       name: 'Proxima Centauri', type: 'Star', mass: 0.1221 * M_SUN_IN_EARTH, radiusKm: 0.1542 * R_SUN_KM,
       color: '#ff5722', texture: 'plasma', temperatureK: 3042,
-      parent: 'Alpha Centauri A',
-      // Proxima's true separation is ~8700 AU with a ~550 000 year period;
-      // that is unusable in an interactive scene, so it is placed on a
-      // representative wide orbit and flagged in the description.
-      orbit: { aAU: 430, e: 0.5, iDeg: 107.6, lanDeg: 126, argpDeg: 72, mDeg: 210 },
-      properties: { metallicity: 0.3, convectionScale: 9, flareActivity: 0.9 },
+      barycentreOf: ['Alpha Centauri A', 'Alpha Centauri B'],
+      // 8700 AU is the semi-major axis; current separation is about 13000 AU.
+      // The published periastron epoch is relative to 2017 (rounded to 1000 yr).
+      orbit: { aAU: 8700, e: 0.5, iDeg: 107.6, lanDeg: 126, argpDeg: 72.3, mDeg: -360 * 283017 / 547000 },
+      rotationHours: 83 * 24,
+      properties: { luminositySolar: 0.00155, metallicity: 0.3, convectionScale: 9, flareActivity: 0.9 },
     },
     {
       name: 'Proxima b', type: 'Planet', mass: 1.07, radiusKm: 1.03 * 6371,
       color: '#7a8b99', texture: 'rock', temperatureK: 0,
       parent: 'Proxima Centauri', onRails: true,
-      orbit: { aAU: 0.04856, e: 0.02, iDeg: 0, lanDeg: 0, argpDeg: 0, mDeg: 0 },
+      rotationHours: 11.186 * 24,
+      orbit: { aAU: 0.04856, e: 0, iDeg: 0, lanDeg: 0, argpDeg: 0, mDeg: 0 },
       properties: {
-        compositionIron: 0.3, compositionSilicates: 0.6, compositionWater: 0.1,
-        atmosphere: 0.3, isTidallyLocked: true,
+        compositionIron: 0.3, compositionSilicates: 0.7, compositionWater: 0,
+        atmosphere: 0, albedo: 0.3, isTidallyLocked: true,
       },
+    },
+    {
+      name: 'Proxima d', type: 'Planet', mass: 0.26, radiusKm: 0.7 * 6371,
+      color: '#a18b7d', texture: 'rock', parent: 'Proxima Centauri', onRails: true,
+      rotationHours: 5.122 * 24,
+      orbit: { aAU: 0.02885, e: 0, iDeg: 0, lanDeg: 0, argpDeg: 0, mDeg: 180 },
+      properties: { atmosphere: 0, albedo: 0.3, compositionIron: 0.3, compositionSilicates: 0.7, compositionWater: 0, isTidallyLocked: true },
     },
   ],
 };
 
 export const REAL_SYSTEMS: RealSystem[] = [SOLAR_SYSTEM, TRAPPIST_1, ALPHA_CENTAURI];
+
+// Horizons already expresses each satellite in the common ecliptic frame;
+// using these snapshots avoids treating a planet-equatorial inclination as ecliptic.
+for (const spec of SOLAR_SYSTEM.bodies) {
+  const elements = solarElements[spec.name as keyof typeof solarElements];
+  if (elements) spec.orbit = { aAU: elements.aAU, e: elements.e, iDeg: elements.iDeg, lanDeg: elements.lanDeg, argpDeg: elements.argpDeg, mDeg: elements.mDeg };
+  if (spec.onRails && elements) spec.rotationHours = elements.periodDays * 24;
+}
 
 export const getRealSystem = (id: string): RealSystem | undefined =>
   REAL_SYSTEMS.find((s) => s.id === id);
@@ -440,6 +462,13 @@ export const buildRealSystem = (system: RealSystem): CelestialBody[] => {
       name: spec.name,
       properties: {
         ...spec.properties,
+        presetId: system.id,
+        epochJD: system.epochJD,
+        referencePlane: system.referencePlane,
+        scienceNote: system.notes,
+        physicalCollisions: true,
+        renderRadiusScale: system.id === 'trappist-1' || spec.name.startsWith('Proxima')
+          ? (spec.type === 'Star' ? 0.08 : 0.01) : 1,
         manualRadius: true,
         manualRadiusKm: spec.radiusKm,
         rotationPeriod: spec.rotationHours !== undefined ? Math.abs(spec.rotationHours) : 24,
@@ -470,6 +499,24 @@ export const buildRealSystem = (system: RealSystem): CelestialBody[] => {
     const body = byName.get(spec.name)!;
     const parent = spec.parent ? byName.get(spec.parent) : primary;
     if (!parent) continue;
+    const centre = new THREE.Vector3();
+    const centreVelocity = new THREE.Vector3();
+    let centralMass = parent.mass;
+    if (spec.barycentreOf) {
+      centralMass = 0;
+      for (const name of spec.barycentreOf) {
+        const member = byName.get(name);
+        if (!member) throw new Error(`Unknown barycentre member ${name}`);
+        centralMass += member.mass;
+        centre.addScaledVector(member.position, member.mass);
+        centreVelocity.addScaledVector(member.velocity, member.mass);
+      }
+      centre.divideScalar(centralMass);
+      centreVelocity.divideScalar(centralMass);
+    } else {
+      centre.copy(parent.position);
+      centreVelocity.copy(parent.velocity);
+    }
 
     const a = spec.orbit.aAU !== undefined ? auToDist(spec.orbit.aAU) : kmToDist(spec.orbit.aKm!);
     const elements = elementsFromDegrees(
@@ -483,9 +530,9 @@ export const buildRealSystem = (system: RealSystem): CelestialBody[] => {
       continue;
     }
 
-    propagateOrbit(elements, gravitationalParameter(parent.mass, body.mass), 0, _pos, _vel);
-    body.position.copy(parent.position).add(_pos);
-    body.velocity.copy(parent.velocity).add(_vel);
+    propagateOrbit(elements, gravitationalParameter(centralMass, body.mass), 0, _pos, _vel);
+    body.position.copy(centre).add(_pos);
+    body.velocity.copy(centreVelocity).add(_vel);
   }
 
   // Second pass so satellites of satellites (and of bodies placed above) start
@@ -501,6 +548,12 @@ export const buildRealSystem = (system: RealSystem): CelestialBody[] => {
   }
 
   shiftToBarycentre(bodies);
+  for (const body of bodies) {
+    if (body.temperature > 0 || body.type === 'Star') continue;
+    const flux = bodies.filter(b => b.type === 'Star').reduce((sum, star) => sum
+      + (star.properties?.luminositySolar ?? 0) / distToAU(body.position.distanceTo(star.position)) ** 2, 0);
+    body.temperature = equilibriumTemperatureFromLuminosity(flux, 1, body.properties?.albedo ?? 0.3, 0);
+  }
   return bodies;
 };
 
@@ -514,6 +567,9 @@ const shiftToBarycentre = (bodies: CelestialBody[]): void => {
   const com = new THREE.Vector3();
   const mom = new THREE.Vector3();
   for (const b of bodies) {
+    // Analytical satellites exert no force, so the conserved frame is that of
+    // the integrated bodies. Their positions must still receive the same shift.
+    if (b.parentId) continue;
     totalMass += b.mass;
     com.addScaledVector(b.position, b.mass);
     mom.addScaledVector(b.velocity, b.mass);
@@ -522,9 +578,6 @@ const shiftToBarycentre = (bodies: CelestialBody[]): void => {
   com.divideScalar(totalMass);
   mom.divideScalar(totalMass);
   for (const b of bodies) {
-    // Satellites are positioned relative to their parent every frame, so only
-    // free bodies need the shift; correcting both would double-count it.
-    if (b.parentId) continue;
     b.position.sub(com);
     b.velocity.sub(mom);
   }

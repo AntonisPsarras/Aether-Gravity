@@ -27,6 +27,7 @@ import { SplashScreen } from '@capacitor/splash-screen';
 import { consumeBackPress } from './utils/backNavigation';
 import LiveHelper from './components/LiveHelper';
 import { getPhysicsBodiesSnapshot } from './utils/physicsBridge';
+import { getSimTime } from './utils/physicsSoA';
 import SettingsPanel from './components/SettingsPanel';
 import {
   enqueueUnseenHelpers, getOnboardingProgress, helperDefinition, markHelperSeen,
@@ -134,6 +135,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       version: CURRENT_WORLD_VERSION,
       bodies: serializeBodies(physicsBodies.length ? physicsBodies : state.bodies),
       settings: {
+        simTime: getSimTime(),
         speed: state.speed,
         showGrid: state.showGrid,
         showDust: state.showDust,

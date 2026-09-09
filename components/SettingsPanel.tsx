@@ -6,6 +6,9 @@ import {
 import { useStore } from '../utils/store';
 import type { UiMode } from '../utils/displayMode';
 import { realSecondsPerEarthYear } from '../utils/simRate';
+import { getRealSystem } from '../content/realSystems';
+import { presetViews } from '../utils/presetViews';
+import { useDeviceTier } from './CanvasSetup';
 import { cn } from './ui/cn';
 import { CONSERVATIVE_LOCAL_STORAGE_BYTES, getAetherStorageUsage } from '../utils/browserStorage';
 
@@ -31,7 +34,7 @@ const MODE_COPY: Record<UiMode, { title: string; blurb: string }> = {
   },
   advanced: {
     title: 'Advanced',
-    blurb: 'Deeper curvature, true relative sizes, full clock rate, and every field and body type.',
+    blurb: 'Deeper curvature, smaller display sizes, faster clock, and every field and body type. Bodies remain enlarged.',
   },
 };
 
@@ -83,6 +86,11 @@ const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, 
 );
 
 export const SettingsPanel: React.FC = () => {
+  const bodies = useStore(s => s.bodies);
+  const paused = useStore(s => s.paused);
+  const tier = useDeviceTier();
+  const presetBody = bodies.find(b => b.properties?.presetId);
+  const preset = getRealSystem(presetBody?.properties?.presetId ?? '');
   const settingsOpen = useStore((s) => s.settingsOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const uiMode = useStore((s) => s.uiMode);
@@ -104,7 +112,7 @@ export const SettingsPanel: React.FC = () => {
   if (!settingsOpen) return null;
 
   const close = () => setSettingsOpen(false);
-  const yearSeconds = realSecondsPerEarthYear(speed, uiMode);
+  const yearSeconds = realSecondsPerEarthYear(paused ? 0 : speed, uiMode, bodies, tier);
   const pace = Number.isFinite(yearSeconds)
     ? `At ${speed.toFixed(1)}x, one Earth year takes about ${Math.round(yearSeconds)} s.`
     : 'Paused — the clock is not advancing.';
@@ -199,6 +207,23 @@ export const SettingsPanel: React.FC = () => {
             />
           </Group>
 
+          {preset && <Group title="Scientific preset">
+            <div data-testid="preset-science" className="text-xs text-pulsar-white/70 p-3 space-y-3">
+              <p>Epoch JD {presetBody?.properties?.epochJD} · {presetBody?.properties?.referencePlane}</p>
+              <p>Physical distances and collisions. Bodies are enlarged; moon separations are enlarged for visibility. Both modes use the same physics. Playback slows to resolve short orbits.</p>
+              <div className="flex flex-wrap gap-2">{presetViews[preset.id]?.map(view => <button key={view} type="button" className="touch-target rounded-lg border border-white/20 px-3 py-2" onClick={() => {
+                useStore.setState(s => ({ guidedView: view, selectedId: null, cameraLockedId: null,
+                  cameraRecenterNonce: s.cameraRecenterNonce + 1, settingsOpen: false,
+                  outlinerOpen: window.innerWidth < 768 ? false : s.outlinerOpen,
+                  showGrid: view === 'Proxima planets' || view === 'Overview' ? false : s.showGrid,
+                }));
+              }}>{view}</button>)}</div>
+              <details><summary className="cursor-pointer">Sources and assumptions</summary>
+                <p className="my-2">{presetBody?.properties?.scienceNote}</p>
+                {preset.sources?.map((url, i) => <a className="block underline py-1" key={url} href={url} target="_blank" rel="noreferrer">Reference {i + 1}</a>)}
+              </details>
+            </div>
+          </Group>}
           {uiMode === 'advanced' && (
             <Group title="Analysis">
               <ToggleRow
