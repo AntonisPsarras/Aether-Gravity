@@ -25,17 +25,91 @@ test.describe('premium main menu', () => {
     expect(geometry.focused).toBe(true);
   });
 
-  test('opens the creator with the Solar System selected and exposes every origin', async ({ page }, testInfo) => {
+  test('shows the full brand name and leaves room above the mobile archive cue', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(menuUrl('low'));
+
+    await expect(page.getByRole('heading', { name: 'AETHER GRAVITY' })).toBeVisible();
+    const spacing = await page.evaluate(() => {
+      const actions = document.querySelector<HTMLElement>('.menu-hero-actions')!;
+      const cue = document.querySelector<HTMLElement>('.menu-scroll-cue')!;
+      return cue.getBoundingClientRect().top - actions.getBoundingClientRect().bottom;
+    });
+    expect(spacing).toBeGreaterThanOrEqual(16);
+  });
+
+  test('centers archive links above the footer wordmark', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(menuUrl('low'));
+    const footer = page.locator('.menu-footer');
+    await footer.scrollIntoViewIfNeeded();
+    const geometry = await footer.evaluate((element) => {
+      const nav = element.querySelector<HTMLElement>('nav')!;
+      const wordmark = element.querySelector<HTMLElement>('.menu-footer-wordmark')!;
+      const footerRect = element.getBoundingClientRect();
+      const navRect = nav.getBoundingClientRect();
+      const wordmarkRect = wordmark.getBoundingClientRect();
+      return {
+        footerCenter: footerRect.left + footerRect.width / 2,
+        navCenter: navRect.left + navRect.width / 2,
+        wordmarkCenter: wordmarkRect.left + wordmarkRect.width / 2,
+        linksAboveWordmark: navRect.bottom <= wordmarkRect.top,
+      };
+    });
+    expect(Math.abs(geometry.navCenter - geometry.footerCenter)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.wordmarkCenter - geometry.footerCenter)).toBeLessThanOrEqual(1);
+    expect(geometry.linksAboveWordmark).toBe(true);
+  });
+
+  test('keeps mobile information windows inset from the viewport edges', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(menuUrl('low'));
+    await page.locator('.menu-footer').scrollIntoViewIfNeeded();
+
+    const assertInset = async (selector: string) => {
+      const inset = await page.locator(selector).evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: window.innerWidth - rect.right };
+      });
+      expect(inset.left).toBeGreaterThanOrEqual(23);
+      expect(inset.right).toBeGreaterThanOrEqual(23);
+    };
+
+    await page.getByRole('button', { name: 'Tutorial' }).click();
+    await expect(page.getByTestId('tutorial-overlay')).toBeVisible();
+    await assertInset('.tutorial-dialog');
+    await page.getByRole('button', { name: 'Close tutorial' }).click();
+
+    await page.getByRole('button', { name: 'Privacy' }).click();
+    await expect(page.getByRole('dialog', { name: 'Privacy Policy' })).toBeVisible();
+    await assertInset('.info-modal');
+    await page.getByRole('button', { name: 'Close' }).click();
+
+    await expect(page.getByRole('button', { name: 'Credits & Support' })).toBeVisible();
+    await page.getByRole('button', { name: 'Credits & Support' }).click();
+    await expect(page.getByRole('dialog', { name: 'Aether Research' })).toBeVisible();
+    await assertInset('.info-modal');
+  });
+
+  test('opens a centered creator with Random system selected and exposes every origin', async ({ page }, testInfo) => {
     await page.goto(menuUrl());
     await expect(page.getByTestId('main-menu')).toBeVisible();
     await page.getByTestId('menu-new-universe').click();
 
     await expect(page.getByTestId('menu-composer')).toBeVisible();
-    await expect(page.getByTestId('menu-preset-solar-system')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('menu-preset-procedural')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('menu-preset-procedural')).toContainText('Random system');
     await expect(page.getByTestId('menu-preset-trappist-1')).toBeVisible();
     await expect(page.getByTestId('menu-preset-alpha-centauri')).toBeVisible();
     await expect(page.getByTestId('menu-preset-procedural')).toBeVisible();
     await expect(page.getByText('Black Hole', { exact: true })).toBeVisible();
+    const creatorGeometry = await page.getByTestId('menu-composer').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { center: rect.top + rect.height / 2, viewportCenter: window.innerHeight / 2 };
+    });
+    // The composer remains centered when it fits; on compact screens its
+    // content can be taller than the available area, so allow its safe inset.
+    expect(Math.abs(creatorGeometry.center - creatorGeometry.viewportCenter)).toBeLessThanOrEqual(40);
     await page.screenshot({ path: testInfo.outputPath('universe-creator.png'), fullPage: false });
 
     for (const id of ['trappist-1', 'alpha-centauri', 'procedural']) {
@@ -46,6 +120,15 @@ test.describe('premium main menu', () => {
 
     await page.getByRole('button', { name: 'Close universe creator' }).click();
     await expect(page.getByTestId('menu-composer')).toHaveCount(0);
+  });
+
+  test('does not lift and clip mobile origin cards on hover', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(menuUrl('low'));
+    await page.getByTestId('menu-new-universe').click();
+    const randomCard = page.getByTestId('menu-preset-procedural');
+    await randomCard.hover();
+    await expect(randomCard).toHaveCSS('transform', 'none');
   });
 
   test('creates a named preset universe and enters the simulation', async ({ page }) => {
@@ -132,6 +215,77 @@ test.describe('premium main menu', () => {
     expect(stored.folders).toEqual([]);
     expect(stored.worlds.find((world: { id: string }) => world.id === 'world-1')).not.toHaveProperty('folderId');
     expect(stored.data).not.toBeNull();
+  });
+
+  test('moves universes with the collection selector and drag gestures', async ({ page }) => {
+    await page.goto(menuUrl('low'));
+    await page.evaluate(() => {
+      localStorage.setItem('aether:worlds:folders', JSON.stringify([
+        { id: 'folder-1', name: 'Research', createdAt: 1 },
+        { id: 'folder-2', name: 'Archive', createdAt: 2 },
+      ]));
+      localStorage.setItem('aether:worlds:index', JSON.stringify([
+        { id: 'world-1', name: 'Outside', createdAt: 1, lastOpenedAt: 1 },
+        { id: 'world-2', name: 'Inside', createdAt: 2, lastOpenedAt: 2, folderId: 'folder-1' },
+      ]));
+    });
+    await page.reload();
+
+    let moveSelect = page.locator('select[aria-label="Move Outside to collection"]:visible');
+    if (await moveSelect.count() === 0) {
+      await page.getByTestId('world-card-world-1').getByRole('button', { name: 'World actions' }).click();
+      moveSelect = page.locator('select[aria-label="Move Outside to collection"]:visible');
+    }
+    await moveSelect.selectOption('folder-2');
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('aether:worlds:index') ?? '[]')
+      .find((world: { id: string }) => world.id === 'world-1')?.folderId)).toBe('folder-2');
+
+    await page.evaluate(() => {
+      const source = document.querySelector<HTMLElement>('[data-testid="world-card-world-2"] .menu-world-drag-handle');
+      const target = document.querySelector<HTMLElement>('[data-testid="independent-systems-drop-target"]');
+      if (!source || !target) throw new Error('Expected drag source and destination');
+      const dataTransfer = new DataTransfer();
+      source.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+      target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }));
+      target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+      source.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer }));
+    });
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('aether:worlds:index') ?? '[]')
+      .find((world: { id: string }) => world.id === 'world-2')?.folderId)).toBeUndefined();
+  });
+
+  test('opens mobile world actions in a sheet above the archive', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(menuUrl('low'));
+    await page.evaluate(() => {
+      localStorage.setItem('aether:worlds:folders', JSON.stringify([{ id: 'folder-1', name: 'C1', createdAt: 1 }]));
+      localStorage.setItem('aether:worlds:index', JSON.stringify([
+        { id: 'world-1', name: 'First world', createdAt: 1, lastOpenedAt: 1, folderId: 'folder-1' },
+        { id: 'world-2', name: 'Second world', createdAt: 2, lastOpenedAt: 2, folderId: 'folder-1' },
+      ]));
+    });
+    await page.reload();
+
+    await page.getByTestId('world-card-world-1').getByRole('button', { name: 'World actions' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Actions for First world' });
+    await expect(sheet).toBeVisible();
+    const layers = await sheet.evaluate((element) => ({
+      zIndex: getComputedStyle(element.parentElement!).zIndex,
+      secondCardCovered: element.getBoundingClientRect().bottom > document.querySelector('[data-testid="world-card-world-2"]')!.getBoundingClientRect().top,
+    }));
+    expect(layers.zIndex).toBe('100');
+    expect(layers.secondCardCovered).toBe(true);
+  });
+
+  test('returns to the archive after creating a collection', async ({ page }) => {
+    await page.goto(menuUrl('low'));
+    await page.getByRole('button', { name: 'New collection' }).click();
+    await page.getByLabel('Folder name').fill('Orbit studies');
+    await page.getByRole('button', { name: 'Create collection' }).click();
+
+    await expect(page.getByTestId('menu-composer')).toHaveCount(0);
+    await expect.poll(() => page.getByTestId('menu-library').evaluate((element) => element.getBoundingClientRect().top)).toBeLessThan(20);
+    await expect(page.getByText('Orbit studies', { exact: true })).toBeVisible();
   });
 
   test('shows uninstall loss guidance and blocks leaving after a failed save', async ({ page }) => {

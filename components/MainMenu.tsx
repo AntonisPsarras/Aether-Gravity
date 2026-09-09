@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
-import { Plus, Info, Sparkles, Globe2, Play, Pencil, Trash2, Check, X, Calendar, Clock, Folder, ChevronRight, ChevronDown, FolderInput, MoreVertical, Shield, ArrowDown, ArrowRight, Orbit, Dices, Rocket, Star } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Info, Sparkles, Globe2, Play, Pencil, Trash2, Check, X, Calendar, Clock, Folder, ChevronRight, ChevronDown, FolderInput, MoreVertical, Shield, ArrowDown, ArrowRight, Orbit, Dices, Rocket, Star, GripVertical } from 'lucide-react';
 import { WorldMeta, FolderMeta } from '../types';
 import { getWorldList, createWorld, deleteWorld, renameWorld, getFolderList, createFolder, deleteFolder, renameFolder, moveWorldToFolder } from '../utils/worldStorage';
 import { registerBackHandler } from '../utils/backNavigation';
@@ -51,6 +52,30 @@ const presetNameFor = (presetId?: string): string | null =>
 
 // CreditsPanel replaced by PortfolioPanel
 
+const MoveDestinationSelect: React.FC<{
+    world: WorldMeta;
+    folders: FolderMeta[];
+    onMove: (worldId: string, folderId?: string) => void;
+    onMoved?: () => void;
+    compact?: boolean;
+}> = ({ world, folders, onMove, onMoved, compact = false }) => (
+    <label className={`menu-move-select ${compact ? 'menu-move-select-compact' : ''}`}>
+        <FolderInput size={compact ? 14 : 16} aria-hidden />
+        <span className="sr-only">Move {world.name} to collection</span>
+        <select
+            aria-label={`Move ${world.name} to collection`}
+            value={world.folderId ?? ''}
+            onChange={(event) => {
+                onMove(world.id, event.currentTarget.value || undefined);
+                onMoved?.();
+            }}
+        >
+            <option value="">Independent systems</option>
+            {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+        </select>
+    </label>
+);
+
 const WorldCard: React.FC<{
     world: WorldMeta;
     folders: FolderMeta[];
@@ -58,13 +83,15 @@ const WorldCard: React.FC<{
     onRename: (id: string, name: string) => void;
     onDelete: (id: string) => void;
     onMove: (worldId: string, folderId?: string) => void;
-}> = ({ world, folders, onOpen, onRename, onDelete, onMove }) => {
+    onDragStart: (worldId: string) => void;
+    onDragEnd: () => void;
+    onTouchDragStart: (worldId: string) => void;
+    onTouchDragEnd: (clientX: number, clientY: number) => void;
+}> = ({ world, folders, onOpen, onRename, onDelete, onMove, onDragStart, onDragEnd, onTouchDragStart, onTouchDragEnd }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(world.name);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [showMoveMenu, setShowMoveMenu] = useState(false);
     const [showActionsMenu, setShowActionsMenu] = useState(false);
-    const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
     const [error, setError] = useState<string | null>(null);
 
@@ -83,27 +110,10 @@ const WorldCard: React.FC<{
     const handleConfirmDelete = () => { onDelete(world.id); setShowDeleteConfirm(false); };
 
     useEffect(() => {
-        if (!showActionsMenu) return;
-        const handlePointerDown = (event: MouseEvent) => {
-            if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
-                setShowActionsMenu(false);
-                setShowMoveMenu(false);
-            }
-        };
-        document.addEventListener('mousedown', handlePointerDown);
-        return () => document.removeEventListener('mousedown', handlePointerDown);
-    }, [showActionsMenu]);
-
-    useEffect(() => {
-        if (!showDeleteConfirm && !showActionsMenu && !showMoveMenu && !isEditing) return;
+        if (!showDeleteConfirm && !showActionsMenu && !isEditing) return;
         return registerBackHandler(() => {
             if (showDeleteConfirm) {
                 setShowDeleteConfirm(false);
-                return true;
-            }
-            if (showMoveMenu) {
-                setShowMoveMenu(false);
-                setShowActionsMenu(false);
                 return true;
             }
             if (showActionsMenu) {
@@ -116,10 +126,10 @@ const WorldCard: React.FC<{
             }
             return false;
         });
-    }, [showDeleteConfirm, showActionsMenu, showMoveMenu, isEditing]);
+    }, [showDeleteConfirm, showActionsMenu, isEditing]);
 
     return (
-        <article className="menu-world-card group relative rounded-2xl p-5">
+        <article className="menu-world-card group relative rounded-2xl p-5" data-testid={`world-card-${world.id}`}>
             {showDeleteConfirm && (
                 <div className="absolute inset-0 z-10 bg-[rgba(16,20,28,0.96)] backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 animate-in fade-in duration-200">
                     <Trash2 size={24} className="text-red-400 mb-3" />
@@ -155,11 +165,36 @@ const WorldCard: React.FC<{
                     </div>
                 </div>
                 <div className="flex shrink-0 justify-end md:w-auto">
-                    <div ref={actionsMenuRef} className="relative md:hidden">
+                    <span
+                        className="menu-world-drag-handle touch-target"
+                        draggable={!isEditing}
+                        onDragStart={(event) => {
+                            event.dataTransfer.effectAllowed = 'move';
+                            event.dataTransfer.setData('text/plain', world.id);
+                            onDragStart(world.id);
+                        }}
+                        onDragEnd={onDragEnd}
+                        onPointerDown={(event) => {
+                            if (event.pointerType !== 'mouse' && !isEditing) {
+                                event.currentTarget.setPointerCapture(event.pointerId);
+                                onTouchDragStart(world.id);
+                            }
+                        }}
+                        onPointerUp={(event) => {
+                            if (event.pointerType !== 'mouse') onTouchDragEnd(event.clientX, event.clientY);
+                        }}
+                        onPointerCancel={(event) => {
+                            if (event.pointerType !== 'mouse') onDragEnd();
+                        }}
+                        title="Drag to a collection or Independent systems"
+                        aria-label={`Drag ${world.name} to a collection or Independent systems`}
+                    >
+                        <GripVertical size={17} />
+                    </span>
+                    <div className="md:hidden">
                         <button
                             onClick={() => {
                                 setShowActionsMenu(!showActionsMenu);
-                                if (showActionsMenu) setShowMoveMenu(false);
                             }}
                             className={`touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-0 leading-none transition-colors ${showActionsMenu ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/50 hover:text-pulsar-white hover:bg-white/10'}`}
                             title="World actions"
@@ -167,65 +202,33 @@ const WorldCard: React.FC<{
                         >
                             <MoreVertical size={16} />
                         </button>
-                        {showActionsMenu && (
-                            <div className="absolute right-0 top-full mt-2 z-20 w-52 max-w-[calc(100vw-3rem)] bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
-                                <button
-                                    onClick={() => setShowMoveMenu(!showMoveMenu)}
-                                    className="touch-target w-full px-3 py-2.5 text-left text-xs text-pulsar-white/75 hover:bg-white/5 transition-colors flex items-center gap-2"
-                                >
-                                    <FolderInput size={14} /> Move to folder
-                                </button>
-                                <button
-                                    onClick={() => { setIsEditing(true); setShowActionsMenu(false); setShowMoveMenu(false); }}
-                                    className="touch-target w-full px-3 py-2.5 text-left text-xs text-pulsar-white/75 hover:bg-white/5 transition-colors flex items-center gap-2 border-t border-white/5"
-                                >
-                                    <Pencil size={14} /> Rename
-                                </button>
-                                <button
-                                    onClick={() => { setShowDeleteConfirm(true); setShowActionsMenu(false); setShowMoveMenu(false); }}
-                                    className="touch-target w-full px-3 py-2.5 text-left text-xs text-red-300 hover:bg-red-500/10 transition-colors flex items-center gap-2 border-t border-white/5"
-                                >
-                                    <Trash2 size={14} /> Delete
-                                </button>
-                                {showMoveMenu && (
-                                    <div className="border-t border-white/10 bg-white/5">
-                                        <div className="text-[10px] uppercase tracking-wider text-pulsar-white/30 px-3 py-2 border-b border-white/5">Move to...</div>
-                                        <div className="max-h-48 overflow-auto">
-                                            <button onClick={() => { onMove(world.id, undefined); setShowMoveMenu(false); setShowActionsMenu(false); }} className={`touch-target w-full px-3 py-2 text-left text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${!world.folderId ? 'text-nova-gold' : 'text-pulsar-white/60'}`}>
-                                                <Globe2 size={12} /> Uncategorized
-                                            </button>
-                                            {folders.map(f => (
-                                                <button key={f.id} onClick={() => { onMove(world.id, f.id); setShowMoveMenu(false); setShowActionsMenu(false); }} className={`touch-target w-full px-3 py-2 text-left text-xs hover:bg-white/5 transition-colors flex items-center gap-2 border-t border-white/5 ${world.folderId === f.id ? 'text-nova-gold' : 'text-pulsar-white/60'}`}>
-                                                    <Folder size={12} /> {f.name}
-                                                </button>
-                                            ))}
-                                        </div>
+                        {showActionsMenu && createPortal(
+                            <div className="menu-world-actions-backdrop" onClick={() => setShowActionsMenu(false)}>
+                                <section className="menu-world-actions-sheet" role="dialog" aria-modal="true" aria-label={`Actions for ${world.name}`} onClick={(event) => event.stopPropagation()}>
+                                    <div className="menu-world-actions-heading">
+                                        <div><span>Universe actions</span><strong>{world.name}</strong></div>
+                                        <button type="button" onClick={() => setShowActionsMenu(false)} className="touch-target" aria-label="Close world actions"><X size={18} /></button>
                                     </div>
-                                )}
-                            </div>
+                                    <div className="px-4 py-3 border-y border-white/10"><MoveDestinationSelect world={world} folders={folders} onMove={onMove} onMoved={() => setShowActionsMenu(false)} compact /></div>
+                                <button
+                                    onClick={() => { setIsEditing(true); setShowActionsMenu(false); }}
+                                    className="touch-target w-full px-4 py-3.5 text-left text-sm text-pulsar-white/75 hover:bg-white/5 transition-colors flex items-center gap-3"
+                                >
+                                    <Pencil size={16} /> Rename
+                                </button>
+                                <button
+                                    onClick={() => { setShowDeleteConfirm(true); setShowActionsMenu(false); }}
+                                    className="touch-target w-full px-4 py-3.5 text-left text-sm text-red-300 hover:bg-red-500/10 transition-colors flex items-center gap-3 border-t border-white/5"
+                                >
+                                    <Trash2 size={16} /> Delete
+                                </button>
+                                </section>
+                            </div>,
+                            document.body,
                         )}
                     </div>
                     <div className="hidden md:flex items-center gap-1 opacity-100 md:opacity-60 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity">
-                        <div className="relative">
-                            <button onClick={() => setShowMoveMenu(!showMoveMenu)} className={`touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-0 leading-none transition-colors ${showMoveMenu ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/40 hover:text-pulsar-white hover:bg-white/10'}`} title="Move to folder">
-                                <FolderInput size={16} />
-                            </button>
-                            {showMoveMenu && (
-                                <div className="absolute right-0 top-full mt-2 z-20 w-44 max-w-[calc(100vw-3rem)] bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
-                                    <div className="text-[10px] uppercase tracking-wider text-pulsar-white/30 px-3 py-2 border-b border-white/5 bg-white/5">Move to...</div>
-                                    <div className="max-h-48 overflow-auto">
-                                        <button onClick={() => { onMove(world.id, undefined); setShowMoveMenu(false); }} className={`touch-target w-full px-3 py-2 text-left text-xs hover:bg-white/5 transition-colors flex items-center gap-2 ${!world.folderId ? 'text-nova-gold' : 'text-pulsar-white/60'}`}>
-                                            <Globe2 size={12} /> Uncategorized
-                                        </button>
-                                        {folders.map(f => (
-                                            <button key={f.id} onClick={() => { onMove(world.id, f.id); setShowMoveMenu(false); }} className={`touch-target w-full px-3 py-2 text-left text-xs hover:bg-white/5 transition-colors flex items-center gap-2 border-t border-white/5 ${world.folderId === f.id ? 'text-nova-gold' : 'text-pulsar-white/60'}`}>
-                                                <Folder size={12} /> {f.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                        <MoveDestinationSelect world={world} folders={folders} onMove={onMove} compact />
                         <button onClick={() => setIsEditing(true)} aria-label={`Rename ${world.name}`} className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-0 leading-none text-slate-400 hover:text-white hover:bg-white/10 transition-colors"><Pencil size={16} /></button>
                         <button onClick={() => setShowDeleteConfirm(true)} aria-label={`Delete ${world.name}`} className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg p-0 leading-none text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={16} /></button>
                     </div>
@@ -246,7 +249,13 @@ const FolderSection: React.FC<{
     onRenameFolder: (id: string, name: string) => void;
     onDeleteFolder: (id: string) => void;
     onMoveWorld: (worldId: string, folderId?: string) => void;
-}> = ({ folder, worlds, folders, onOpen, onRenameWorld, onDeleteWorld, onRenameFolder, onDeleteFolder, onMoveWorld }) => {
+    draggedWorldId: string | null;
+    onWorldDragStart: (worldId: string) => void;
+    onWorldDragEnd: () => void;
+    onTouchDragStart: (worldId: string) => void;
+    onTouchDragEnd: (clientX: number, clientY: number) => void;
+    onDropWorld: (event: React.DragEvent<HTMLElement>, folderId?: string) => void;
+}> = ({ folder, worlds, folders, onOpen, onRenameWorld, onDeleteWorld, onRenameFolder, onDeleteFolder, onMoveWorld, draggedWorldId, onWorldDragStart, onWorldDragEnd, onTouchDragStart, onTouchDragEnd, onDropWorld }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(folder.name);
@@ -274,7 +283,13 @@ const FolderSection: React.FC<{
     }, [showDeleteConfirm]);
 
     return (
-        <div className="mb-6 relative">
+        <div
+            className={`menu-folder-drop-target mb-6 relative ${draggedWorldId ? 'is-drop-active' : ''}`}
+            data-folder-drop-id={folder.id}
+            data-testid={`folder-section-${folder.id}`}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => onDropWorld(event, folder.id)}
+        >
             {showDeleteConfirm && (
                 <div className="absolute inset-0 z-30 min-h-32 bg-[rgba(16,20,28,0.98)] backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 border border-red-500/20">
                     <Trash2 size={24} className="text-red-400 mb-3" />
@@ -351,7 +366,7 @@ const FolderSection: React.FC<{
                         <div className="md:col-span-2 py-4 text-center text-xs text-slate-600 italic">Empty folder</div>
                     ) : (
                         worlds.map(world => (
-                            <WorldCard key={world.id} world={world} folders={folders} onOpen={onOpen} onRename={onRenameWorld} onDelete={onDeleteWorld} onMove={onMoveWorld} />
+                            <WorldCard key={world.id} world={world} folders={folders} onOpen={onOpen} onRename={onRenameWorld} onDelete={onDeleteWorld} onMove={onMoveWorld} onDragStart={onWorldDragStart} onDragEnd={onWorldDragEnd} onTouchDragStart={onTouchDragStart} onTouchDragEnd={onTouchDragEnd} />
                         ))
                     )}
                 </div>
@@ -397,7 +412,9 @@ const PresetCard: React.FC<PresetCardProps> = ({ id, selected, name, subtitle, d
     </button>
 );
 
-const defaultPresetId = REAL_SYSTEMS[0]?.id ?? null;
+// A generated system is the clearest neutral starting point, so it is both
+// first in the chooser and selected when the creator opens.
+const defaultPresetId: string | null = null;
 // Decorative ribbon of everything the sim can build. Derived from the toolbar's
 // own order rather than re-typed, so adding a body type cannot leave this list
 // silently stale.
@@ -413,8 +430,11 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const [preset, setPreset] = useState<string | null>(defaultPresetId);
     const [newWorldName, setNewWorldName] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [draggedWorldId, setDraggedWorldId] = useState<string | null>(null);
+    const [moveNotice, setMoveNotice] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const libraryRef = useRef<HTMLElement | null>(null);
+    const draggedWorldRef = useRef<string | null>(null);
 
     useEffect(() => {
         setWorlds(getWorldList());
@@ -455,6 +475,9 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
             createFolder(name);
             closeCreator();
             setFolders(getFolderList());
+            // The collection composer lives in the hero. Return the user to the
+            // archive they were managing instead of leaving them at the top menu.
+            requestAnimationFrame(() => libraryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
         } catch (e: any) {
             setError(e.message);
         }
@@ -469,8 +492,34 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
         catch (e: any) { setError(e.message); }
     };
     const handleMoveWorld = (worldId: string, folderId?: string) => {
-        try { moveWorldToFolder(worldId, folderId); setWorlds(getWorldList()); setError(null); }
+        try {
+            const world = worlds.find((item) => item.id === worldId);
+            moveWorldToFolder(worldId, folderId);
+            setWorlds(getWorldList());
+            setError(null);
+            const destination = folderId ? folders.find((folder) => folder.id === folderId)?.name ?? 'collection' : 'Independent systems';
+            setMoveNotice(`${world?.name ?? 'Universe'} moved to ${destination}.`);
+        }
         catch (e: any) { setError(e.message); }
+    };
+    const handleWorldDragStart = (worldId: string) => {
+        draggedWorldRef.current = worldId;
+        setDraggedWorldId(worldId);
+    };
+    const handleWorldDragEnd = () => {
+        draggedWorldRef.current = null;
+        setDraggedWorldId(null);
+    };
+    const handleDropWorld = (event: React.DragEvent<HTMLElement>, folderId?: string) => {
+        event.preventDefault();
+        const worldId = event.dataTransfer.getData('text/plain') || draggedWorldRef.current;
+        if (worldId) handleMoveWorld(worldId, folderId);
+        handleWorldDragEnd();
+    };
+    const handleTouchDragEnd = (clientX: number, clientY: number) => {
+        const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('[data-folder-drop-id]');
+        if (draggedWorldRef.current && target) handleMoveWorld(draggedWorldRef.current, target.dataset.folderDropId || undefined);
+        handleWorldDragEnd();
     };
     const handleDelete = (id: string) => {
         try { deleteWorld(id); setWorlds(getWorldList()); setError(null); }
@@ -507,7 +556,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                         <div className="menu-brand-block">
                             <div className="menu-eyebrow"><Star size={12} fill="currentColor" /> Orbital sandbox · Local first</div>
                             <div className="menu-mark" aria-hidden><span /><Orbit size={28} /></div>
-                            <h1 className="menu-title">AETHER</h1>
+                            <h1 className="menu-title"><span>AETHER</span><span>GRAVITY</span></h1>
                             <p className="menu-kicker">Shape the impossible.</p>
                             <p className="menu-intro">Build living star systems, bend spacetime, and watch worlds find their orbit in a simulation that stays entirely yours.</p>
 
@@ -537,8 +586,19 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                                             <div><span className="menu-step-number">01</span><h2>Choose your origin</h2></div>
                                             <button onClick={closeCreator} className="menu-icon-button touch-target" aria-label="Close universe creator"><X size={18} /></button>
                                         </div>
-                                        <p className="menu-step-copy">Begin with measured celestial systems or open an unpredictable procedural frontier.</p>
+                                        <p className="menu-step-copy">Start with a fresh randomized system, or choose a measured celestial system.</p>
                                         <div className="menu-preset-grid" role="radiogroup" aria-label="Starting system">
+                                            <PresetCard
+                                                id="procedural"
+                                                selected={preset === null}
+                                                onSelect={() => setPreset(null)}
+                                                name="Random system"
+                                                subtitle="A fresh system on every launch"
+                                                description="Generate a new star and planetary family, then evolve it without a predetermined story."
+                                                meta="Randomized · Sandbox"
+                                                types={['Star', 'Planet', 'Gas Giant', 'Moon']}
+                                                procedural
+                                            />
                                             {REAL_SYSTEMS.map((system) => {
                                                 const types = Array.from(new Set(system.bodies.map((body) => body.type)));
                                                 return (
@@ -555,17 +615,6 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                                                     />
                                                 );
                                             })}
-                                            <PresetCard
-                                                id="procedural"
-                                                selected={preset === null}
-                                                onSelect={() => setPreset(null)}
-                                                name="Procedural frontier"
-                                                subtitle="A new system on every launch"
-                                                description="Start from a generated star and planetary family, then evolve it without a predetermined story."
-                                                meta="Uncharted · Sandbox"
-                                                types={['Star', 'Planet', 'Gas Giant', 'Moon']}
-                                                procedural
-                                            />
                                         </div>
 
                                         <div className="menu-launch-row">
@@ -583,7 +632,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                                                     maxLength={64}
                                                     onChange={(event) => { setNewWorldName(event.target.value); if (error) setError(null); }}
                                                     onKeyDown={(event) => { if (event.key === 'Enter') handleCreateWorld(); if (event.key === 'Escape') closeCreator(); }}
-                                                    placeholder={`${selectedSystem?.name ?? 'Uncharted'} Universe`}
+                                                    placeholder={`${selectedSystem?.name ?? 'Random System'} Universe`}
                                                     autoFocus
                                                     className={error ? 'has-error' : ''}
                                                 />
@@ -634,17 +683,30 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                             <div className="menu-empty-state"><div className="menu-empty-orbit"><Globe2 size={34} /></div><h3>Your first universe is waiting</h3><p>Launch a measured system or generate something no one has seen before.</p><button onClick={() => { openCreator(); scrollToHero(); }} className="menu-primary-button touch-target"><Sparkles size={17} /> Begin creating</button></div>
                         ) : (
                             <div className="space-y-10">
-                                {folders.map((folder) => <FolderSection key={folder.id} folder={folder} worlds={worlds.filter((world) => world.folderId === folder.id)} folders={folders} onOpen={onOpenWorld} onRenameWorld={handleRename} onDeleteWorld={handleDelete} onRenameFolder={handleRenameFolder} onDeleteFolder={handleDeleteFolder} onMoveWorld={handleMoveWorld} />)}
-                                {uncategorized.length > 0 && <div><div className="menu-collection-label"><span /> Independent systems <small>{uncategorized.length}</small></div><div className="grid gap-4 md:grid-cols-2">{uncategorized.map((world) => <WorldCard key={world.id} world={world} folders={folders} onOpen={onOpenWorld} onRename={handleRename} onDelete={handleDelete} onMove={handleMoveWorld} />)}</div></div>}
+                                {folders.map((folder) => <FolderSection key={folder.id} folder={folder} worlds={worlds.filter((world) => world.folderId === folder.id)} folders={folders} onOpen={onOpenWorld} onRenameWorld={handleRename} onDeleteWorld={handleDelete} onRenameFolder={handleRenameFolder} onDeleteFolder={handleDeleteFolder} onMoveWorld={handleMoveWorld} draggedWorldId={draggedWorldId} onWorldDragStart={handleWorldDragStart} onWorldDragEnd={handleWorldDragEnd} onTouchDragStart={handleWorldDragStart} onTouchDragEnd={handleTouchDragEnd} onDropWorld={handleDropWorld} />)}
+                                {worlds.length > 0 && (
+                                    <div
+                                        className={`menu-folder-drop-target ${draggedWorldId ? 'is-drop-active' : ''}`}
+                                        data-folder-drop-id=""
+                                        data-testid="independent-systems-drop-target"
+                                        onDragOver={(event) => event.preventDefault()}
+                                        onDrop={(event) => handleDropWorld(event, undefined)}
+                                    >
+                                        <div className="menu-collection-label"><span /> Independent systems <small>{uncategorized.length}</small>{draggedWorldId && <em>Drop here to remove from a collection</em>}</div>
+                                        <div className="grid gap-4 md:grid-cols-2">{uncategorized.length > 0 ? uncategorized.map((world) => <WorldCard key={world.id} world={world} folders={folders} onOpen={onOpenWorld} onRename={handleRename} onDelete={handleDelete} onMove={handleMoveWorld} onDragStart={handleWorldDragStart} onDragEnd={handleWorldDragEnd} onTouchDragStart={handleWorldDragStart} onTouchDragEnd={handleTouchDragEnd} />) : <div className="md:col-span-2 menu-independent-drop-copy">Drop a universe here to remove it from its collection.</div>}</div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
+                        <p className="sr-only" aria-live="polite">{moveNotice}</p>
+
                         <footer className="menu-footer">
-                            <span className="menu-footer-wordmark"><Orbit size={17} /> AETHER</span>
+                            <span className="menu-footer-wordmark"><Orbit size={17} /> AETHER GRAVITY</span>
                             <nav aria-label="Application information">
                                 <button onClick={() => setShowTutorial(true)} className="touch-target"><Sparkles size={15} /> Tutorial</button>
                                 <button onClick={() => setShowPrivacy(true)} className="touch-target"><Shield size={15} /> Privacy</button>
-                                <button onClick={() => setShowCredits(true)} className="touch-target"><Info size={15} /> Credits & support</button>
+                                <button onClick={() => setShowCredits(true)} className="touch-target"><Info size={15} /> Credits &amp; Support</button>
                             </nav>
                         </footer>
                     </div>

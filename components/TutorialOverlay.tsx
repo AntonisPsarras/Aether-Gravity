@@ -39,13 +39,13 @@ const TutorialOverlay: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ i
 
   return (
     <div
-      className="fixed inset-0 z-[200] safe-pad flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-300 p-4"
+      className="tutorial-overlay fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-300"
       role="dialog"
       aria-modal="true"
       aria-labelledby="tutorial-title"
       data-testid="tutorial-overlay"
     >
-      <div className="relative bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-2xl w-full max-w-[min(46rem,96vw)] max-h-[min(92dvh,48rem)] shadow-2xl ring-1 ring-white/5 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="tutorial-dialog relative bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-2xl w-full max-w-[min(46rem,96vw)] max-h-[min(92dvh,48rem)] shadow-2xl ring-1 ring-white/5 flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
         <div className="h-0.5 bg-white/8 w-full" aria-hidden>
           <div
             className="h-full bg-nova-gold transition-all duration-300 ease-out shadow-[0_0_8px_rgba(249,212,35,0.4)]"
