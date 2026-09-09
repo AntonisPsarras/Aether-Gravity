@@ -30,13 +30,22 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
   return (
     <>
       <div className={`fixed z-20 pointer-events-none transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] creation-toolbar-anchor flex flex-col items-center justify-end pt-2 ${mobileHidden ? 'translate-y-[120%]' : 'translate-y-0'}`}>
-        <div data-testid="creation-toolbar" className="pointer-events-auto w-auto max-w-full overflow-x-auto overscroll-x-contain touch-pan-x scrollbar-hide rounded-full">
-          <div className={`bg-[rgba(45,51,64,0.6)] backdrop-blur-xl border border-white/10 rounded-full shadow-2xl flex flex-row flex-nowrap items-center gap-0 ring-1 ring-white/5 ag-fade-in transition-[padding,width,min-width,height] duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded ? 'w-max min-w-0 py-1.5 pl-3 pr-3 justify-start' : 'w-[4.25rem] h-[4.25rem] min-w-0 p-3 justify-center'} md:w-max md:h-auto md:min-w-0 md:py-1.5 md:pl-3 md:pr-3 md:justify-start`}>
-            <button onClick={() => setIsExpanded(!isExpanded)} className="touch-target rounded-full bg-white/5 text-slate-400 hover:text-white active:scale-90 transition-transform md:hidden shrink-0 h-11 w-11 flex items-center justify-center">
+        <div
+          data-testid="creation-toolbar"
+          data-expanded={isExpanded}
+          className="creation-toolbar-surface pointer-events-auto max-w-full overflow-x-auto overscroll-x-contain touch-pan-x scrollbar-hide rounded-full bg-[rgba(45,51,64,0.6)] backdrop-blur-xl border border-white/10 shadow-2xl ring-1 ring-white/5 ag-fade-in md:w-max md:h-auto md:py-1.5 md:pl-3 md:pr-3"
+        >
+          <div className="creation-toolbar-row flex flex-row flex-nowrap items-center gap-0">
+            <button
+              onClick={() => setIsExpanded((expanded) => !expanded)}
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? 'Collapse creation toolbar' : 'Expand creation toolbar'}
+              className="touch-target rounded-full bg-white/5 text-slate-400 hover:text-white active:scale-90 transition-transform md:hidden shrink-0 h-11 w-11 flex items-center justify-center"
+            >
               {isExpanded ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
             </button>
             <div
-              className={`flex flex-row flex-nowrap items-center justify-evenly gap-0 overflow-hidden transition-[max-width,opacity,margin] duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded ? 'max-w-[80rem] opacity-100 ml-0' : 'max-w-0 opacity-0 ml-0 pointer-events-none'} md:max-w-[80rem] md:opacity-100 md:pointer-events-auto`}
+              className="creation-toolbar-tools flex flex-row flex-nowrap items-center justify-evenly gap-0 overflow-hidden md:max-w-[80rem] md:opacity-100 md:pointer-events-auto"
             >
             <button
               onClick={() => setMode(null)}

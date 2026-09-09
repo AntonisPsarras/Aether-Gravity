@@ -53,14 +53,12 @@
     var(--creation-toolbar-bottom-pad) + var(--creation-toolbar-height) + 0.5rem
   );
 
-  /* ── Docked rails (desktop ≥1280 only) ──────────────────────────────────
-     Both offsets default to 0px so a typo in a consumer degrades to today's
-     full-bleed layout rather than to an invalid `left:` declaration. They are
-     promoted to their real widths only by the `.sim-shell.rail-*-open` rules
-     inside the ≥1280 block below. */
+  /* ── Desktop reserved panel space (≥1280 only) ──────────────────────────
+     The inspector reserves space on the right. The outliner deliberately does
+     not: it expands as a top-left overlay so opening it never reallocates the
+     WebGL viewport or makes the simulated world jump horizontally. */
   --rail-left:    0px;
   --rail-right:   0px;
-  --rail-left-w:  18rem;   /* universe outliner */
   --rail-right-w: 22rem;   /* inspector — matches the old md:w-[min(22rem,92vw)] */
 
   /* ── Phone bottom-sheet detents ─────────────────────────────────────────
@@ -171,6 +169,57 @@ canvas {
 .creation-toolbar-anchor > div {
   transform: scale(var(--hud-scale));
   transform-origin: bottom center;
+}
+
+/* The mobile creation toolbar has a real, interpolable viewport width instead
+   of animating between `max-content` and a fixed width. Its tools fade and
+   travel in just after the surface starts opening, so the horizontal scroll
+   strip feels like a single controlled motion rather than a sudden reflow. */
+@media (max-width: 767px) {
+  .creation-toolbar-surface {
+    width: 4.25rem;
+    height: 4.25rem;
+    padding: 0.75rem;
+    transition:
+      width 420ms var(--ease-panel),
+      padding 420ms var(--ease-panel),
+      box-shadow 200ms ease;
+  }
+
+  .creation-toolbar-surface[data-expanded='true'] {
+    width: min(42rem, calc(100vw - 1.5rem - var(--safe-left) - var(--safe-right)));
+    height: 4.75rem;
+    padding: 0.375rem 0.75rem;
+  }
+
+  .creation-toolbar-row {
+    width: max-content;
+    height: 100%;
+    min-height: 2.75rem;
+    align-items: center;
+  }
+
+  .creation-toolbar-tools {
+    max-width: 0;
+    margin-left: 0;
+    opacity: 0;
+    transform: translateX(-0.625rem);
+    pointer-events: none;
+    transition:
+      max-width 320ms var(--ease-panel),
+      margin-left 260ms var(--ease-panel),
+      opacity 140ms ease,
+      transform 260ms var(--ease-panel);
+  }
+
+  .creation-toolbar-surface[data-expanded='true'] .creation-toolbar-tools {
+    max-width: 80rem;
+    margin-left: 0.5rem;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 50ms, 70ms, 100ms, 70ms;
+  }
 }
 
 .control-bar-hint {
@@ -1323,11 +1372,11 @@ html[data-reduced-motion='true'] *::after {
   scroll-behavior: auto !important;
 }
 
-/* ─── Docked rails (desktop only) ────────────────────────────────────────────
-   The canvas wrapper reads --rail-left / --rail-right directly, so opening a
-   rail insets the WebGL surface instead of covering it. The wrapper must NOT
-   transition those offsets: each change reallocates the framebuffer, so it has
-   to happen once per toggle rather than once per animation frame.
+/* ─── Desktop panel viewport policy ──────────────────────────────────────────
+   The canvas wrapper reads --rail-right directly for the docked inspector. The
+   outliner never changes its viewport offsets: it is a floating overlay. The
+   wrapper must NOT transition offsets, because an inspector change reallocates
+   the framebuffer and needs to happen once per toggle rather than per frame.
 ────────────────────────────────────────────────────────────────────────────── */
 .canvas-viewport {
   transition: none !important;
@@ -1335,53 +1384,37 @@ html[data-reduced-motion='true'] *::after {
 
 @media (min-width: 1280px) {
   .sim-shell.rail-right-open { --rail-right: var(--rail-right-w); }
-  .sim-shell.rail-left-open  { --rail-left:  var(--rail-left-w);  }
 
-  /* Rails are laid out in real space, so the --hud-scale transform that the
-     floating phone/tablet HUD needs would only blur them. Dropping it here is
-     safe *because* the .touch-target compensation rule that pairs with that
-     transform is itself nested inside @media (max-width: 767px) — the two can
-     never disagree. Move one and you must move the other. */
+  /* These desktop surfaces are laid out in real space, so the --hud-scale
+     transform that the floating phone/tablet HUD needs would only blur them.
+     Dropping it here is safe because the .touch-target compensation rule that
+     pairs with that transform is nested inside @media (max-width: 767px). */
   .inspector-panel-anchor,
   .universe-outliner-anchor {
     transform: none;
   }
 
-  /* Closed outliner is a compact, independently legible card. Opening it
-     grows the same surface into the docked rail, while App reserves canvas
-     width in one state update rather than resizing WebGL each animation frame. */
+  /* Keep the desktop outliner at the same top edge as the simulation toolbar.
+     Its responsive card width leaves enough room for the complete label and
+     metadata, and its expansion only changes height. This avoids the former
+     rail transition, which resized the WebGL viewport and made the world jump. */
   .universe-outliner-anchor {
-    top: max(1rem, var(--safe-top));
+    top: var(--control-bar-top);
     bottom: auto;
     left: max(1rem, var(--safe-left));
-    width: 16rem;
-    max-width: 16rem;
+    width: clamp(19rem, 22vw, 22rem);
+    max-width: calc(100vw - max(2rem, var(--safe-left) + var(--safe-right)));
     height: 3.75rem;
     max-height: none;
     border-radius: 0.75rem;
     transition:
-      top var(--dur-rail) var(--ease-panel),
-      left var(--dur-rail) var(--ease-panel),
-      width var(--dur-rail) var(--ease-panel),
-      max-width var(--dur-rail) var(--ease-panel),
       height var(--dur-rail) var(--ease-panel),
       border-radius var(--dur-rail) var(--ease-panel),
-      border-width var(--dur-rail) var(--ease-panel),
-      border-color var(--dur-rail) var(--ease-panel),
       box-shadow var(--dur-rail) var(--ease-panel);
   }
 
   .universe-outliner-anchor.is-expanded {
-    top: 0;
-    left: 0;
-    width: var(--rail-left-w);
-    max-width: var(--rail-left-w);
-    height: 100dvh;
-    border-radius: 0;
-    border-left-width: 0;
-    border-top-width: 0;
-    border-bottom-width: 0;
-    box-shadow: none;
+    height: min(44rem, calc(100dvh - var(--control-bar-top) - 1rem));
   }
 
   .universe-outliner-toggle {

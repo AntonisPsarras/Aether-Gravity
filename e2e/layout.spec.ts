@@ -49,16 +49,22 @@ test.describe('layout tiers', () => {
 test.describe('desktop rails', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) < DESKTOP_MIN, 'desktop only');
 
-  test('animates the outliner between a compact card and docked rail', async ({ page }) => {
+  test('expands the outliner in place without shifting the simulation viewport', async ({ page }) => {
     const outliner = page.getByTestId('outliner-panel');
     const dock = page.getByTestId('creation-toolbar');
     const canvas = page.locator('.canvas-viewport');
     const toggle = page.getByRole('button', { name: /Universe Outliner/ });
     const expanded = (await outliner.boundingBox())!;
 
-    expect(expanded.x).toBeCloseTo(0, 0);
-    expect(expanded.y).toBeCloseTo(0, 0);
-    expect(expanded.width).toBeCloseTo(18 * 16, 0);
+    const toolbar = page.getByTestId('control-bar');
+    const canvasBefore = (await canvas.boundingBox())!;
+    const toolbarBox = (await toolbar.boundingBox())!;
+
+    expect(expanded.x).toBeCloseTo(16, 0);
+    expect(expanded.y).toBeCloseTo(toolbarBox.y, 0);
+    expect(expanded.width).toBeGreaterThanOrEqual(19 * 16);
+    const title = outliner.locator('.universe-outliner-toggle .truncate');
+    await expect(title).toHaveJSProperty('scrollWidth', await title.evaluate((element) => element.clientWidth));
 
     await toggle.click();
     await expect(outliner).toHaveAttribute('data-open', 'false');
@@ -68,18 +74,20 @@ test.describe('desktop rails', () => {
     ));
     const collapsed = (await outliner.boundingBox())!;
     expect(collapsed.x).toBeCloseTo(16, 0);
-    expect(collapsed.y).toBeCloseTo(16, 0);
-    expect(collapsed.width).toBeCloseTo(16 * 16, 0);
+    expect(collapsed.y).toBeCloseTo(expanded.y, 0);
+    expect(collapsed.width).toBeCloseTo(expanded.width, 0);
     expect(collapsed.height).toBeCloseTo(3.75 * 16, 0);
     expect(await outliner.evaluate((element) => getComputedStyle(element).borderTopLeftRadius))
       .not.toBe('0px');
 
-    // Reserving the rail is an immediate canvas layout change; only the panel
-    // surface animates so WebGL does not reallocate a framebuffer each frame.
+    // Hovering only tints the header; it must not revive the old rail geometry.
+    await toggle.hover();
+    expect((await outliner.boundingBox())!).toEqual(collapsed);
+
     await toggle.click();
     await expect(outliner).toHaveAttribute('data-open', 'true');
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect((await canvas.boundingBox())!.x).toBeCloseTo(18 * 16, 0);
+    expect((await canvas.boundingBox())!).toEqual(canvasBefore);
     await outliner.evaluate((element) => Promise.all(
       element.getAnimations({ subtree: true }).map((animation) => animation.finished),
     ));
@@ -87,6 +95,7 @@ test.describe('desktop rails', () => {
     expect(restored.x).toBeCloseTo(expanded.x, 0);
     expect(restored.y).toBeCloseTo(expanded.y, 0);
     expect(restored.width).toBeCloseTo(expanded.width, 0);
+    expect(restored.height).toBeCloseTo(expanded.height, 0);
 
     // The body remains interactive after reopening, rather than being removed
     // before its close transition completes.
@@ -95,8 +104,7 @@ test.describe('desktop rails', () => {
     await firstRow.click();
     await expect(firstRow).toHaveAttribute('data-selected', 'true');
 
-    // Verify the horizontal dock uses the free canvas centre, not the full
-    // viewport centre hidden underneath the left rail.
+    // Verify the horizontal dock stays centred in the visible canvas area.
     const dockBox = (await dock.boundingBox())!;
     const canvasBox = (await canvas.boundingBox())!;
     expect(dockBox.x).toBeGreaterThanOrEqual(canvasBox.x);
@@ -152,6 +160,38 @@ test.describe('desktop rails', () => {
 
 test.describe('phone bottom sheet', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) > PHONE_MAX, 'phone only');
+
+  test('animates the creation toolbar through a sized viewport', async ({ page }) => {
+    const outliner = page.getByTestId('outliner-panel');
+    if (await outliner.getAttribute('data-open') === 'true') {
+      await page.getByRole('button', { name: /Universe Outliner/ }).click();
+      await page.waitForTimeout(550); // creation toolbar re-enters after the sheet closes
+    }
+
+    const toolbar = page.getByTestId('creation-toolbar');
+    const toggle = page.getByRole('button', { name: 'Collapse creation toolbar' });
+    const open = (await toolbar.boundingBox())!;
+    const toggleBox = (await toggle.boundingBox())!;
+
+    await expect(toolbar).toHaveAttribute('data-expanded', 'true');
+    expect(await toolbar.evaluate((element) => getComputedStyle(element).transitionProperty))
+      .toContain('width');
+    expect(open.height).toBeCloseTo(4.75 * 16, 0);
+    expect(toggleBox.y - open.y)
+      .toBeCloseTo(open.y + open.height - (toggleBox.y + toggleBox.height), 0);
+
+    await toggle.click();
+    await expect(toolbar).toHaveAttribute('data-expanded', 'false');
+    await page.waitForTimeout(500);
+    const collapsed = (await toolbar.boundingBox())!;
+    expect(collapsed.width).toBeCloseTo(4.25 * 16, 0);
+    expect(collapsed.width).toBeLessThan(open.width);
+
+    await page.getByRole('button', { name: 'Expand creation toolbar' }).click();
+    await expect(toolbar).toHaveAttribute('data-expanded', 'true');
+    await page.waitForTimeout(500);
+    expect((await toolbar.boundingBox())!.width).toBeCloseTo(open.width, 0);
+  });
 
   test('reclaims the hidden creation dock space while the outliner is open', async ({ page }) => {
     const outliner = page.getByTestId('outliner-panel');
