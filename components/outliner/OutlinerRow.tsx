@@ -55,6 +55,8 @@ const OutlinerRowImpl: React.FC<OutlinerRowProps> = ({
       )}
       style={flat ? undefined : { paddingLeft: `${depth * 16 + 8}px` }}
       onPointerDown={gesture.onPointerDown}
+      // Drops the pending long press once the hold turns into a list scroll.
+      onPointerMove={gesture.onPointerMove}
       onPointerUp={gesture.onPointerUp}
       onPointerCancel={gesture.onPointerCancel}
     >

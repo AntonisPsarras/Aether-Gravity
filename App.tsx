@@ -421,8 +421,29 @@ const App: React.FC = () => {
     const initMobile = async () => {
       if (Capacitor.isNativePlatform()) {
         try {
-          // Configure status bar
+          /**
+           * Lay the WebView out behind the status bar.
+           *
+           * This is what makes `env(safe-area-inset-*)` — and therefore the
+           * --safe-* variables the whole HUD is positioned against — report
+           * anything at all. It pairs with the SHORT_EDGES cutout mode set in
+           * MainActivity.java; on targetSdk 36 edge-to-edge is force-enabled
+           * anyway, so declaring it here is the honest description of what the
+           * window is already doing. Must come before setStyle: some OEM builds
+           * clobber the style when the overlay flag flips after it.
+           *
+           * Caveat that the CSS depends on: Chromium derives the insets from the
+           * display *cutout*, not from the system bars. A notchless phone reports
+           * --safe-top: 0 while its status bar still overlays us, and
+           * --safe-bottom is 0 even with a gesture bar. The max(..., floor)
+           * fallbacks in index.css cover those cases and are not optional.
+           */
+          await StatusBar.setOverlaysWebView({ overlay: true });
+
           await StatusBar.setStyle({ style: Style.Dark });
+          // No-op under overlay:true on targetSdk 36 (edge-to-edge ignores the
+          // status-bar colour). Kept, and kept consistent with the theme-color
+          // meta and capacitor.config.ts, for any future non-overlay path.
           await StatusBar.setBackgroundColor({ color: '#10141C' });
 
           // Hide splash screen after app is ready

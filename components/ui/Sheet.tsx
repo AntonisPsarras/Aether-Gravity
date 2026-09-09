@@ -26,8 +26,18 @@ export function detentHeight(detent: SheetDetent, vh: number): number {
 /** Fling speed above which the drag direction, not the position, picks the detent. */
 const FLING_PX_PER_MS = 0.5;
 
+/**
+ * The same quantity the CSS detents are written against.
+ *
+ * `--sheet-peek/half/full` are `dvh` — the *dynamic* viewport, which shrinks
+ * while Android's system bars are showing. `window.innerHeight` is the *large*
+ * viewport and does not, so the drag math and the CSS resting heights computed
+ * different pixel values for the same detent and releasing a drag made the
+ * sheet jump. `visualViewport.height` is the closest JS equivalent to `dvh`.
+ */
 function viewportHeight(): number {
-  return typeof window === 'undefined' ? 800 : window.innerHeight;
+  if (typeof window === 'undefined') return 800;
+  return window.visualViewport?.height ?? window.innerHeight;
 }
 
 /** Detent whose height is closest to `height` pixels. */
@@ -81,10 +91,28 @@ export function useBottomSheet({
 }) {
   const reducedMotion = useReducedMotion();
   const [dragHeight, setDragHeight] = useState<number | null>(null);
-  const drag = useRef({ active: false, startY: 0, startHeight: 0, lastY: 0, lastT: 0, velocity: 0 });
+  // `vh` is captured once per drag rather than re-read on every move. Each of
+  // the three call sites used to sample it independently, so a viewport change
+  // mid-drag silently moved the target geometry — and `visualViewport.height`
+  // also shrinks when the software keyboard opens over an inspector field.
+  const drag = useRef({ active: false, startY: 0, startHeight: 0, lastY: 0, lastT: 0, velocity: 0, vh: 0 });
 
   // A detent change from elsewhere (the back handler, say) must cancel a drag.
   useEffect(() => { if (!enabled) setDragHeight(null); }, [enabled]);
+
+  // A viewport change mid-drag is rare; abandoning is more predictable than
+  // trying to re-map an in-flight drag onto new geometry.
+  useEffect(() => {
+    const vv = typeof window === 'undefined' ? null : window.visualViewport;
+    if (!vv) return;
+    const abort = () => {
+      if (!drag.current.active) return;
+      drag.current.active = false;
+      setDragHeight(null);
+    };
+    vv.addEventListener('resize', abort);
+    return () => vv.removeEventListener('resize', abort);
+  }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (!enabled) return;
@@ -99,6 +127,7 @@ export function useBottomSheet({
       lastY: e.clientY,
       lastT: performance.now(),
       velocity: 0,
+      vh,
     };
     setDragHeight(drag.current.startHeight);
   }, [enabled, detent]);
@@ -111,7 +140,7 @@ export function useBottomSheet({
     drag.current.lastY = e.clientY;
     drag.current.lastT = now;
 
-    const vh = viewportHeight();
+    const vh = drag.current.vh;
     // Dragging down shrinks the sheet. A little rubber-band above `full`.
     const raw = drag.current.startHeight - (e.clientY - drag.current.startY);
     const max = detentHeight('full', vh);
@@ -125,7 +154,7 @@ export function useBottomSheet({
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     const height = dragHeight ?? drag.current.startHeight;
-    const vh = viewportHeight();
+    const vh = drag.current.vh;
     setDragHeight(null);
 
     // Dragged well below the smallest detent: dismiss.

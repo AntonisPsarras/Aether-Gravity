@@ -319,6 +319,76 @@ test.describe('phone bottom sheet', () => {
   });
 });
 
+test.describe('phone HUD clearances', () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) > PHONE_MAX, 'phone only');
+
+  /** Resolved pixel value of a :root custom property. */
+  async function cssVarPx(page: Page, name: string): Promise<number> {
+    return page.evaluate((prop) => {
+      const probe = document.createElement('div');
+      probe.style.position = 'absolute';
+      probe.style.visibility = 'hidden';
+      probe.style.height = `var(${prop})`;
+      document.body.appendChild(probe);
+      const value = probe.getBoundingClientRect().height;
+      probe.remove();
+      return value;
+    }, name);
+  }
+
+  test('reserves at least as much space as the control bar actually occupies', async ({ page }) => {
+    // The constant is a clearance other panels are positioned against, so the
+    // invariant — not the exact number — is what must hold. Catches drift in
+    // either direction if the bar's padding or icon sizes change.
+    const reserved = await cssVarPx(page, '--control-bar-mobile-height');
+    const actual = (await page.getByTestId('control-bar').boundingBox())!.height;
+    expect(actual).toBeGreaterThan(0);
+    expect(actual).toBeLessThanOrEqual(reserved);
+  });
+
+  test('reserves at least as much space as the creation toolbar occupies', async ({ page }) => {
+    const reserved = await cssVarPx(page, '--creation-toolbar-height');
+    const actual = (await page.getByTestId('creation-toolbar').boundingBox())!.height;
+    expect(actual).toBeGreaterThan(0);
+    // The anchor adds pt-2 (8px) above the surface; the constant covers both.
+    expect(actual + 8).toBeLessThanOrEqual(reserved);
+  });
+
+  test('keeps the control bar clear of a status bar when env() reports no inset', async ({ page }) => {
+    // The notchless-Android case. Chromium derives safe-area insets from the
+    // display cutout, so a phone with no cutout reports --safe-top: 0 even
+    // though the WebView draws under a ~24dp status bar. The floor in the
+    // phone :root override is the only thing holding the bar off it.
+    await page.addStyleTag({ content: ':root { --safe-top: 0px; }' });
+    const box = (await page.getByTestId('control-bar').boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(36);
+  });
+
+  test('gives the dense outliner chrome a 44px hit area', async ({ page }) => {
+    // .touch-expand grows a ::before, not the box, so boundingBox() is blind to
+    // it — probe the corners of the intended 44px square with elementFromPoint.
+    const misses = await page.evaluate(() => {
+      const bad: string[] = [];
+      const REQUIRED = 43.5;
+      for (const el of Array.from(document.querySelectorAll('.touch-expand'))) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        const cx = r.x + r.width / 2;
+        const cy = r.y + r.height / 2;
+        const half = REQUIRED / 2;
+        for (const [dx, dy] of [[-half, 0], [half, 0], [0, -half], [0, half]]) {
+          const hit = document.elementFromPoint(cx + dx, cy + dy);
+          if (!hit || (hit !== el && !el.contains(hit))) {
+            bad.push(`${el.tagName}.${el.className.toString().slice(0, 30)} @${dx},${dy}`);
+          }
+        }
+      }
+      return bad;
+    });
+    expect(misses).toEqual([]);
+  });
+});
+
 test.describe('outliner', () => {
   test('filters rows by search query', async ({ page }) => {
     const rows = page.locator('[data-testid^="outliner-row-"]');

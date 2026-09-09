@@ -1,6 +1,25 @@
 import { useCallback } from 'react';
 import { useStore } from '../../utils/store';
 import type { BodyGestureKind } from '../../utils/bodyPointerGesture';
+import { detectIsTouch } from '../CanvasSetup';
+
+/**
+ * Short haptic tick confirming a long press landed.
+ *
+ * Web Vibration API — no new dependency, present in Android WebView, silently
+ * absent on iOS and desktop. It lives here rather than in the gesture
+ * controller so that module stays side-effect-free (and node-testable), and so
+ * the outliner rows get the same confirmation for free.
+ */
+function pulseLongPress(): void {
+  if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+  if (!detectIsTouch()) return;
+  try {
+    navigator.vibrate(12);
+  } catch {
+    // Blocked by a permissions policy or an OEM build — feedback is optional.
+  }
+}
 
 /**
  * Maps a tap / long-press on a body to selection and inspector state.
@@ -21,6 +40,7 @@ export function useBodySelectionGesture(): (id: string, kind: BodyGestureKind) =
 
   return useCallback((id: string, kind: BodyGestureKind) => {
     if (kind === 'longPress') {
+      pulseLongPress();
       selectBody(id);
       openInspector(id);
       return;

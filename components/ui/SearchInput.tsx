@@ -54,14 +54,14 @@ export const SearchInput: React.FC<{
           if (e.key === 'Escape') clear();
         }}
         onChange={(e) => push(e.target.value)}
-        className="w-full bg-black/40 border border-white/10 rounded-lg pl-7 pr-8 py-1.5 text-xs text-pulsar-white placeholder:text-pulsar-white/25 focus:outline-none focus:border-nova-gold/40"
+        className="w-full max-md:min-h-[2.75rem] bg-black/40 border border-white/10 rounded-lg pl-7 pr-8 py-1.5 text-xs text-pulsar-white placeholder:text-pulsar-white/25 focus:outline-none focus:border-nova-gold/40"
       />
       {draft && (
         <button
           type="button"
           onClick={clear}
           aria-label="Clear search"
-          className="absolute right-1 flex h-6 w-6 items-center justify-center rounded text-pulsar-white/40 hover:text-pulsar-white hover:bg-white/10 transition-colors"
+          className="touch-expand absolute right-1 flex h-6 w-6 items-center justify-center rounded text-pulsar-white/40 hover:text-pulsar-white hover:bg-white/10 transition-colors"
         >
           <X size={12} />
         </button>

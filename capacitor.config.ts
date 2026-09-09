@@ -11,6 +11,9 @@ const config: CapacitorConfig = {
         SplashScreen: {
             launchShowDuration: 2000,
             launchAutoHide: true,
+            // Deliberately NOT the status-bar / theme colour below. This matches
+            // the WebGL scene clear colour in SpaceCanvas, so the splash → canvas
+            // handoff has no flash. The two greys differ on purpose.
             backgroundColor: "#050505",
             androidSplashResourceName: "splash",
             androidScaleType: "CENTER_CROP",
@@ -23,7 +26,9 @@ const config: CapacitorConfig = {
         },
         StatusBar: {
             style: 'DARK',
-            backgroundColor: '#050505',
+            // Void Navy — the single canonical chrome colour, matching the
+            // theme-color meta in index.html and the runtime call in App.tsx.
+            backgroundColor: '#10141C',
         },
         Keyboard: {
             resize: 'body',

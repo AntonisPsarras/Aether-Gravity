@@ -19,7 +19,9 @@ export const FilterChip: React.FC<{
     data-testid={testId}
     data-active={active ? 'true' : 'false'}
     className={cn(
-      'shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-colors',
+      // touch-expand, not touch-target: a 44px-tall pill around 9px text reads
+      // as a button that lost its label. The hit area grows, the pill does not.
+      'touch-expand shrink-0 px-2 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border transition-colors',
       active
         ? 'bg-nova-gold/20 text-nova-gold border-nova-gold/30'
         : 'bg-white/5 text-pulsar-white/40 border-white/10 hover:text-pulsar-white/70 hover:bg-white/10',

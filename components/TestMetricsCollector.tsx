@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../utils/store';
 import { isE2EMode } from '../utils/e2eConfig';
+import { getRenderSnapshot } from '../utils/renderBridge';
 import {
   markTestBridgeCanvasReady,
   recordTestFrame,
@@ -78,6 +79,33 @@ export default function TestMetricsCollector(): null {
         camera.position.x += 60000;
         const orbit = controls as unknown as { target?: THREE.Vector3 } | null;
         if (orbit?.target) orbit.target.x += 60000;
+      },
+      /** Lets a gesture test assert the camera actually rotated. */
+      getCameraPosition: () => ({
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      }),
+      /**
+       * Client coordinates of a body's centre, so a test can drive real pointer
+       * events at the 3D hitbox instead of going through the outliner. Body
+       * groups are direct children of the scene, so their render-space position
+       * is their world position.
+       */
+      projectBodyToScreen: (bodyId: string) => {
+        const rendered = getRenderSnapshot().bodies.find((b) => b.id === bodyId);
+        if (!rendered) return null;
+        const ndc = new THREE.Vector3(
+          rendered.position.x,
+          rendered.position.y,
+          rendered.position.z,
+        ).project(camera);
+        if (!Number.isFinite(ndc.x) || !Number.isFinite(ndc.y) || ndc.z > 1) return null;
+        const rect = gl.domElement.getBoundingClientRect();
+        return {
+          x: rect.left + (ndc.x * 0.5 + 0.5) * rect.width,
+          y: rect.top + (-ndc.y * 0.5 + 0.5) * rect.height,
+        };
       },
     };
     (window as any).__AETHER_VISUAL_TEST__ = fixtureControls;

@@ -67,9 +67,15 @@ import {
 } from '../utils/testBridge';
 import {
   cancelAllBodyPointerGestures,
+  hasActiveBodyPointerGesture,
   useBodyPointerGesture,
+  wasBodyGestureJustReleased,
   type BodyGestureKind,
 } from '../utils/bodyPointerGesture';
+import {
+  clampHitRadiusToCone,
+  screenSpaceHitScale,
+} from '../utils/hitTarget';
 import { createRafScheduler, deferDoubleFrame } from '../utils/deferFrames';
 import {
   RendererConfig,
@@ -87,6 +93,9 @@ const NO_RAYCAST: THREE.Object3D['raycast'] = () => null;
 
 /** Default mesh raycast — use explicitly when toggling back from NO_RAYCAST (undefined does not restore). */
 const MESH_RAYCAST: THREE.Object3D['raycast'] = THREE.Mesh.prototype.raycast;
+
+/** Radial padding on the invisible pick sphere, in multiples of the visual radius. */
+const HITBOX_RADIUS_FACTOR = 1.5;
 
 /** Hard cap on simultaneously simulated bodies. Prevents O(N²) blow-up. */
 const MAX_BODIES = PHYSICS_LIMITS.MAX_BODIES;
@@ -489,6 +498,13 @@ function isOrbitControlsLike(controls: unknown): controls is OrbitControlsLike {
   if (controls == null || typeof controls !== 'object') return false;
   const c = controls as OrbitControlsLike;
   return c.target instanceof THREE.Vector3 && typeof c.update === 'function' && typeof c.enabled === 'boolean';
+}
+
+/** Shared by ObjectCreator's slingshot drag and BodyMesh's long-press interlock. */
+function setOrbitControlsEnabled(controls: unknown, enabled: boolean): void {
+  if (isOrbitControlsLike(controls)) {
+    controls.enabled = enabled;
+  }
 }
 
 /**
@@ -1364,17 +1380,11 @@ const ObjectCreator: React.FC<{
     return rayHit.current;
   };
 
-  const setOrbitControlsEnabled = (enabled: boolean) => {
-    if (isOrbitControlsLike(controls)) {
-      controls.enabled = enabled;
-    }
-  };
-
   const endDrag = () => {
     isDraggingRef.current = false;
     dragRef.current.active = false;
     onDragActiveChange(false);
-    setOrbitControlsEnabled(true);
+    setOrbitControlsEnabled(controls, true);
   };
 
   const releasePointerCapture = (e: ThreeEvent<PointerEvent>) => {
@@ -1397,7 +1407,7 @@ const ObjectCreator: React.FC<{
     event.stopPropagation();
     gl.domElement.setPointerCapture(event.pointerId);
 
-    setOrbitControlsEnabled(false);
+    setOrbitControlsEnabled(controls, false);
     isDraggingRef.current = true;
     onDragActiveChange(true);
 
@@ -1737,7 +1747,15 @@ const BodyMesh = React.memo(({
   const environment = useEnvironment();
   const haloRef = useRef<THREE.Mesh>(null);
   const stellarSelectionRingRef = useRef<THREE.Mesh>(null);
-  const { camera, size: viewportSize } = useThree();
+  const { camera, size: viewportSize, controls } = useThree();
+  const hitboxRef = useRef<THREE.Mesh>(null);
+  /**
+   * Only touch input needs the screen-space pick floor — a mouse is precise and
+   * enlarging targets for it would only make dense systems ambiguous.
+   * `detectIsTouch()` honours `?e2e=1&touch=1`, which is how the gesture spec
+   * opts in. Skipped in creation mode, where the hitbox is NO_RAYCAST anyway.
+   */
+  const touchHitTargets = detectIsTouch() && !creationMode;
   // Narrow selector: re-renders this mesh only when the mode itself flips.
   const uiMode = useStore((s) => s.uiMode);
   const localScratch = useRef({
@@ -1900,17 +1918,65 @@ const BodyMesh = React.memo(({
   /** Stable per-body azimuth so tilted worlds do not all lean the same way. */
   const tiltAzimuth = useMemo(() => (bodySeed(data.id) / 100) * Math.PI * 2, [data.id]);
 
-  const pointerHandlers = useBodyPointerGesture(data.id, !!creationMode, onBodyGesture);
+  /**
+   * Long-press interlock.
+   *
+   * Deliberately NOT disabled at pointerdown: OrbitControls would never see the
+   * down event, so `_rotateStart` would stay unseeded and re-enabling later
+   * leaves the camera dead until release — which breaks dragging the camera
+   * from a body, common on a phone where a gas giant fills half the viewport.
+   * Disabling only once the press has actually resolved into a long press is
+   * enough, because the gesture's movement slop already cancels anything that
+   * turned into a drag.
+   *
+   * Restores the *captured* value, never a hard `true`: AdaptiveOrbitControls
+   * owns `enabled` via `!creationDragging && !isInteractingWithUI`, and forcing
+   * it true would re-enable the camera mid-creation-drag.
+   */
+  const prevOrbitEnabledRef = useRef<boolean | null>(null);
+  const pressLifecycle = useMemo(() => ({
+    onLongPressStart: () => {
+      prevOrbitEnabledRef.current = isOrbitControlsLike(controls) ? controls.enabled : null;
+      setOrbitControlsEnabled(controls, false);
+    },
+    onPressEnd: () => {
+      const previous = prevOrbitEnabledRef.current;
+      prevOrbitEnabledRef.current = null;
+      if (previous != null) setOrbitControlsEnabled(controls, previous);
+    },
+  }), [controls]);
+
+  const pointerHandlers = useBodyPointerGesture(
+    data.id,
+    !!creationMode,
+    onBodyGesture,
+    pressLifecycle,
+  );
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
     const dt = delta * 1.0;
     const liveBody = bodyByIdRef.current.get(data.id);
     let detailedVisual = deviceTier === 'high' || isSelected;
-    if (!detailedVisual && groupRef.current && camera instanceof THREE.PerspectiveCamera) {
+    if (groupRef.current && camera instanceof THREE.PerspectiveCamera) {
       const distance = Math.max(camera.position.distanceTo(groupRef.current.position), 1e-3);
       const focalPixels = viewportSize.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5));
-      detailedVisual = (visualRadius / distance) * focalPixels >= environment.quality.detailedBodyPixelRadius;
+      if (!detailedVisual) {
+        detailedVisual = (visualRadius / distance) * focalPixels >= environment.quality.detailedBodyPixelRadius;
+      }
+
+      // Screen-space floor on the pick target. Hitboxes are authored in world
+      // units, so a distant body is a two-pixel target for a finger. Scaling
+      // the invisible mesh's Object3D leaves the geometry — and therefore
+      // everything rendered — untouched. `viewportSize` is CSS pixels, which is
+      // the right unit for a touch target: do not apply DPR.
+      if (touchHitTargets && hitboxRef.current) {
+        const baseRadius = visualRadius * HITBOX_RADIUS_FACTOR;
+        const pixelRadius = (baseRadius / distance) * focalPixels;
+        const scaled = baseRadius * screenSpaceHitScale(pixelRadius);
+        const clamped = clampHitRadiusToCone(scaled, distance, baseRadius);
+        hitboxRef.current.scale.setScalar(clamped / baseRadius);
+      }
     }
 
     // Direction to the illuminating star, computed once: the surface, cloud
@@ -2330,8 +2396,14 @@ const BodyMesh = React.memo(({
         </group>
       )}
 
-      {/* Invisible hitbox for forgiving tap/click body selection. */}
+      {/* Invisible hitbox for forgiving tap/click body selection.
+          On touch this mesh is *scaled* per frame to hold a 44px screen-space
+          floor (see the useFrame above); the geometry stays at the visual size.
+          Overlap between enlarged hitboxes is not a problem: R3F sorts
+          intersections by distance and `onPointerDown` stops propagation, so
+          only the nearest one responds. Do not remove that stopPropagation. */}
       <mesh
+        ref={hitboxRef}
         userData={{ bodyId: data.id }}
         raycast={creationMode ? NO_RAYCAST : MESH_RAYCAST}
         onPointerDown={pointerHandlers.onPointerDown}
@@ -2340,7 +2412,7 @@ const BodyMesh = React.memo(({
         onPointerLeave={pointerHandlers.onPointerLeave}
         onPointerCancel={pointerHandlers.onPointerCancel}
       >
-        <sphereGeometry args={[visualRadius * 1.5, hitboxSeg, hitboxSeg]} />
+        <sphereGeometry args={[visualRadius * HITBOX_RADIUS_FACTOR, hitboxSeg, hitboxSeg]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
@@ -2490,6 +2562,12 @@ const SpaceCanvas: React.FC<{
   const handleBodyGesture = useBodySelectionGesture();
 
   const handleCanvasPointerMissed = React.useCallback(() => {
+    // A press that began on a body owns its own release. Bodies move every
+    // physics frame, so the finger often lifts over empty space — which used to
+    // land here and clear the selection and inspector the press had just
+    // opened. This guard has to run *before* the cancel below, which was
+    // itself destroying the gesture that was mid-dispatch.
+    if (hasActiveBodyPointerGesture() || wasBodyGestureJustReleased()) return;
     cancelAllBodyPointerGestures();
     if (creationMode) return;
     selectBody(null);
@@ -2571,7 +2649,16 @@ const SpaceCanvas: React.FC<{
   }, []);
 
   return (
-    <div data-testid="sim-canvas" className="absolute inset-0">
+    <div
+      data-testid="sim-canvas"
+      className="absolute inset-0"
+      /* Android WebView's own ~500ms hold opens a text-selection callout and
+         emits a pointercancel that silently killed our long press. Bound on
+         this wrapper rather than gl.domElement so it needs no {passive:false}
+         native listener and survives the key={glEpoch} canvas remount on
+         context loss. The canvas has no context menu of its own to lose. */
+      onContextMenu={(e) => e.preventDefault()}
+    >
     <Canvas
       key={glEpoch}
       dpr={canvasDpr}

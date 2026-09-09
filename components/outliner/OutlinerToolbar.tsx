@@ -48,7 +48,11 @@ export const OutlinerToolbar: React.FC<{
     />
 
     <div className="flex items-center gap-1.5">
-      <div className="flex-1 flex gap-1 overflow-x-auto scrollbar-custom touch-pan-x">
+      {/* min-h on phone so the chips' 44px .touch-expand hit areas fit inside
+          the scroller. overflow-x:auto computes overflow-y to auto as well, so
+          a hit area taller than this row would simply be clipped away. The
+          pills themselves stay small and centred. */}
+      <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-custom touch-pan-x max-md:min-h-[2.75rem]">
         {OUTLINER_CATEGORIES.filter((c) => (counts[c] ?? 0) > 0).map((c) => (
           <FilterChip
             key={c}
@@ -69,7 +73,7 @@ export const OutlinerToolbar: React.FC<{
         title={flatForced ? 'Filtered views are always flat' : flat ? 'Show as tree' : 'Show as flat list'}
         aria-label={flat ? 'Show as tree' : 'Show as flat list'}
         className={cn(
-          'shrink-0 flex h-7 w-7 items-center justify-center rounded-md border transition-colors',
+          'touch-expand shrink-0 flex h-7 w-7 items-center justify-center rounded-md border transition-colors',
           flatForced
             ? 'border-white/5 text-pulsar-white/15 cursor-not-allowed'
             : 'border-white/10 text-pulsar-white/40 hover:text-nova-gold hover:bg-white/10',
@@ -86,7 +90,9 @@ export const OutlinerToolbar: React.FC<{
         data-testid="outliner-sort"
         data-no-drag
         onChange={(e) => onSortChange(e.target.value as OutlinerSort)}
-        className="shrink-0 bg-black/40 border border-white/10 rounded-md px-1.5 py-1 text-[9px] uppercase tracking-wider font-bold text-pulsar-white/60"
+        // A native select is a replaced element, so a ::before hit area lands
+        // inside it and does nothing — this one has to grow for real.
+        className="shrink-0 max-md:min-h-[2.75rem] bg-black/40 border border-white/10 rounded-md px-1.5 py-1 text-[9px] uppercase tracking-wider font-bold text-pulsar-white/60"
       >
         {(Object.keys(SORT_LABELS) as OutlinerSort[]).map((s) => (
           <option key={s} value={s} className="bg-slate-900 normal-case">

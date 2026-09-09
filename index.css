@@ -12,6 +12,9 @@
 
   /* Control bar: safe inset + breathing room below notch / Dynamic Island */
   --control-bar-gap: max(2.1rem, 34px);
+  /* Measured 62px: the 44px .touch-target floor on the round buttons, py-2, and
+     the 1px ring top and bottom. 4rem is the smallest clean value that clears
+     it — the e2e layout spec asserts the rendered bar never exceeds this. */
   --control-bar-mobile-height: 4rem;
   --control-bar-top: calc(var(--safe-top) + var(--control-bar-gap));
   --control-bar-bottom: max(2rem, calc(var(--safe-bottom) + 1rem));
@@ -26,9 +29,10 @@
   /* Creation toolbar: home-indicator inset + extra clearance for swipe-to-home */
   --creation-toolbar-gap: max(1.75rem, 20px);
   --creation-toolbar-bottom-pad: calc(var(--safe-bottom) + var(--creation-toolbar-gap));
-  /* Toolbar row height (bar + container pt) — keeps mode hint above the bar */
-  --creation-toolbar-stack: 5.75rem;
-  /* Creation bar height on phone (expanded row + container padding) */
+  /* Creation bar height on phone: the expanded surface is 4.75rem plus its
+     border, and the anchor adds pt-2. Consumed purely as a clearance (see
+     --universe-outliner-mobile-bottom below), so the small slack is the safe
+     direction; the e2e layout spec asserts the rendered stack never exceeds it. */
   --creation-toolbar-height: 5.5rem;
   /* Width of the vertical creation rail on md+ (matches md:min-w-[8.75rem]). */
   --creation-rail-width: 8.75rem;
@@ -114,6 +118,15 @@ canvas {
   width: 100%;
   height: 100%;
   touch-action: none;
+  /* The app's own press-and-hold on a body competes with Android WebView's
+     built-in long press, which starts a text-selection / callout gesture and
+     emits a pointercancel that silently kills ours. These are the properties
+     the WebView consults before starting that hold; the matching
+     `onContextMenu` preventDefault lives on the sim-canvas wrapper. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ─── Shell ──────────────────────────────────────────────────────────────────*/
@@ -145,9 +158,23 @@ canvas {
   padding-inline: max(0.75rem, var(--safe-left)) max(0.75rem, var(--safe-right));
 }
 
+/* `100%` resolves against the host's content box, so the card can never grow
+   past the gap the host's own padding leaves it — which is what keeps its
+   action button reachable when the phone sheet is open (below). */
 .live-helper-card {
-  max-height: min(52dvh, 25rem);
+  max-height: min(52dvh, 25rem, 100%);
   overflow-y: auto;
+}
+
+/* The inspector sheet is z-30 in the HUD layer while the helper lives inside
+   the canvas viewport, so an open sheet paints over the helper's buttons no
+   matter how tall the card is. Reserve the sheet's height instead. `half` is
+   the detent `openInspector` always opens at, and it is the conservative
+   choice: at `peek` the card is merely smaller than it could be. */
+@media (max-width: 767px) {
+  .sim-shell.inspector-open .live-helper-host {
+    padding-bottom: calc(var(--sheet-half) + 0.75rem);
+  }
 }
 
 /* TODO(low-end): if richer callout illustrations are added, gate them through
@@ -164,6 +191,38 @@ canvas {
 .sim-toolbar {
   transform: scale(var(--control-bar-scale));
   transform-origin: top center;
+}
+
+/**
+ * Narrow phones: wrap the control bar instead of clipping it.
+ *
+ * The bar's content is a fixed ~475px — seven 44px buttons, the speed slider
+ * and its readout, plus dividers — and none of that can shrink without
+ * breaking the 44px touch floor. Below roughly 520px the `overflow-x-auto` on
+ * the bar quietly turned it into a scrolling strip with Settings and Return to
+ * Menu entirely off-screen and no affordance saying they were there. Two rows
+ * of 44px keeps every control visible and tappable.
+ *
+ * Scoped to the widths where it is actually needed, so anything wide enough
+ * for the single-row bar renders exactly as before.
+ */
+@media (max-width: 520px) {
+  :root {
+    /* Two 44px rows + row-gap + py-2 + the 1px ring top and bottom. */
+    --control-bar-mobile-height: 7.25rem;
+  }
+
+  .sim-toolbar {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 0.25rem;
+    overflow-x: visible;
+  }
+
+  /* The group separator lands at the end of a row once wrapped. */
+  .sim-toolbar > .w-px {
+    display: none;
+  }
 }
 
 .creation-toolbar-anchor > div {
@@ -237,7 +296,13 @@ canvas {
   :root {
     --control-bar-gap: max(0.75rem, 12px);
     --creation-toolbar-gap: max(2rem, 24px);
-    --control-bar-anchor-top: calc(var(--safe-top) + var(--control-bar-gap));
+    /* The 2.25rem floor is what keeps the bar off a *notchless* phone's status
+       bar. `--safe-top` comes from the display cutout only, so on a phone with
+       no cutout it is 0 even though the WebView now draws under a ~24dp status
+       bar (StatusBar.setOverlaysWebView in App.tsx). 36px clears that with
+       margin; on a notched or hole-punch phone the calc() branch wins and the
+       gap above the cutout is preserved as before. */
+    --control-bar-anchor-top: max(calc(var(--safe-top) + var(--control-bar-gap)), 2.25rem);
   }
 
   /* Extra clearance on very narrow phones (e.g. 360px) — outliner vs creation bar */
@@ -258,7 +323,10 @@ canvas {
      clear of the control bar at the top of the screen. */
   .inspector-panel-anchor {
     height: var(--sheet-h, var(--sheet-full));
-    max-height: calc(100dvh - var(--control-bar-top) - var(--control-bar-mobile-height));
+    /* --control-bar-anchor-top, not --control-bar-top: the phone anchor carries
+       the notchless status-bar floor, and reserving against the smaller value
+       would let the `full` detent slide under the control bar. */
+    max-height: calc(100dvh - var(--control-bar-anchor-top) - var(--control-bar-mobile-height));
     transition: height var(--dur-sheet) var(--ease-sheet);
   }
 
@@ -286,7 +354,9 @@ canvas {
 
 /* Creation toolbar — horizontal and centred in the canvas area at every tier. */
 .creation-toolbar-anchor {
-  top: calc(var(--control-bar-top) + var(--control-bar-mobile-height));
+  /* Anchor-top so the phone floor applies; identical to --control-bar-top on
+     md+, where this `top` is overridden to auto anyway. */
+  top: calc(var(--control-bar-anchor-top) + var(--control-bar-mobile-height));
   bottom: 0;
   left: var(--rail-left);
   right: var(--rail-right);
@@ -383,6 +453,34 @@ canvas {
 .touch-target {
   min-width:  2.75rem;  /* 44px */
   min-height: 2.75rem;
+}
+
+/**
+ * Expands the *hit* area to 44px without touching the visual box.
+ *
+ * For the dense chrome inside the outliner and inspector — filter chips, the
+ * tree/flat toggle, the search clear button — where `.touch-target` would blow
+ * the layout apart at 360px. The pseudo-element centres a 44px minimum over the
+ * control and inherits its `pointer-events`, so `getBoundingClientRect()` is
+ * unchanged and only `elementFromPoint` sees the difference. Phone only: a
+ * mouse does not need 44px and the desktop density is deliberate.
+ */
+@media (max-width: 767px) {
+  .touch-expand {
+    position: relative;
+  }
+
+  .touch-expand::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
 }
 
 /* ─── Main menu / universe creator ─────────────────────────────────────────

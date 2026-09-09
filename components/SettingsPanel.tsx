@@ -126,7 +126,7 @@ export const SettingsPanel: React.FC = () => {
       onClick={close}
     >
       <div
-        className="relative bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-2xl w-full max-w-md max-w-[96vw] max-h-[min(92dvh,44rem)] overflow-hidden shadow-2xl ring-1 ring-white/5 flex flex-col"
+        className="relative bg-[rgba(16,20,28,0.98)] border border-white/10 rounded-2xl w-full max-w-[min(28rem,96vw)] max-h-[min(92dvh,44rem)] overflow-hidden shadow-2xl ring-1 ring-white/5 flex flex-col"
         role="dialog"
         aria-labelledby="settings-title"
         aria-modal="true"
