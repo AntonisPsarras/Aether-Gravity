@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   BEGINNER_BODY_TYPES,
+  CURVATURE_KNEE,
+  CURVATURE_MAX_DEPTH,
+  GRID_RENDER_SAFETY_MAX_DEPTH,
   beginnerVisualScale,
+  curvatureKneeFor,
+  curvatureMaxFor,
   isBeginnerBodyType,
   isUiMode,
+  tidalKneeFor,
+  tidalMaxFor,
   visualScaleFor,
 } from './displayMode';
+import type { UiMode } from './displayMode';
 import { BODY_CONFIGS } from '../constants';
 import type { BodyType } from '../types';
 
@@ -56,6 +64,37 @@ describe('beginner body-type subset', () => {
     for (const type of ['Neutron Star', 'Pulsar', 'White Dwarf', 'Brown Dwarf'] as BodyType[]) {
       expect(isBeginnerBodyType(type)).toBe(false);
     }
+  });
+});
+
+describe('curvature presentation accessors', () => {
+  const MODES: UiMode[] = ['beginner', 'advanced'];
+
+  it('returns a positive knee and ceiling for every mode', () => {
+    for (const mode of MODES) {
+      expect(curvatureKneeFor(mode)).toBeGreaterThan(0);
+      expect(curvatureMaxFor(mode)).toBeGreaterThan(curvatureKneeFor(mode));
+      expect(tidalKneeFor(mode)).toBeGreaterThan(0);
+      expect(tidalMaxFor(mode)).toBeGreaterThan(tidalKneeFor(mode));
+    }
+  });
+
+  it('gives Advanced Mode more headroom than Beginner on both curves', () => {
+    expect(curvatureKneeFor('advanced')).toBeGreaterThan(curvatureKneeFor('beginner'));
+    expect(curvatureMaxFor('advanced')).toBeGreaterThan(curvatureMaxFor('beginner'));
+    expect(tidalKneeFor('advanced')).toBeGreaterThan(tidalKneeFor('beginner'));
+    expect(tidalMaxFor('advanced')).toBeGreaterThan(tidalMaxFor('beginner'));
+  });
+
+  it('keeps every per-body ceiling well under the render-safety floor', () => {
+    for (const mode of MODES) {
+      expect(curvatureMaxFor(mode)).toBeLessThan(GRID_RENDER_SAFETY_MAX_DEPTH);
+    }
+  });
+
+  it('matches the exported Beginner constants', () => {
+    expect(curvatureKneeFor('beginner')).toBe(CURVATURE_KNEE);
+    expect(curvatureMaxFor('beginner')).toBe(CURVATURE_MAX_DEPTH);
   });
 });
 

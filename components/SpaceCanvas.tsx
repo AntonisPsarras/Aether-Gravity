@@ -23,7 +23,8 @@ import { useStore } from '../utils/store';
 import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
 import {
   CURVATURE_KNEE, CURVATURE_MAX_DEPTH, GRID_RENDER_SAFETY_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
-  curvatureAmountFor, visualScaleFor,
+  curvatureAmountFor, curvatureKneeFor, curvatureMaxFor, tidalKneeFor, tidalMaxFor,
+  visualScaleFor,
 } from '../utils/displayMode';
 import { simElapsedForFrame } from '../utils/simRate';
 import HabitableZoneVisual from './HabitableZoneVisual';
@@ -130,9 +131,10 @@ const GravityGridMaterial = shaderMaterial(
     uBodiesType: new Float32Array(50),
     uBodyCount: 0,
     uShowHabitable: 0.0,
-    // Presentation-only well-depth compression. 0 = raw physical depth, which
-    // is what Advanced Mode passes, so its geometry is unchanged.
-    uCurvatureAmount: 0.0,
+    // Presentation-only well-depth compression, applied per body. These four
+    // are Beginner-Mode defaults only — all of them are re-uploaded from the
+    // active UI mode every frame (see the uniform block in useFrame).
+    uCurvatureAmount: 1.0,
     uCurvatureKnee: CURVATURE_KNEE,
     uCurvatureMax: CURVATURE_MAX_DEPTH,
     uTidalKnee: TIDAL_KNEE,
@@ -199,8 +201,11 @@ void main() {
     float m = uBodiesMass[i];
     float d = distance(worldPosition.xz, bPos.xz);
     float softeningSq = 1200.0;
-    float potential = m / sqrt(d * d + softeningSq);
-    displacement -= potential * 3.0;
+    float potential = (m / sqrt(d * d + softeningSq)) * 3.0;
+    // Compressed HERE, per body, before it joins the sum — compressing the
+    // total instead lets one massive body flatten every other body's well.
+    // See utils/curvatureDisplay.ts.
+    displacement -= curvatureDisplayScale(potential, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
     float tidal = m / (d*d*d + 100.0);
     maxTidal = max(maxTidal, tidal * 1000.0);
     if (uBodiesType[i] > 1.9 && uShowHabitable > 0.5) {
@@ -213,22 +218,18 @@ void main() {
         }
     }
   }
-  // displacement is negative (a well). Compress its magnitude for display,
-  // then restore the sign. Identity when uCurvatureAmount is 0.
-  displacement = -curvatureDisplayScale(-displacement, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
-  // Render-safety floor, independent of the compression above (which is
-  // deliberately unclamped in Advanced Mode): stops a near-max-mass body from
-  // pushing vertices out of the camera's renderable range and breaking the
-  // mesh. Far above any physically-plausible star's raw well depth.
+  // Render-safety floor on the total. Each body's own contribution is already
+  // capped at uCurvatureMax; this only backstops many heavy bodies piling up on
+  // the same vertex.
   displacement = max(displacement, -uGridRenderSafetyMaxDepth);
 
   vec3 newPos = vec3(remappedXY.x, remappedXY.y, position.z);
   newPos.z += displacement;
   vWorldPos = (modelMatrix * vec4(newPos, 1.0)).xyz;
   vDisplacement = displacement;
-  // Same compressor, own knee: with the depth compressed, the high-tidal
-  // vertices near a primary are on screen for the first time and would
-  // otherwise saturate the whole plane. Identity at uCurvatureAmount 0.
+  // Same compressor, own knee: the high-tidal vertices near a primary would
+  // otherwise saturate the whole plane cyan. Already a per-body max, so it was
+  // never subject to the summation bug above.
   vTidalMagnitude = curvatureDisplayScale(maxTidal, uTidalKnee, uCurvatureAmount, uTidalMax);
   vHabitableZone = habFactor;
   vHabitableDist = habDist;
@@ -859,9 +860,14 @@ const PhysicsEngine = ({
       gridMatRef.current.uBodyCount = count;
       gridMatRef.current.uTime = currentTime;
       gridMatRef.current.uShowHabitable = showHabitable ? 1.0 : 0.0;
-      // 0 in Advanced Mode, so the vertex shader takes the identity branch and
-      // the grid geometry is exactly what it was before this mode existed.
+      // Both modes compress; Advanced differs by a wider knee and ceiling, not
+      // by skipping the compressor. HabitableZoneVisual must read the same
+      // values from the same helpers or its disc detaches from this surface.
       gridMatRef.current.uCurvatureAmount = curvatureAmountFor(uiMode);
+      gridMatRef.current.uCurvatureKnee = curvatureKneeFor(uiMode);
+      gridMatRef.current.uCurvatureMax = curvatureMaxFor(uiMode);
+      gridMatRef.current.uTidalKnee = tidalKneeFor(uiMode);
+      gridMatRef.current.uTidalMax = tidalMaxFor(uiMode);
     }
   });
 

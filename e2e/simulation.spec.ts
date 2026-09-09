@@ -42,9 +42,20 @@ test.describe('Simulation controls', () => {
     expect(driftAfterResume).toBeGreaterThan(0.5);
   });
 
+  test('control bar grid toggle updates store', async ({ page }) => {
+    // The grid toggle lives on the control bar as well as in the settings
+    // sheet; both drive the same store action.
+    const initial = (await readStore(page)).showGrid;
+    await page.getByTestId('control-toggle-grid').click();
+    expect((await readStore(page)).showGrid).toBe(!initial);
+    await page.getByTestId('control-toggle-grid').click();
+    expect((await readStore(page)).showGrid).toBe(initial);
+  });
+
   test('overlay toggles update store', async ({ page }) => {
     // The display toggles moved off the control bar into the settings sheet to
-    // free up phone HUD space; the testids and store keys are unchanged.
+    // free up phone HUD space; the testids and store keys are unchanged. The
+    // grid is the exception — it is mirrored back onto the bar.
     await page.getByTestId('open-settings').click();
     await expect(page.getByTestId('settings-panel')).toBeVisible();
 

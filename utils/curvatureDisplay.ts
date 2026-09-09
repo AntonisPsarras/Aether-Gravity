@@ -9,8 +9,18 @@
  *
  * `curvatureDisplayScale` compresses that range with a soft-knee log curve —
  * near-identity below the knee (small wells keep their true shape and relative
- * size), logarithmic above it, then hard-clamped. It is monotonic, so deeper is
- * always drawn deeper; ordering is never inverted.
+ * size), logarithmic above it, then eased onto a soft asymptotic ceiling. It is
+ * strictly increasing, so deeper is always drawn deeper and ordering is never
+ * inverted — and because the ceiling is asymptotic rather than a clamp, no
+ * region of the grid is ever flattened into a plateau.
+ *
+ * APPLY IT PER BODY, INSIDE THE LOOP, BEFORE SUMMING. Compressing the summed
+ * potential instead looks equivalent and is not: log's derivative is `k/depth`,
+ * so once one dominant body has built a deep pedestal, every other body's well
+ * is scaled by a near-zero slope and vanishes. A black hole (≥ 3 M☉ ≈ 1.0e6 M⊕)
+ * digs a pedestal of ~8.7e4 L* and flattened the entire plane this way. Summing
+ * already-compressed per-body wells keeps each body's own dip at its own scale,
+ * and superposition still holds.
  *
  * NEVER feed the result of this back into a physical calculation. The GLSL twin
  * below is the same function, shared verbatim by the grid shader
@@ -22,7 +32,8 @@
  * @param depth    Raw well depth, L*, non-negative (i.e. `-displacement`).
  * @param knee     Depth below which the curve is ~identity, L*.
  * @param amount   0 = raw physical depth, 1 = fully compressed.
- * @param maxDepth Hard ceiling on the returned depth, L*.
+ * @param maxDepth Asymptotic ceiling on the returned depth, L*. Approached but
+ *                 never reached, so the funnel never develops a flat bottom.
  */
 export const curvatureDisplayScale = (
   depth: number,
@@ -36,7 +47,14 @@ export const curvatureDisplayScale = (
   const compressed = k * Math.log(1 + depth / k);
   const a = amount >= 1 ? 1 : amount;
   const mixed = depth * (1 - a) + compressed * a;
-  return maxDepth > 0 ? Math.min(mixed, maxDepth) : mixed;
+  if (maxDepth <= 0) return mixed;
+  // Soft ceiling, not `min(mixed, maxDepth)`. A hard clamp flattens every
+  // vertex whose well is past the ceiling into one plateau — for a 100 M☉ hole
+  // that is a disc ~500 L* across with a hard crease at its rim, which is the
+  // same "the grid went flat" failure in miniature. `M(1 - e^(-x/M))` is
+  // strictly increasing, has unit slope at 0 (so small wells are still drawn at
+  // their true depth), and tends to `maxDepth` without ever touching it.
+  return maxDepth * (1 - Math.exp(-mixed / maxDepth));
 };
 
 /**
@@ -52,6 +70,7 @@ float curvatureDisplayScale(float depth, float knee, float amount, float maxDept
   float k = max(knee, 1.0);
   float compressed = k * log(1.0 + depth / k);
   float mixed = mix(depth, compressed, clamp(amount, 0.0, 1.0));
-  return maxDepth > 0.0 ? min(mixed, maxDepth) : mixed;
+  if (maxDepth <= 0.0) return mixed;
+  return maxDepth * (1.0 - exp(-mixed / maxDepth));
 }
 `;

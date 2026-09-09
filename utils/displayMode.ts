@@ -11,9 +11,9 @@
  *   3. how large bodies are drawn (`beginnerVisualScale` below);
  *   4. which fields and body types the UI offers.
  *
- * Advanced Mode is the identity for (2) and (3): `curvatureAmountFor('advanced')`
- * is 0 and `visualScaleFor('advanced', …)` is exactly 1, so the Advanced-Mode
- * render path is bit-for-bit what it was before this mode existed.
+ * Advanced Mode is the identity for (3): `visualScaleFor('advanced', …)` is
+ * exactly 1. It is NOT the identity for (2) any more — see the curvature
+ * section below for why the raw path had to go.
  */
 import type { BodyType } from '../types';
 
@@ -56,6 +56,15 @@ export const visualScaleFor = (mode: UiMode, type: BodyType): number =>
   mode === 'beginner' ? beginnerVisualScale(type) : 1;
 
 // ---- Curvature grid presentation parameters ----
+//
+// Both modes compress; they differ only in how hard. Advanced Mode used to pass
+// amount 0 (raw physical depth), and that is exactly what broke the grid the
+// moment a black hole existed: the minimum black hole is 3 M☉ ≈ 1.0e6 M⊕, whose
+// raw well is ~8.7e4 L* at the softening floor and still ~3e3 L* a thousand
+// units away, so every vertex in view was dragged below the camera and the mesh
+// appeared to vanish. Advanced now gets a knee and a ceiling several times
+// Beginner's instead — near-identity for anything of ordinary mass, bending
+// only where the raw formula was unrenderable anyway.
 
 /**
  * Soft-knee depth, in L*. Wells shallower than this keep their true shape;
@@ -64,36 +73,65 @@ export const visualScaleFor = (mode: UiMode, type: BodyType): number =>
  */
 export const CURVATURE_KNEE = 25;
 
-/** Hard ceiling on the drawn dip, in L*. */
+/** Asymptotic ceiling on the drawn dip, in L*. Approached, never reached. */
 export const CURVATURE_MAX_DEPTH = 220;
 
 /**
- * Absolute render-safety ceiling on well depth, L*, applied in EVERY mode —
- * including Advanced Mode's raw/uncompressed path, which is otherwise
- * deliberately unclamped (see `curvatureDisplayScale`'s identity contract).
- * A body near `PHYSICS_LIMITS.MAX_MASS` digs a well of order 10⁸-10⁹ L* by the
- * raw formula — far past the camera's far clip plane — which pushes grid
- * vertices out of the renderable frustum and makes the mesh appear to vanish.
- * 20,000 L* sits comfortably above any physically-plausible star's raw well
- * (~10⁴ L*, see `curvatureDisplay.ts`), so it never touches normal bodies; it
- * only stops pathological masses from breaking the render.
+ * Advanced Mode's knee and ceiling. Chosen so the raw shape survives wherever
+ * it was ever visible and only the pathological end bends: an ordinary planet
+ * is drawn within a few percent of its true depth, a star's well sits well
+ * inside the plane, and a black hole reads as a deep funnel that is still in
+ * frame instead of a mesh that is simply gone. Several times Beginner's
+ * values, so Advanced keeps visibly more depth and more dynamic range, which
+ * is the point of the mode.
+ */
+export const CURVATURE_KNEE_ADVANCED = 120;
+export const CURVATURE_MAX_DEPTH_ADVANCED = 900;
+
+/**
+ * Absolute render-safety floor on total well depth, L*, applied in EVERY mode.
+ * The compressor now runs per body and clamps each body's own contribution, so
+ * the sum is bounded by `bodyCount × maxDepth` — this backstops the pile-up
+ * case where many heavy bodies overlap, and nothing else. It is deliberately
+ * far above any single body's ceiling so it never shapes a normal scene.
  */
 export const GRID_RENDER_SAFETY_MAX_DEPTH = 20000;
 
 /**
  * The grid also tints by tidal stress, `m / d³`, which has the same unbounded
- * dynamic range as the well depth. In Advanced Mode the high-stress vertices
- * are dragged thousands of units below the frame and are simply never seen;
- * once the depth is compressed they come back into view and saturate the whole
- * plane cyan. So the tint is put through the same compressor, with its own
- * knee, and Beginner Mode keeps the calmer read it is supposed to have.
+ * dynamic range as the well depth. Left uncompressed it saturates the whole
+ * plane cyan around any compact body, so it goes through the same compressor
+ * with its own knee — wider in Advanced, like the depth.
  */
 export const TIDAL_KNEE = 0.5;
 export const TIDAL_MAX = 2.0;
+export const TIDAL_KNEE_ADVANCED = 2.0;
+export const TIDAL_MAX_ADVANCED = 8.0;
 
-/** 0 = raw physical depth (Advanced), 1 = fully compressed (Beginner). */
-export const curvatureAmountFor = (mode: UiMode): number =>
-  mode === 'beginner' ? 1 : 0;
+/**
+ * Compression strength. 1 in both modes — the raw (0) path is unrenderable in
+ * the presence of a black hole. Mode is expressed through the knee and ceiling
+ * below, not through this. Kept as a function so the shaders can carry on
+ * setting the uniform unconditionally, and so `curvatureDisplayScale` keeps its
+ * identity-at-0 contract for callers that genuinely want the raw number.
+ */
+export const curvatureAmountFor = (_mode: UiMode): number => 1;
+
+/** Soft-knee depth for the active mode, L*. */
+export const curvatureKneeFor = (mode: UiMode): number =>
+  mode === 'beginner' ? CURVATURE_KNEE : CURVATURE_KNEE_ADVANCED;
+
+/** Per-body ceiling on drawn well depth for the active mode, L*. */
+export const curvatureMaxFor = (mode: UiMode): number =>
+  mode === 'beginner' ? CURVATURE_MAX_DEPTH : CURVATURE_MAX_DEPTH_ADVANCED;
+
+/** Soft-knee for the tidal tint in the active mode. */
+export const tidalKneeFor = (mode: UiMode): number =>
+  mode === 'beginner' ? TIDAL_KNEE : TIDAL_KNEE_ADVANCED;
+
+/** Ceiling on the tidal tint in the active mode. */
+export const tidalMaxFor = (mode: UiMode): number =>
+  mode === 'beginner' ? TIDAL_MAX : TIDAL_MAX_ADVANCED;
 
 // ---- Inspector / creator content gates ----
 

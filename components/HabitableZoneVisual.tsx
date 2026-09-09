@@ -18,7 +18,10 @@ import { getPhysicsBodiesSnapshot } from '../utils/physicsBridge';
 
 import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
 
-import { CURVATURE_KNEE, CURVATURE_MAX_DEPTH, curvatureAmountFor } from '../utils/displayMode';
+import {
+  CURVATURE_KNEE, CURVATURE_MAX_DEPTH, GRID_RENDER_SAFETY_MAX_DEPTH,
+  curvatureAmountFor, curvatureKneeFor, curvatureMaxFor,
+} from '../utils/displayMode';
 
 
 
@@ -49,7 +52,7 @@ const HabitableZoneMaterial = shaderMaterial(
     // Must track the grid's own curvature uniforms exactly, or this disc
     // detaches from the surface it is supposed to lie on.
 
-    uCurvatureAmount: 0.0,
+    uCurvatureAmount: 1.0,
 
     uCurvatureKnee: CURVATURE_KNEE,
 
@@ -115,15 +118,19 @@ const HabitableZoneMaterial = shaderMaterial(
 
         float softeningSq = 1200.0;
 
-        float potential = m / sqrt(d * d + softeningSq);
+        float potential = (m / sqrt(d * d + softeningSq)) * 3.0; // Same scale as grid
 
-        displacement -= potential * 3.0; // Same scale as grid
+        // Compressed per body before summing, exactly as the grid does it.
+
+        displacement -= curvatureDisplayScale(potential, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
 
       }
 
-      
 
-      displacement = -curvatureDisplayScale(-displacement, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
+
+      // The grid's render-safety floor, mirrored so the two never diverge.
+
+      displacement = max(displacement, -${GRID_RENDER_SAFETY_MAX_DEPTH.toFixed(1)});
 
       newPos.z += displacement;
 
@@ -258,6 +265,10 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
     materialRef.current.uOuterRadius = zones.outer;
 
     materialRef.current.uCurvatureAmount = curvatureAmountFor(uiMode);
+
+    materialRef.current.uCurvatureKnee = curvatureKneeFor(uiMode);
+
+    materialRef.current.uCurvatureMax = curvatureMaxFor(uiMode);
 
 
 

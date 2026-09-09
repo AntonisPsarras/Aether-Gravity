@@ -31,7 +31,7 @@ const MODE_COPY: Record<UiMode, { title: string; blurb: string }> = {
   },
   advanced: {
     title: 'Advanced',
-    blurb: 'True curvature depth, true relative sizes, full clock rate, and every field and body type.',
+    blurb: 'Deeper curvature, true relative sizes, full clock rate, and every field and body type.',
   },
 };
 

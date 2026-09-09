@@ -3,7 +3,7 @@ import { BodyType } from '../types';
 import { useStore } from '../utils/store';
 import {
   Play, Pause, RotateCcw, Focus, MousePointer2, Sparkles,
-  AlertTriangle, X, ChevronUp, ChevronDown, Home, Settings,
+  AlertTriangle, X, ChevronUp, ChevronDown, Home, Settings, Hexagon,
 } from 'lucide-react';
 import { creatableTypesFor, visualFor } from './bodyTypeVisuals';
 
@@ -108,6 +108,8 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
   const cameraLockedId = useStore((s) => s.cameraLockedId);
   const selectedId = useStore((s) => s.selectedId);
   const settingsOpen = useStore((s) => s.settingsOpen);
+  const showGrid = useStore((s) => s.showGrid);
+  const toggleGrid = useStore((s) => s.toggleGrid);
   const setPaused = useStore((s) => s.setPaused);
   const setSpeed = useStore((s) => s.setSpeed);
   const setCameraLock = useStore((s) => s.setCameraLock);
@@ -162,11 +164,24 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
         <div className="h-4 md:h-6 w-px bg-white/10 shrink-0"></div>
 
         {/* View & session group.
-            The display toggles (grid / dust / habitable zone / orbit paths /
+            The display toggles (dust / habitable zone / orbit paths /
             stability) used to sit here. They are preferences a user sets a few
             times a session, so they moved into the settings sheet behind the
-            gear below; what remains is the per-interaction controls. */}
+            gear below. The spacetime grid came back: it is the one people flip
+            constantly to see what is under it, and burying it behind the gear
+            made that a three-tap round trip. It stays mirrored in the settings
+            sheet — both drive the same `toggleGrid`. */}
         <div className="flex items-center gap-0.5 md:gap-2 shrink-0">
+          <button
+            onClick={toggleGrid}
+            data-testid="control-toggle-grid"
+            title="Toggle spacetime grid"
+            aria-label="Toggle spacetime grid"
+            aria-pressed={showGrid}
+            className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${showGrid ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/30 hover:text-white hover:bg-white/10'}`}
+          >
+            <Hexagon size={16} className="md:w-[18px] md:h-[18px]" />
+          </button>
           <button onClick={handleCameraLock} title="Lock camera to selection" aria-label="Lock camera to selection" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${cameraLockedId ? 'text-nebula-rust bg-nebula-rust/10' : 'text-pulsar-white/30'}`}><Focus size={16} className="md:w-[18px] md:h-[18px]" /></button>
           <button
             onClick={() => setSettingsOpen(true)}
