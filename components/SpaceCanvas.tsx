@@ -281,8 +281,23 @@ void main() {
 }`
 );
 
+/**
+ * Expanding shockwave ring, drawn on a unit quad.
+ *
+ * The pre-existing version placed the ring in a FIXED UV band (0.4-0.5) and only
+ * faded its alpha, so it never actually expanded — and it was drawn on a
+ * single-sided `ringGeometry` rotated flat, making it invisible from below the
+ * ecliptic. Between that and a 1-second fade it was easy to miss a merger
+ * entirely, which is half of "two bodies touched and nothing happened".
+ *
+ * Now the ring radius is driven by uTime, both faces are drawn, and the quad
+ * costs 2 triangles instead of 64 ring segments. `uSpeed` sets how fast the
+ * front sweeps out and `uWidth` its thickness — a wide, fast ring reads as a
+ * flash, a narrow slow one as a gravitational-wave ripple, so one material
+ * covers both.
+ */
 const ShockwaveMaterial = shaderMaterial(
-  { uTime: 0, uColor: new THREE.Color(1, 1, 1) },
+  { uTime: 0, uColor: new THREE.Color(1, 1, 1), uSpeed: 1, uWidth: 0.12, uIntensity: 1, uDuration: 1 },
   `precision highp float;
 #include <common>
 #include <logdepthbuf_pars_vertex>
@@ -295,41 +310,114 @@ void main() {
   `precision highp float;
 #include <common>
 #include <logdepthbuf_pars_fragment>
-uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
-void main() { 
-  float dist = distance(vUv, vec2(0.5)); 
-  float ring = smoothstep(0.4, 0.45, dist) * smoothstep(0.5, 0.45, dist); 
-  float alpha = ring * max(0.0, 1.0 - uTime); 
-  gl_FragColor = vec4(clamp(uColor, 0.0, 5.0), alpha); 
+uniform float uTime, uSpeed, uWidth, uIntensity, uDuration; uniform vec3 uColor; varying vec2 vUv;
+void main() {
+  float t = clamp(uTime / max(uDuration, 0.0001), 0.0, 1.0);
+  float d = distance(vUv, vec2(0.5)) * 2.0;
+  float r = clamp(uTime * uSpeed, 0.0, 1.0);
+  float ring = smoothstep(r - uWidth, r, d) * smoothstep(r + uWidth, r, d);
+  float alpha = ring * (1.0 - smoothstep(0.0, 1.0, t)) * uIntensity;
+  if (alpha < 0.004) discard;
+  gl_FragColor = vec4(clamp(uColor, 0.0, 5.0) * uIntensity, alpha);
   #include <logdepthbuf_fragment>
 }`
 );
 
+/**
+ * Luminous shell for a supernova or a black-hole accretion flare, on a UNIT
+ * sphere whose radius is animated by the group's scale.
+ *
+ * The previous version compared `length(vPos)` against a time-swept front on a
+ * radius-20 sphere — but every vertex of a sphere sits at the same radius, so
+ * that comparison was constant across the whole surface and the "shock front"
+ * could never be seen sweeping. Driving the radius from the group scale and
+ * spending the shader on a limb-brightened, mottled shell is both cheaper and
+ * actually legible. `uDirection` flips the envelope so the same material serves
+ * an outward-blasting supernova and an inward-collapsing accretion flare.
+ */
 const SupernovaMaterial = shaderMaterial(
-  { uTime: 0, uColor: new THREE.Color(1, 0.8, 0.4) },
+  { uTime: 0, uColor: new THREE.Color(1, 0.8, 0.4), uIntensity: 1, uDuration: 5, uDirection: 1 },
   `precision highp float;
 #include <common>
 #include <logdepthbuf_pars_vertex>
-varying vec2 vUv; varying vec3 vPos; void main() { vUv = uv; vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-#include <logdepthbuf_vertex>
+varying vec3 vPos; varying vec3 vNormal; varying vec3 vView;
+void main() {
+  vPos = position;
+  vNormal = normalize(normalMatrix * normal);
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  vView = normalize(-mv.xyz);
+  gl_Position = projectionMatrix * mv;
+  #include <logdepthbuf_vertex>
 }`,
   `precision highp float;
 #include <common>
 #include <logdepthbuf_pars_fragment>
-uniform float uTime; uniform vec3 uColor; varying vec2 vUv; varying vec3 vPos;
+uniform float uTime, uIntensity, uDuration, uDirection; uniform vec3 uColor;
+varying vec3 vPos; varying vec3 vNormal; varying vec3 vView;
 float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123); }
-void main() { 
-  float dist = length(vPos); 
-  float core = smoothstep(0.4, 0.0, dist - uTime * 5.0); 
-  float shock = smoothstep(0.0, 0.2, dist - uTime * 8.0) * smoothstep(0.4, 0.2, dist - uTime * 8.0); 
-  vec3 color = mix(uColor, vec3(1.0), shock); 
-  float alpha = (core + shock) * (1.0 - smoothstep(0.0, 5.0, uTime)); 
+void main() {
+  float t = clamp(uTime / max(uDuration, 0.0001), 0.0, 1.0);
+  // Fast rise, long tail for a blast; mirrored for an inward collapse.
+  float phase = uDirection > 0.0 ? t : 1.0 - t;
+  float env = sin(3.14159265 * pow(clamp(phase, 0.0, 1.0), 0.35)) * (1.0 - t);
+  // Limb brightening: an optically thin shell is brightest where the line of
+  // sight is tangent to it.
+  float rim = 1.0 - abs(dot(normalize(vNormal), normalize(vView)));
+  float mottle = 0.7 + 0.6 * random(vPos.xy * 7.0 + vPos.z);
+  float alpha = (0.2 + 0.8 * rim * rim) * env * mottle * uIntensity;
+  if (alpha < 0.004) discard;
+  vec3 color = mix(uColor, vec3(1.0), rim * 0.6);
   gl_FragColor = vec4(color * 2.0, alpha);
   #include <logdepthbuf_fragment>
 }`
 );
 
-extend({ GravityGridMaterial, ShockwaveMaterial, SupernovaMaterial });
+/**
+ * Debris burst for a destructive impact.
+ *
+ * Modelled on `Environment/DecorativeDust`: every particle's trajectory is a
+ * closed-form function of `uTime` and its own seed, evaluated in the vertex
+ * shader, so the CPU writes exactly one uniform per frame regardless of particle
+ * count and the geometry is shared by every live burst. The debris BODIES a
+ * shatter produces are real simulated bodies; this is the accompanying spark and
+ * dust, which is why it only needs to last ~1.6 s.
+ */
+const DebrisMaterial = shaderMaterial(
+  { uTime: 0, uColor: new THREE.Color(1, 0.75, 0.5), uSpeed: 1, uSize: 4, uPixelRatio: 1, uIntensity: 1, uDuration: 1.6, uSeed: 0 },
+  `precision highp float;
+#include <common>
+#include <logdepthbuf_pars_vertex>
+uniform float uTime, uSpeed, uSize, uPixelRatio, uDuration, uSeed;
+varying float vFade, vSeed;
+void main() {
+  // The position attribute is a unit direction; the seed rides along with it.
+  vSeed = fract(sin(dot(position, vec3(12.9898, 78.233, 37.719)) + uSeed) * 43758.5453);
+  float t = clamp(uTime / max(uDuration, 0.0001), 0.0, 1.0);
+  // Ballistic-looking ease-out: fast ejection, then coasting.
+  float travel = uSpeed * (1.0 - pow(1.0 - t, 2.5)) * (0.35 + 1.3 * vSeed);
+  vec3 world = position * travel;
+  vec4 mv = modelViewMatrix * vec4(world, 1.0);
+  vFade = 1.0 - t;
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = clamp(uSize * uPixelRatio * (0.5 + vSeed) * 60.0 / max(-mv.z, 1.0), 1.0, 10.0 * uPixelRatio);
+  #include <logdepthbuf_vertex>
+}`,
+  `precision highp float;
+#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 uColor; uniform float uIntensity;
+varying float vFade, vSeed;
+void main() {
+  float r = length(gl_PointCoord - 0.5) * 2.0;
+  float alpha = exp(-r * r * 4.0) * (1.0 - smoothstep(0.65, 1.0, r)) * vFade * vFade * uIntensity;
+  if (alpha < 0.004) discard;
+  // Hot sparks cooling to dust as they slow.
+  gl_FragColor = vec4(mix(uColor, vec3(1.0, 0.95, 0.85), vSeed * vFade), alpha);
+  #include <logdepthbuf_fragment>
+}`
+);
+
+extend({ GravityGridMaterial, ShockwaveMaterial, SupernovaMaterial, DebrisMaterial });
 
 const StabilityOverlay = ({ floatingOffset, bodiesRef, parentMapRef }: {
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
@@ -565,38 +653,135 @@ const CameraRecenter = ({
   return null;
 };
 
-type VisualEffect = { id: number; type: string; pos: THREE.Vector3; startTime: number };
+/**
+ * One transient effect. `kind` selects the geometry/material; `scale` sizes it to
+ * the event that produced it and `intensity` scales its brightness, so a single
+ * material serves several outcomes.
+ */
+type VisualEffectKind = 'shockwave' | 'wave' | 'debris' | 'accretion' | 'supernova';
+type VisualEffect = {
+  id: number;
+  kind: VisualEffectKind;
+  pos: THREE.Vector3;
+  startTime: number;
+  scale: number;
+  intensity: number;
+  color: THREE.Color;
+  /** Accretion only: jet axis. */
+  jets: boolean;
+};
+
+/**
+ * Per-kind lifetimes, seconds. The previous flat 5.0 s reap kept a shockwave
+ * mounted and drawn for four seconds after its shader had already faded to zero.
+ */
+const EFFECT_LIFETIME: Record<VisualEffectKind, number> = {
+  shockwave: 1.2,
+  wave: 2.5,
+  debris: 1.6,
+  accretion: 2.0,
+  supernova: 5.0,
+};
+
+const _MERGE_COLOR = new THREE.Color(1, 1, 1);
+const _COLLAPSE_COLOR = new THREE.Color(1, 0.72, 0.42);
+const _WAVE_COLOR = new THREE.Color(0.62, 0.78, 1);
+const _DEBRIS_COLOR = new THREE.Color(1, 0.62, 0.34);
+/** The same disk blue RadiationEffects uses, so accretion reads as one system. */
+const _ACCRETION_COLOR = new THREE.Color('#86b6dd');
+
+/**
+ * Unit directions shared by EVERY debris burst. Allocating a per-collision
+ * Float32Array would be a GC spike in a cascade, and per-burst variation comes
+ * from the `uSeed` uniform instead.
+ */
+const useDebrisGeometry = (count: number) =>
+  useMemo(() => {
+    const dirs = new Float32Array(count * 3);
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < count; i++) {
+      const z = count === 1 ? 0 : 1 - (2 * i) / (count - 1);
+      const r = Math.sqrt(Math.max(0, 1 - z * z));
+      const theta = golden * i;
+      dirs[i * 3] = r * Math.cos(theta);
+      dirs[i * 3 + 1] = r * Math.sin(theta);
+      dirs[i * 3 + 2] = z;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(dirs, 3));
+    return geo;
+  }, [count]);
 
 /** Animates collision/supernova FX via useFrame — no React re-renders per tick. */
 const VisualEffectItem = ({
   effect,
   floatingOffset,
+  debrisGeometry,
+  shellSegments,
 }: {
   effect: VisualEffect;
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
+  debrisGeometry: THREE.BufferGeometry;
+  shellSegments: number;
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const matRef = useRef<THREE.ShaderMaterial & { uTime: number; uColor: THREE.Color }>(null);
+  const shellRef = useRef<THREE.Mesh>(null);
+  const matRef = useRef<THREE.ShaderMaterial & { uTime: number; uPixelRatio: number }>(null);
+  const jetRef = useRef<THREE.Group>(null);
+  const jetMatsRef = useRef<(THREE.ShaderMaterial & { uTime: number })[]>([]);
+  const duration = EFFECT_LIFETIME[effect.kind];
 
-  useFrame((state) => {
+  useFrame((state, _delta) => {
     const t = state.clock.elapsedTime - effect.startTime;
-    if (matRef.current) matRef.current.uTime = t;
+    if (matRef.current) {
+      matRef.current.uTime = t;
+      if ('uPixelRatio' in matRef.current) {
+        matRef.current.uPixelRatio = state.gl.getPixelRatio();
+      }
+    }
     if (groupRef.current) {
+      // Same floating-origin transform every other object in the scene uses, so
+      // the effect stays pinned to where the impact happened after a recentre.
       toRenderSpace(scratchV2, effect.pos, floatingOffset.current);
       groupRef.current.position.set(scratchV2.x, scratchV2.y, scratchV2.z);
     }
+    // The shell's radius is animated by scale rather than in the shader: on a
+    // sphere every vertex has the same radius, so a shader-side "front" cannot
+    // sweep across it.
+    if (shellRef.current) {
+      const u = Math.min(1, Math.max(0, t / duration));
+      const grow = effect.kind === 'accretion' ? 1 - 0.85 * u : 0.05 + 0.95 * Math.pow(u, 0.45);
+      shellRef.current.scale.setScalar(Math.max(0.02, grow) * effect.scale);
+    }
+    if (jetRef.current) {
+      const u = Math.min(1, Math.max(0, t / duration));
+      jetRef.current.scale.set(1, 0.2 + 1.6 * u, 1);
+      for (let i = 0; i < jetMatsRef.current.length; i++) {
+        const m = jetMatsRef.current[i];
+        if (m) m.uTime = t;
+      }
+    }
   });
 
-  if (effect.type === 'shockwave') {
+  if (effect.kind === 'shockwave' || effect.kind === 'wave') {
+    // A gravitational-wave ripple is the same ring, slower, wider and fainter.
+    const wave = effect.kind === 'wave';
     return (
-      <group ref={groupRef}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[1, 20, 64]} />
+      <group ref={groupRef} scale={effect.scale}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={NO_RAYCAST}>
+          <planeGeometry args={[2, 2]} />
           <shockwaveMaterial
             ref={matRef}
             transparent
-            uColor={_SHOCKWAVE_COLOR}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            uColor={effect.color}
             uTime={0}
+            uSpeed={wave ? 0.45 : 1.0}
+            uWidth={wave ? 0.22 : 0.14}
+            uIntensity={effect.intensity}
+            uDuration={duration}
             logarithmicDepthBuffer={true}
           />
         </mesh>
@@ -604,18 +789,79 @@ const VisualEffectItem = ({
     );
   }
 
+  if (effect.kind === 'debris') {
+    return (
+      <group ref={groupRef}>
+        <points geometry={debrisGeometry} frustumCulled={false} raycast={NO_RAYCAST}>
+          <debrisMaterial
+            ref={matRef}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            uColor={effect.color}
+            uTime={0}
+            uSpeed={effect.scale}
+            uIntensity={effect.intensity}
+            uDuration={duration}
+            uSeed={effect.id}
+            logarithmicDepthBuffer={true}
+          />
+        </points>
+      </group>
+    );
+  }
+
+  const accretion = effect.kind === 'accretion';
   return (
     <group ref={groupRef}>
-      <mesh>
-        <sphereGeometry args={[20, 32, 32]} />
+      <mesh ref={shellRef} raycast={NO_RAYCAST}>
+        <sphereGeometry args={[1, shellSegments, shellSegments]} />
         <supernovaMaterial
           ref={matRef}
           transparent
-          uColor={_SUPERNOVA_COLOR}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          uColor={effect.color}
           uTime={0}
+          uIntensity={effect.intensity}
+          uDuration={duration}
+          uDirection={accretion ? -1 : 1}
           logarithmicDepthBuffer={true}
         />
       </mesh>
+      {accretion && effect.jets && (
+        // Relativistic jets along the spin axis. Same two-cone construction as
+        // Environment/RadiationEffects, so a jet from an accretion event and a
+        // jet from a steady-state pulsar look like the same phenomenon.
+        <group ref={jetRef}>
+          {[1, -1].map((sign, i) => (
+            <mesh
+              key={sign}
+              position={[0, sign * effect.scale * 2.2, 0]}
+              rotation={[sign > 0 ? 0 : Math.PI, 0, 0]}
+              raycast={NO_RAYCAST}
+            >
+              <cylinderGeometry args={[effect.scale * 0.5, effect.scale * 0.05, effect.scale * 4, 8, 1, true]} />
+              <supernovaMaterial
+                ref={(m: (THREE.ShaderMaterial & { uTime: number }) | null) => {
+                  if (m) jetMatsRef.current[i] = m;
+                }}
+                transparent
+                depthWrite={false}
+                side={THREE.DoubleSide}
+                blending={THREE.AdditiveBlending}
+                uColor={effect.color}
+                uTime={0}
+                uIntensity={effect.intensity * 0.8}
+                uDuration={duration}
+                uDirection={1}
+                logarithmicDepthBuffer={true}
+              />
+            </mesh>
+          ))}
+        </group>
+      )}
     </group>
   );
 };
@@ -646,7 +892,9 @@ const PhysicsEngine = ({
   const gridMatRef = useRef<any>(null);
   const gridMeshRef = useRef<THREE.Mesh>(null);
   const visualEffectsRef = useRef<VisualEffect[]>([]);
-  const [effectsVersion, setEffectsVersion] = useState(0);
+  // The effect list lives in a ref so useFrame can mutate it without a render;
+  // this counter is only a re-render trigger for when the set actually changes.
+  const [, setEffectsVersion] = useState(0);
   const lastTempUpdateRef = useRef(0);
   const lastParentMapUpdateRef = useRef(0);
   const lastBodyCountRef = useRef(0);
@@ -656,7 +904,6 @@ const PhysicsEngine = ({
   const syncBodiesFromPhysics = useStore((s) => s.syncBodiesFromPhysics);
   const paused = useStore((s) => s.paused);
   const speed = useStore((s) => s.speed);
-  const selectBody = useStore((s) => s.selectBody);
   const cameraLockedId = useStore((s) => s.cameraLockedId);
   const showGrid = useStore((s) => s.showGrid);
   const showHabitable = useStore((s) => s.showHabitable);
@@ -664,12 +911,60 @@ const PhysicsEngine = ({
   const eventBufferRef = useRef<PhysicsEvent[]>([]);
   const waveEventBufferRef = useRef<WaveEvent[]>([]);
   const stepStateRef = useRef({ collisionOccurred: false });
-  const fixedStepCallback = useCallback((bodies: CelestialBody[]) => {
-    if (scanCollisionsInPlace(bodies, eventBufferRef.current, waveEventBufferRef.current)) {
+
+  // Event-VFX and fragment budgets for this device tier. `maxFragmentsPerImpact`
+  // is a physics budget (bodies cost O(N²) and compete for the 50-body cap);
+  // the rest are rendering budgets.
+  const effectQuality = useMemo(
+    () => environmentQualityForDevice(deviceTier),
+    [deviceTier],
+  );
+  const debrisGeometry = useDebrisGeometry(effectQuality.debrisParticles);
+  const effectIdRef = useRef(0);
+
+  const fixedStepCallback = useCallback((bodies: CelestialBody[], dt: number) => {
+    // `dt` is the step that was just integrated. Passing it makes the contact
+    // test sweep the step instead of sampling its endpoint, which is what stops
+    // fast close approaches tunnelling through each other undetected.
+    if (scanCollisionsInPlace(
+      bodies,
+      eventBufferRef.current,
+      waveEventBufferRef.current,
+      dt,
+      effectQuality.maxFragmentsPerImpact,
+    )) {
       stepStateRef.current.collisionOccurred = true;
     }
     return bodies;
-  }, []);
+  }, [effectQuality.maxFragmentsPerImpact]);
+
+  /**
+   * Append an effect, evicting the oldest past the tier's concurrency cap. The
+   * previous code had no cap at all, so a collision cascade could mount an
+   * unbounded number of shader meshes at once.
+   */
+  const pushEffect = useCallback((
+    kind: VisualEffectKind,
+    pos: THREE.Vector3,
+    startTime: number,
+    scale: number,
+    intensity: number,
+    color: THREE.Color,
+    jets = false,
+  ) => {
+    const list = visualEffectsRef.current;
+    while (list.length >= effectQuality.maxConcurrentEffects) list.shift();
+    list.push({
+      id: ++effectIdRef.current,
+      kind,
+      pos: pos.clone(),
+      startTime,
+      scale: Number.isFinite(scale) && scale > 0 ? Math.min(scale, 400) : 8,
+      intensity: intensity * effectQuality.effectIntensity,
+      color,
+      jets,
+    });
+  }, [effectQuality.maxConcurrentEffects, effectQuality.effectIntensity]);
 
   useFrame((state, delta) => {
     // Floating-origin recentre shifts render space; freeze it during slingshot drags
@@ -692,7 +987,10 @@ const PhysicsEngine = ({
 
     let effectsChanged = false;
     for (let i = visualEffectsRef.current.length - 1; i >= 0; i--) {
-      if (currentTime - visualEffectsRef.current[i].startTime >= 5.0) {
+      const fx = visualEffectsRef.current[i];
+      // Per-kind lifetimes: a 1.2 s shockwave used to stay mounted and drawn for
+      // a further 3.8 s after its shader had faded to nothing.
+      if (currentTime - fx.startTime >= EFFECT_LIFETIME[fx.kind]) {
         visualEffectsRef.current.splice(i, 1);
         effectsChanged = true;
       }
@@ -716,20 +1014,69 @@ const PhysicsEngine = ({
         checkEvolutionInPlace(evolvedBodies, newEvents);
         bodiesRef.current = evolvedBodies;
 
+        // Exhaustive over PhysicsEvent['type']. The previous drain only branched
+        // on three of the six, so `gravitational_wave` — emitted on EVERY merger
+        // — was produced with a real payload and then silently dropped, and the
+        // declared `fragmentation` and `tde` types had no handler at all. Any
+        // future type now trips the default rather than disappearing.
         for (let eventIndex = 0; eventIndex < newEvents.length; eventIndex++) {
           const e = newEvents[eventIndex];
-          if (e.type === 'supernova') {
-            gasRemnants.current.unshift({ position: e.position.clone(), age: 0 });
-            gasRemnants.current.length = Math.min(gasRemnants.current.length, 2);
-          }
-          if (e.type === 'evolution' || e.type === 'collision' || e.type === 'supernova') {
-            visualEffectsRef.current.push({
-              id: Math.random(),
-              type: e.type === 'collision' ? 'shockwave' : 'supernova',
-              pos: e.position.clone(),
-              startTime: currentTime
-            });
-            effectsChanged = true;
+          // Contact events size their effect from the contact radius, so a
+          // planetary impact and a stellar merger read at their own scales.
+          const contact = Number.isFinite(e.radius as number) && (e.radius ?? 0) > 0
+            ? (e.radius as number)
+            : 8;
+          switch (e.type) {
+            case 'supernova':
+              gasRemnants.current.unshift({ position: e.position.clone(), age: 0 });
+              gasRemnants.current.length = Math.min(gasRemnants.current.length, 2);
+              pushEffect('supernova', e.position, currentTime, e.radius ?? 50, 1, _COLLAPSE_COLOR);
+              effectsChanged = true;
+              break;
+            case 'evolution':
+              pushEffect('supernova', e.position, currentTime, 30, 0.7, _COLLAPSE_COLOR);
+              effectsChanged = true;
+              break;
+            case 'collision':
+              if (e.outcome === 'accrete') {
+                // Accretion flare collapses inward onto the horizon; jets only
+                // where the tier can afford the two extra draw calls.
+                pushEffect('accretion', e.position, currentTime, contact * 1.5, 1.2,
+                  _ACCRETION_COLOR, effectQuality.jetEnabled);
+              } else {
+                // A merger that crosses a collapse threshold is drawn hot, on the
+                // same frame the supernova that follows it is raised.
+                const collapse = e.outcome === 'collapse';
+                pushEffect('shockwave', e.position, currentTime, contact * 6,
+                  collapse ? 2 : 1, collapse ? _COLLAPSE_COLOR : _MERGE_COLOR);
+              }
+              effectsChanged = true;
+              break;
+            case 'tde':
+              // Tidal disruption: the victim is shredded outside the horizon, so
+              // it gets debris as well as the accretion flare.
+              pushEffect('accretion', e.position, currentTime, contact * 1.5, 1.2,
+                _ACCRETION_COLOR, effectQuality.jetEnabled);
+              pushEffect('debris', e.position, currentTime, contact * 4, 1, _ACCRETION_COLOR);
+              effectsChanged = true;
+              break;
+            case 'fragmentation':
+              pushEffect('debris', e.position, currentTime, contact * 5, 1.1, _DEBRIS_COLOR);
+              pushEffect('shockwave', e.position, currentTime, contact * 4, 0.8, _DEBRIS_COLOR);
+              effectsChanged = true;
+              break;
+            case 'gravitational_wave':
+              // A large, slow, faint second ring trailing the merge flash.
+              pushEffect('wave', e.position, currentTime, contact * 18, 0.3, _WAVE_COLOR);
+              effectsChanged = true;
+              break;
+            default: {
+              if (import.meta.env.DEV) {
+                const unhandled: never = e.type;
+                console.warn('[SpaceCanvas] physics event with no VFX handler:', unhandled);
+              }
+              break;
+            }
           }
         }
 
@@ -750,11 +1097,14 @@ const PhysicsEngine = ({
           collisionOccurred ||
           newEvents.length > 0;
         if (shouldSync) {
+          // `syncBodiesFromPhysics` prunes the selection, the inspector target
+          // and the camera lock when — and only when — that specific body no
+          // longer exists. This used to deselect unconditionally on any
+          // collision anywhere in the system, which closed the user's inspector
+          // for an unrelated event while leaving `cameraLockedId` dangling: the
+          // follow loop then looked up a dead id every frame and silently did
+          // nothing, freezing the camera with no way back but re-locking.
           syncBodiesFromPhysics(evolvedBodies);
-          if (collisionOccurred) {
-            selectBody(null);
-            useStore.getState().closeInspector();
-          }
         }
       }
     }
@@ -889,12 +1239,18 @@ const PhysicsEngine = ({
           />
         </mesh>
       )}
-      <group key={effectsVersion}>
+      {/* No key on this group: React reconciles the children by effect.id
+          already, and keying the wrapper forced every live effect to unmount and
+          remount — resetting its refs and restarting its material — whenever any
+          other effect was added or reaped. */}
+      <group>
       {visualEffectsRef.current.map((effect) => (
         <VisualEffectItem
           key={effect.id}
           effect={effect}
           floatingOffset={floatingOffset}
+          debrisGeometry={debrisGeometry}
+          shellSegments={effectQuality.compactShellSegments}
         />
       ))}
       </group>

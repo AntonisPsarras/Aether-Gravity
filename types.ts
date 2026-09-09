@@ -14,6 +14,7 @@ declare global {
       planetRingMaterial: any;
       shockwaveMaterial: any;
       supernovaMaterial: any;
+      debrisMaterial: any;
       neutronStarMaterial: any;
       relativisticDiskMaterial: any;
       kerrEventHorizonMaterial: any;
@@ -36,6 +37,7 @@ declare module 'react' {
       planetRingMaterial: any;
       shockwaveMaterial: any;
       supernovaMaterial: any;
+      debrisMaterial: any;
       neutronStarMaterial: any;
       relativisticDiskMaterial: any;
       kerrEventHorizonMaterial: any;
@@ -201,6 +203,12 @@ export interface WaveEvent {
 
 export interface PhysicsEvent {
   type: 'collision' | 'fragmentation' | 'supernova' | 'evolution' | 'tde' | 'gravitational_wave';
+  /**
+   * Which physical pathway a contact resolved through. Set on contact events so
+   * the VFX layer can pick an effect without re-deriving the physics.
+   * See `utils/collisionOutcome.ts`.
+   */
+  outcome?: 'merge' | 'shatter' | 'accrete' | 'collapse';
   position: THREE.Vector3;
   velocity?: THREE.Vector3;
   mass?: number;

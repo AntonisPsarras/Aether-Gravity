@@ -46,6 +46,32 @@ export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
     blackHoleCaptureInterval: low ? 6 : 3,
     bloomResolutionScale: low ? 0.25 : 0.5,
     detailedBodyPixelRadius: low ? 110 : 0,
+
+    // --- Collision / evolution event VFX ---
+    //
+    // These are TRANSIENT (1.2-5 s) and hard-capped, unlike everything above,
+    // so a higher instantaneous budget is acceptable as long as nothing
+    // sustains. Worst case on `high` at the concurrency cap: 12 additive quads
+    // (24 triangles), 12 shared-geometry point clouds (768 points) and a
+    // handful of 2048-triangle supernova shells — a rounding error against the
+    // 400×400 gravity grid (320 k triangles) drawn every single frame.
+    /** Hard ceiling on live effects; the oldest is evicted past this. */
+    maxConcurrentEffects: low ? 4 : 12,
+    /** Points in a debris burst. One draw call, geometry shared across effects. */
+    debrisParticles: low ? 20 : 64,
+    /** Relativistic jet cones on black-hole accretion. Two extra draw calls. */
+    jetEnabled: !low,
+    /** Supernova / accretion shell tessellation. 512 vs 2048 triangles. */
+    compactShellSegments: low ? 16 : 32,
+    /** Global multiplier on effect brightness; low tier has no bloom to lift it. */
+    effectIntensity: low ? 0.7 : 1,
+    /**
+     * Debris BODIES (not particles) a single destructive impact may create.
+     * This is a physics budget, not a rendering one: bodies cost O(N²) force
+     * evaluations and compete for the hard 50-body cap that the gravity grid's
+     * fixed-size uniform arrays impose.
+     */
+    maxFragmentsPerImpact: low ? 3 : 6,
   };
 }
 export type EnvironmentQuality = ReturnType<typeof environmentQualityForDevice>;

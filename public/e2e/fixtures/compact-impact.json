@@ -1,0 +1,160 @@
+{
+  "id": "e2e-compact-impact",
+  "version": 1,
+  "bodies": [
+    {
+      "id": "bh-1",
+      "type": "Black Hole",
+      "mass": 3329460,
+      "radius": 5.7,
+      "position": { "x": 0, "y": 0, "z": 0 },
+      "velocity": { "x": 0, "y": 0, "z": 0 },
+      "color": "#000000",
+      "texture": "solid",
+      "trailColor": "#333333",
+      "temperature": 0,
+      "habitability": "SINGULARITY",
+      "population": 0,
+      "name": "Hole 1",
+      "properties": { "spinParameter": 0.2, "accretionRate": 0.2 }
+    },
+    {
+      "id": "rock-1",
+      "type": "Asteroid",
+      "mass": 0.0001,
+      "radius": 0.2,
+      "position": { "x": 150, "y": 0, "z": 0 },
+      "velocity": { "x": 0, "y": 0, "z": 30 },
+      "color": "#8b7d6b",
+      "texture": "rock",
+      "trailColor": "#8b7d6b",
+      "temperature": 120,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Plunger",
+      "properties": {}
+    },
+
+    {
+      "id": "ns-1",
+      "type": "Neutron Star",
+      "mass": 466124,
+      "radius": 0.19,
+      "position": { "x": -40, "y": 0, "z": 2000 },
+      "velocity": { "x": 800, "y": 0, "z": 0 },
+      "color": "#60a5fa",
+      "texture": "neutron",
+      "trailColor": "#60a5fa",
+      "temperature": 600000,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Neutron A",
+      "properties": {}
+    },
+    {
+      "id": "ns-2",
+      "type": "Neutron Star",
+      "mass": 466124,
+      "radius": 0.19,
+      "position": { "x": 40, "y": 0.15, "z": 2000 },
+      "velocity": { "x": -800, "y": 0, "z": 0 },
+      "color": "#60a5fa",
+      "texture": "neutron",
+      "trailColor": "#60a5fa",
+      "temperature": 600000,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Neutron B",
+      "properties": {}
+    },
+
+    {
+      "id": "impactor-a",
+      "type": "Planet",
+      "mass": 1,
+      "radius": 2.5,
+      "position": { "x": -60, "y": 0, "z": -2000 },
+      "velocity": { "x": 6, "y": 0, "z": 0 },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 280,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Target",
+      "properties": {
+        "compositionIron": 0.3,
+        "compositionSilicates": 0.6,
+        "compositionWater": 0.1
+      }
+    },
+    {
+      "id": "impactor-b",
+      "type": "Planet",
+      "mass": 1,
+      "radius": 2.5,
+      "position": { "x": 60, "y": 1.5, "z": -2000 },
+      "velocity": { "x": -6, "y": 0, "z": 0 },
+      "color": "#cc6644",
+      "texture": "mars",
+      "trailColor": "#aa4422",
+      "temperature": 240,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Impactor",
+      "properties": {
+        "compositionIron": 0.4,
+        "compositionSilicates": 0.55,
+        "compositionWater": 0.05
+      }
+    },
+
+    {
+      "id": "prompt-a",
+      "type": "Planet",
+      "mass": 1,
+      "radius": 2.5,
+      "position": { "x": -1.7, "y": 0, "z": 4000 },
+      "velocity": { "x": 25, "y": 0, "z": 0 },
+      "color": "#4488cc",
+      "texture": "earth",
+      "trailColor": "#2266aa",
+      "temperature": 280,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Anvil",
+      "properties": {
+        "compositionIron": 0.3,
+        "compositionSilicates": 0.6,
+        "compositionWater": 0.1
+      }
+    },
+    {
+      "id": "prompt-b",
+      "type": "Planet",
+      "mass": 1,
+      "radius": 2.5,
+      "position": { "x": 1.7, "y": 0.7, "z": 4000 },
+      "velocity": { "x": -25, "y": 0, "z": 0 },
+      "color": "#cc6644",
+      "texture": "mars",
+      "trailColor": "#aa4422",
+      "temperature": 240,
+      "habitability": "N/A",
+      "population": 0,
+      "name": "Hammer",
+      "properties": {
+        "compositionIron": 0.4,
+        "compositionSilicates": 0.55,
+        "compositionWater": 0.05
+      }
+    }
+  ],
+  "settings": {
+    "speed": 1,
+    "showGrid": true,
+    "showDust": false,
+    "showHabitable": false,
+    "showStability": false
+  }
+}

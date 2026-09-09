@@ -34,7 +34,14 @@ import {
 } from './bodyDerivation';
 import { isSatellite } from './moonSystem';
 import { scratchV2, scratchV3 } from './scratchVectors';
-import { clampMass, clampRadius, clampRadiusKm } from './physicsBounds';
+import { PHYSICS_LIMITS, clampMass, clampRadius, clampRadiusKm } from './physicsBounds';
+import { MAX_SPIN_PARAMETER } from './relativity';
+import {
+  CONTACT_FRACTION,
+  classifyImpact,
+  planFragmentation,
+  spawnFragments,
+} from './collisionOutcome';
 
 const isValidBody = (b: CelestialBody | null | undefined): b is CelestialBody => {
   return b != null &&
@@ -43,7 +50,11 @@ const isValidBody = (b: CelestialBody | null | undefined): b is CelestialBody =>
     typeof b.mass === 'number' &&
     Number.isFinite(b.mass) &&
     typeof b.radius === 'number' &&
-    Number.isFinite(b.radius);
+    Number.isFinite(b.radius) &&
+    // radiusKm is the sole input to pairSofteningSq; a non-finite one used to
+    // NaN-poison every pair it appeared in.
+    typeof b.radiusKm === 'number' &&
+    Number.isFinite(b.radiusKm);
 };
 
 // --- Astrophysics Helpers ---
@@ -519,8 +530,14 @@ export const getSpectralType = (temp: number): string => {
 const SOFTENING_FLOOR_SQ = 1e-8;
 
 export const pairSofteningSq = (a: CelestialBody, b: CelestialBody): number => {
-  const s = kmToDist(a.radiusKm + b.radiusKm);
-  return s * s + SOFTENING_FLOOR_SQ;
+  // Defensive on radiusKm specifically: this runs N²/2 times per step and its
+  // result is added to every pair's distSq, so ONE body with a missing or
+  // non-finite radiusKm used to turn the entire acceleration buffer into NaN —
+  // which clampBodiesInPlace then repaired by zeroing every velocity and
+  // collapsing every position to the origin. Falling back to the floor keeps
+  // the pair merely unsoftened instead of poisoning the whole system.
+  const s = kmToDist((a.radiusKm ?? 0) + (b.radiusKm ?? 0));
+  return Number.isFinite(s) ? s * s + SOFTENING_FLOOR_SQ : SOFTENING_FLOOR_SQ;
 };
 
 // Reused acceleration buffer to avoid per-step allocations in the hot physics path.
@@ -603,6 +620,13 @@ export const calculateGravity = (bodies: CelestialBody[],Gt: number): CelestialB
 };
 
 const _collisionRemove = new Set<string>();
+/**
+ * Fragments created during the current scan. They are appended to the live array
+ * while the outer loop is still running, so without this the very first shatter
+ * would cascade: the loop would reach its own debris and collide it against the
+ * remnant it just spawned around.
+ */
+const _spawnedThisScan = new Set<string>();
 
 export const checkCollisions = (bodies: CelestialBody[], _time: number): { active: CelestialBody[], merged: boolean, events: PhysicsEvent[], waveEvents: WaveEvent[] } => {
   const events: PhysicsEvent[] = [];
@@ -611,11 +635,27 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
   return { active: bodies || [], merged, events, waveEvents };
 };
 
-/** Allocation-free collision scan when callers provide reusable event sinks. */
+/** Fragments per impact when the caller does not supply a device-tier budget. */
+export const DEFAULT_MAX_FRAGMENTS = 6;
+
+/**
+ * Allocation-free collision scan when callers provide reusable event sinks.
+ *
+ * `dt` is the SIGNED length of the step that has just been integrated. When it is
+ * non-zero the contact test is swept over that step rather than sampled at its
+ * endpoint — see the comment on the test itself. Passing 0 (the default, and what
+ * the immutable `checkCollisions` wrapper does) degenerates to the old endpoint
+ * test exactly.
+ *
+ * `maxFragments` caps how many debris bodies a single destructive impact may
+ * create; callers pass their device tier's budget.
+ */
 export const scanCollisionsInPlace = (
   bodies: CelestialBody[],
   events: PhysicsEvent[],
   waveEvents: WaveEvent[],
+  dt: number = 0,
+  maxFragments: number = DEFAULT_MAX_FRAGMENTS,
 ): boolean => {
   if (!bodies || !Array.isArray(bodies) || bodies.length === 0) {
     return false;
@@ -624,99 +664,200 @@ export const scanCollisionsInPlace = (
   // V8 may replace a Set's backing table on clear(); do not do that on the
   // overwhelmingly common empty/collision-free path.
   if (_collisionRemove.size > 0) _collisionRemove.clear();
-  let merged = false;
+  if (_spawnedThisScan.size > 0) _spawnedThisScan.clear();
+  const step = Number.isFinite(dt) ? dt : 0;
 
   for (let i = 0; i < bodies.length; i++) {
     const b1 = bodies[i];
-    if (!isValidBody(b1) || _collisionRemove.has(b1.id)) continue;
+    if (!isValidBody(b1) || _collisionRemove.has(b1.id) || _spawnedThisScan.has(b1.id)) continue;
     // Satellites on Kepler rails never collide. Their true orbital radius is
     // far smaller than their parent's *drawn* radius — the Moon orbits at 0.10
     // length units while Earth is drawn at 2.5 — so contact tests against the
     // visual radius would consume every moon on the first step. They are
     // already excluded from the integrator for the same reason; if one escapes
     // its Hill sphere it is promoted to a free body and becomes collidable.
+    //
+    // Contact therefore happens at the VISUAL radius, by design. Outcome
+    // classification has to use the same frame of reference or it compares
+    // quantities sampled ~1000× apart — see `utils/collisionOutcome.ts`.
     if (isSatellite(b1)) continue;
 
     for (let j = i + 1; j < bodies.length; j++) {
       const b2 = bodies[j];
-      if (!isValidBody(b2) || _collisionRemove.has(b2.id)) continue;
+      if (!isValidBody(b2) || _collisionRemove.has(b2.id) || _spawnedThisScan.has(b2.id)) continue;
       if (isSatellite(b2)) continue;
 
-      const dx = b2.position.x - b1.position.x;
-      const dy = b2.position.y - b1.position.y;
-      const dz = b2.position.z - b1.position.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (!Number.isFinite(dist)) continue;
+      // Swept contact test.
+      //
+      // The endpoint-only test this replaces is what produced the original "they
+      // got close and nothing happened, then the app bugged out" bug. A pair of
+      // neutron stars has a contact diameter of ~1.6 L* and a mutual escape speed
+      // of ~2970 L*/yr, so at dt = 1/1024 yr they move ~2.9 L* per step and pass
+      // clean through the contact sphere between two samples. No collision is
+      // ever detected; instead the pass-through samples the softened 1/r² force
+      // at a separation far inside contact, delivers an enormous impulse, and the
+      // body is truncated to MAX_VELOCITY_MAGNITUDE — which is not energy
+      // conserving, so it can never fall back and is pinned to the position
+      // envelope instead. The user sees a body vanish with no event and no VFX.
+      //
+      // Verlet has already advanced both bodies, so reconstruct the segment
+      // backwards from the endpoint and take the true minimum separation over it:
+      //   r(u) = r0 − u·w,  u ∈ [0,1],  w = (v2 − v1)·dt
+      // This is a minimum over the segment, not an inflated radius, so it adds no
+      // false positives.
+      const r0x = b2.position.x - b1.position.x;
+      const r0y = b2.position.y - b1.position.y;
+      const r0z = b2.position.z - b1.position.z;
+      const rvx = b2.velocity.x - b1.velocity.x;
+      const rvy = b2.velocity.y - b1.velocity.y;
+      const rvz = b2.velocity.z - b1.velocity.z;
+      const wx = rvx * step;
+      const wy = rvy * step;
+      const wz = rvz * step;
 
-      if (dist < (b1.radius + b2.radius) * 0.8) {
-        merged = true;
-        const totalMass = b1.mass + b2.mass;
+      const r0Sq = r0x * r0x + r0y * r0y + r0z * r0z;
+      const wSq = wx * wx + wy * wy + wz * wz;
+      const r0w = r0x * wx + r0y * wy + r0z * wz;
+      let u = wSq > 0 ? r0w / wSq : 0;
+      if (!(u > 0)) u = 0; else if (u > 1) u = 1;
+      const minSepSq = r0Sq - 2 * u * r0w + u * u * wSq;
+      if (!Number.isFinite(minSepSq)) continue;
 
-        if (totalMass <= 0 || !Number.isFinite(totalMass)) {
-          _collisionRemove.add(b2.id);
-          continue;
-        }
+      const contactRadius = CONTACT_FRACTION * (b1.radius + b2.radius);
+      if (minSepSq >= contactRadius * contactRadius) continue;
 
-        const invTotalMass = 1 / totalMass;
-
-        scratchV2
-          .set(b1.velocity.x, b1.velocity.y, b1.velocity.z)
-          .multiplyScalar(b1.mass)
-          .addScaledVector(b2.velocity, b2.mass)
-          .multiplyScalar(invTotalMass);
-
-        scratchV3
-          .set(b1.position.x, b1.position.y, b1.position.z)
-          .multiplyScalar(b1.mass)
-          .addScaledVector(b2.position, b2.mass)
-          .multiplyScalar(invTotalMass);
-
-        const survivor = b1.mass >= b2.mass ? b1 : b2;
-        const consumed = b1.mass >= b2.mass ? b2 : b1;
-
-        const mergedMass = clampMass(totalMass * COLLISION_PHYSICS.MERGER_EFFICIENCY);
-        if (
-          !Number.isFinite(mergedMass) ||
-          !Number.isFinite(scratchV2.x) ||
-          !Number.isFinite(scratchV3.x)
-        ) {
-          _collisionRemove.add(consumed.id);
-          continue;
-        }
-        // Momentum is conserved exactly (the barycentric velocity above).
-        // The mass deficit is energy radiated away by the merger rather than
-        // matter that silently disappears, so it is reported as an event.
-        const massDeficit = totalMass - mergedMass;
-        survivor.mass = mergedMass;
-        survivor.velocity.copy(scratchV2);
-        survivor.position.copy(scratchV3);
-        // Re-derive radius, type and geophysics from the new mass rather than
-        // adding volumes: a merger that crosses a burning or degeneracy
-        // threshold must actually change what the body is.
-        reconcileBodyDerivedState(survivor);
-
-        _collisionRemove.add(consumed.id);
-
+      const totalMass = b1.mass + b2.mass;
+      if (totalMass <= 0 || !Number.isFinite(totalMass)) {
+        // Degenerate pair. Removing a body with no event is what let one
+        // disappear with nothing on screen; always report it.
+        _collisionRemove.add(b2.id);
         events.push({
           type: 'collision',
-          mass: consumed.mass,
-          position: scratchV3.clone(),
-          velocity: scratchV2.clone(),
+          outcome: 'merge',
+          mass: b2.mass,
+          position: b2.position.clone(),
+          velocity: b2.velocity.clone(),
+          radius: contactRadius,
         });
-        if (massDeficit > 0) {
-          events.push({
-            type: 'gravitational_wave',
-            position: scratchV3.clone(),
-            mass: massDeficit,
-            energy: massDeficit,
-          });
-        }
+        continue;
       }
+
+      const relSpeed = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz);
+      const cls = classifyImpact(b1, b2, relSpeed, contactRadius);
+      const survivor = cls.primary;
+      const consumed = cls.secondary;
+
+      const invTotalMass = 1 / totalMass;
+
+      scratchV2
+        .set(b1.velocity.x, b1.velocity.y, b1.velocity.z)
+        .multiplyScalar(b1.mass)
+        .addScaledVector(b2.velocity, b2.mass)
+        .multiplyScalar(invTotalMass);
+
+      scratchV3
+        .set(b1.position.x, b1.position.y, b1.position.z)
+        .multiplyScalar(b1.mass)
+        .addScaledVector(b2.position, b2.mass)
+        .multiplyScalar(invTotalMass);
+
+      const productMass = cls.productMass;
+      if (
+        !Number.isFinite(productMass) ||
+        !Number.isFinite(scratchV2.x) ||
+        !Number.isFinite(scratchV3.x)
+      ) {
+        _collisionRemove.add(consumed.id);
+        events.push({
+          type: 'collision',
+          outcome: 'merge',
+          mass: consumed.mass,
+          position: consumed.position.clone(),
+          velocity: consumed.velocity.clone(),
+          radius: contactRadius,
+        });
+        continue;
+      }
+
+      // Momentum is conserved exactly (the barycentric velocity above). The mass
+      // deficit is energy radiated away by the merger rather than matter that
+      // silently disappears, so it is reported as an event.
+      const massDeficit = totalMass - productMass;
+      const consumedMass = consumed.mass;
+
+      let outcome = cls.outcome;
+      let fragmentCount = 0;
+
+      survivor.velocity.copy(scratchV2);
+      survivor.position.copy(scratchV3);
+
+      if (outcome === 'shatter') {
+        // A fragment is a body, and bodies are a hard-capped resource: the
+        // gravity-grid shader uploads fixed 50-element uniform arrays and
+        // sanitizeCelestialBodies truncates the tail on the next store resync.
+        // The consumed body frees one slot.
+        const headroom = PHYSICS_LIMITS.MAX_BODIES - bodies.length + 1;
+        const plan = planFragmentation(cls, headroom, maxFragments);
+        if (plan) {
+          survivor.mass = plan.largestRemnantMass;
+          const correction = spawnFragments(cls, plan, scratchV3, scratchV2, bodies);
+          // The residual correction applies to the whole product, remnant
+          // included, or total momentum would not be conserved.
+          survivor.velocity.add(correction);
+          fragmentCount = plan.fragmentCount;
+          finaliseFragments(bodies, bodies.length - fragmentCount, survivor, scratchV3);
+        } else {
+          // No room for a debris field worth the name; a clean merge is the
+          // honest fallback rather than half-destroying the body.
+          outcome = 'merge';
+          survivor.mass = productMass;
+        }
+      } else {
+        survivor.mass = productMass;
+      }
+
+      if (outcome === 'accrete') {
+        applyAccretionSpinUp(survivor, consumedMass);
+      }
+
+      // Re-derive radius, type and geophysics from the new mass rather than
+      // adding volumes: a merger that crosses a burning or degeneracy threshold
+      // must actually change what the body is.
+      reconcileBodyDerivedState(survivor);
+
+      _collisionRemove.add(consumed.id);
+
+      events.push({
+        type: outcome === 'shatter'
+          ? 'fragmentation'
+          : (outcome === 'accrete' && cls.tidalDisruption ? 'tde' : 'collision'),
+        outcome,
+        mass: consumedMass,
+        position: scratchV3.clone(),
+        velocity: scratchV2.clone(),
+        radius: contactRadius,
+        count: fragmentCount,
+        kineticEnergy: 0.5 * ((b1.mass * b2.mass) / totalMass) * relSpeed * relSpeed,
+      });
+      if (massDeficit > 0) {
+        events.push({
+          type: 'gravitational_wave',
+          position: scratchV3.clone(),
+          mass: massDeficit,
+          energy: massDeficit,
+        });
+      }
+
+      // b1 is only tested for removal on entry to the outer loop. When b2 was the
+      // heavier body, b1 is the one that just died — and continuing would keep
+      // testing its stale position and stale mass against b3…bn, merging it a
+      // second time and creating mass out of nothing.
+      if (_collisionRemove.has(b1.id)) break;
     }
   }
 
-  if (!merged || _collisionRemove.size === 0) {
-    return false;
+  if (_collisionRemove.size === 0) {
+    return _spawnedThisScan.size > 0;
   }
 
   let write = 0;
@@ -729,6 +870,70 @@ export const scanCollisionsInPlace = (
   bodies.length = write;
 
   return true;
+};
+
+/**
+ * Give newly spawned fragments their derived state and make sure they are not
+ * placed inside the remnant or inside each other. `spawnFragments` cannot do the
+ * spacing itself because a fragment's visual radius is only known after its type
+ * and mass-radius relation have been resolved.
+ */
+const finaliseFragments = (
+  bodies: CelestialBody[],
+  firstIndex: number,
+  survivor: CelestialBody,
+  centre: THREE.Vector3,
+): void => {
+  let maxFragRadius = 0;
+  for (let i = firstIndex; i < bodies.length; i++) {
+    reconcileBodyDerivedState(bodies[i]);
+    _spawnedThisScan.add(bodies[i].id);
+    if (bodies[i].radius > maxFragRadius) maxFragRadius = bodies[i].radius;
+  }
+
+  const count = bodies.length - firstIndex;
+  if (count <= 0) return;
+
+  // Clear the remnant, and keep adjacent points on the Fibonacci sphere further
+  // apart than their own contact diameter so the debris does not immediately
+  // re-collide with itself.
+  const required = Math.max(
+    CONTACT_FRACTION * (survivor.radius + maxFragRadius) * 1.25,
+    0.6 * count * maxFragRadius,
+  );
+
+  for (let i = firstIndex; i < bodies.length; i++) {
+    const p = bodies[i].position;
+    const dx = p.x - centre.x;
+    const dy = p.y - centre.y;
+    const dz = p.z - centre.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(d > 0) || d >= required) continue;
+    const k = required / d;
+    p.set(centre.x + dx * k, centre.y + dy * k, centre.z + dz * k);
+  }
+};
+
+/**
+ * Accreted mass carries angular momentum, so a hole that eats something spins up
+ * and its disk brightens. The 0.15 coefficient is illustrative rather than
+ * derived — the accreted material's actual specific angular momentum depends on
+ * the geometry of the encounter, which the sim does not track. The spin is
+ * clamped to the Thorne limit (a* = 0.998) by `sanitizeProperties`; that ceiling
+ * IS physical, since photons captured from the disk cap accretion-driven spin.
+ *
+ * `reconcileBodyDerivedState` re-derives the horizon from mass and spin
+ * afterwards, so the drawn horizon grows on accretion with no rendering changes.
+ */
+const applyAccretionSpinUp = (hole: CelestialBody, consumedMass: number): void => {
+  if (hole.type !== 'Black Hole' || !(hole.mass > 0)) return;
+  const props = hole.properties ?? (hole.properties = {});
+  const spin = props.spinParameter ?? 0;
+  props.spinParameter = Math.min(
+    MAX_SPIN_PARAMETER,
+    spin + 0.15 * (consumedMass / hole.mass),
+  );
+  props.accretionRate = Math.min(1, (props.accretionRate ?? 0) + 0.4);
 };
 
 /**

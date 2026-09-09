@@ -224,7 +224,23 @@ export const useStore = create<AppState>((set, get) => ({
       }
       return sanitizeCelestialBody(out);
     });
-    return { bodies: merged };
+
+    // A collision can remove any body, including one the user has selected,
+    // opened in the inspector, or locked the camera to. A dangling cameraLockedId
+    // is not inert: the follow loop looks the id up every frame, gets undefined,
+    // and silently does nothing — the camera freezes with no way back but
+    // re-locking. Prune exactly what died and nothing else; an unrelated
+    // collision elsewhere in the system must not disturb the user's selection.
+    const alive = new Set(merged.map((b) => b.id));
+    const prune = <T extends string | null>(id: T): T | null =>
+      id && !alive.has(id) ? null : id;
+
+    return {
+      bodies: merged,
+      selectedId: prune(state.selectedId),
+      inspectorBodyId: prune(state.inspectorBodyId),
+      cameraLockedId: prune(state.cameraLockedId),
+    };
   }),
 
   toggleDebugMode: () => set((state) => ({ isDebugMode: !state.isDebugMode })),

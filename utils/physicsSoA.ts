@@ -37,6 +37,11 @@ const isValid = (b: CelestialBody | null | undefined): b is CelestialBody =>
   b.velocity != null &&
   typeof b.mass === 'number' && isFinite(b.mass) &&
   typeof b.radius === 'number' && isFinite(b.radius) &&
+  // radiusKm feeds pairSofteningSq below. That function is defensive on its own
+  // (a bad radiusKm there degrades to the softening floor rather than NaN); this
+  // check is the secondary net, and is deliberately the weaker of the two because
+  // failing it removes the body from gravity entirely.
+  typeof b.radiusKm === 'number' && isFinite(b.radiusKm) &&
   !isSatellite(b);
 
 // Reusable typed buffers (resized on demand, never shrunk).
@@ -253,7 +258,7 @@ export const setSimTime = (t: number): void => { clockState[SIM_TIME_INDEX] = is
 export const runFixedSteps = (
   bodiesRef: { current: CelestialBody[] },
   elapsed: number,
-  stepCallback?: (bodies: CelestialBody[]) => CelestialBody[],
+  stepCallback?: (bodies: CelestialBody[], dt: number) => CelestialBody[],
   tier: DeviceTier = 'high',
 ): number => {
   if (!isFinite(elapsed) || elapsed === 0 || !bodiesRef.current) {
@@ -272,7 +277,18 @@ export const runFixedSteps = (
     bodies = verletStepInPlace(bodies, dt);
     clockState[SIM_TIME_INDEX] += dt;
     clampBodiesInPlace(bodies);
-    if (stepCallback) bodies = stepCallback(bodies);
+    if (stepCallback) {
+      // `dt` is signed, so a collision scan can sweep the step it just integrated
+      // and reverse playback keeps working.
+      const countBefore = bodies.length;
+      bodies = stepCallback(bodies, dt);
+      // A merge or a fragmentation changes the body set. `primeCurrentAccel`
+      // would otherwise return anyKnown=true from the *surviving* bodies' cache
+      // entries and skip the full force pass, leaving a new fragment with
+      // a(t) = 0 and a merge survivor with the acceleration it had at its
+      // pre-merge position and mass.
+      if (bodies.length !== countBefore) resetVerletCache();
+    }
     clampBodiesInPlace(bodies);
     clockState[ACCUMULATOR_INDEX] -= policy.fixedDt;
     steps++;
