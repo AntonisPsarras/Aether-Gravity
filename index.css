@@ -265,6 +265,32 @@ canvas {
   width: min(22rem, calc(100vw - 1.5rem - var(--safe-left) - var(--safe-right)));
   max-width: min(22rem, calc(100vw - 1.5rem - var(--safe-left) - var(--safe-right)));
   max-height: min(32vh, 13rem);
+  transition: max-height 300ms ease-out;
+}
+
+/* The wrapper preserves the original flex layout at phone/tablet widths. On
+   desktop it becomes a grid disclosure so the rail body can animate shut
+   without being unmounted before its exit motion finishes. */
+.universe-outliner-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.universe-outliner-content-inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.universe-outliner-chevron {
+  transition: transform 200ms ease;
+}
+
+.universe-outliner-chevron[data-open='true'] {
+  transform: rotate(180deg);
 }
 
 @media (min-width: 768px) {
@@ -1273,22 +1299,79 @@ html[data-reduced-motion='true'] *::after {
     transform: none;
   }
 
-  /* Outliner becomes a full-height left rail. Kept as a max-height override
-     rather than a new selector so the collapsed-header state still works. */
+  /* Closed outliner is a compact, independently legible card. Opening it
+     grows the same surface into the docked rail, while App reserves canvas
+     width in one state update rather than resizing WebGL each animation frame. */
   .universe-outliner-anchor {
+    top: max(1rem, var(--safe-top));
+    bottom: auto;
+    left: max(1rem, var(--safe-left));
+    width: 16rem;
+    max-width: 16rem;
+    height: 3.75rem;
+    max-height: none;
+    border-radius: 0.75rem;
+    transition:
+      top var(--dur-rail) var(--ease-panel),
+      left var(--dur-rail) var(--ease-panel),
+      width var(--dur-rail) var(--ease-panel),
+      max-width var(--dur-rail) var(--ease-panel),
+      height var(--dur-rail) var(--ease-panel),
+      border-radius var(--dur-rail) var(--ease-panel),
+      border-width var(--dur-rail) var(--ease-panel),
+      border-color var(--dur-rail) var(--ease-panel),
+      box-shadow var(--dur-rail) var(--ease-panel);
+  }
+
+  .universe-outliner-anchor.is-expanded {
     top: 0;
-    bottom: 0;
-    /* The tablet band nudges this right to clear the creation rail; at rail
-       width the outliner IS the left edge, and the creation rail is offset by
-       --rail-left instead. */
     left: 0;
     width: var(--rail-left-w);
     max-width: var(--rail-left-w);
-    max-height: none;
+    height: 100dvh;
     border-radius: 0;
-    border-left: 0;
-    border-top: 0;
-    border-bottom: 0;
+    border-left-width: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    box-shadow: none;
+  }
+
+  .universe-outliner-toggle {
+    transition:
+      background-color 200ms ease,
+      border-bottom-color var(--dur-rail) var(--ease-panel);
+  }
+
+  .universe-outliner-anchor:not(.is-expanded) .universe-outliner-toggle {
+    border-bottom-color: transparent;
+  }
+
+  .universe-outliner-content {
+    display: grid;
+    grid-template-rows: 0fr;
+    overflow: hidden;
+    transition: grid-template-rows var(--dur-rail) var(--ease-panel);
+  }
+
+  .universe-outliner-content[data-open='true'] {
+    grid-template-rows: 1fr;
+  }
+
+  .universe-outliner-content-inner {
+    min-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-0.5rem);
+    pointer-events: none;
+    transition:
+      opacity 180ms ease,
+      transform var(--dur-rail) var(--ease-panel);
+  }
+
+  .universe-outliner-content[data-open='true'] .universe-outliner-content-inner {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
   }
   /* Re-centre the control bar in the space the rails leave, and cap it there.
      Without the cap it keeps its intrinsic ~44rem width and slides underneath

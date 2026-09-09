@@ -49,22 +49,54 @@ test.describe('layout tiers', () => {
 test.describe('desktop rails', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) < DESKTOP_MIN, 'desktop only');
 
-  test('keeps the collapsed outliner anchored and centers creation in the free canvas', async ({ page }) => {
+  test('animates the outliner between a compact card and docked rail', async ({ page }) => {
     const outliner = page.getByTestId('outliner-panel');
     const dock = page.getByTestId('creation-toolbar');
     const canvas = page.locator('.canvas-viewport');
+    const toggle = page.getByRole('button', { name: /Universe Outliner/ });
     const expanded = (await outliner.boundingBox())!;
 
-    await page.getByRole('button', { name: /Universe Outliner/ }).click();
-    await outliner.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
-    const collapsed = (await outliner.boundingBox())!;
-    expect(collapsed.x).toBeCloseTo(expanded.x, 0);
-    expect(collapsed.y).toBeCloseTo(expanded.y, 0);
-    expect(collapsed.width).toBeCloseTo(expanded.width, 0);
+    expect(expanded.x).toBeCloseTo(0, 0);
+    expect(expanded.y).toBeCloseTo(0, 0);
+    expect(expanded.width).toBeCloseTo(18 * 16, 0);
 
-    // Restore the rail and verify the horizontal dock uses the canvas centre,
-    // not the full viewport centre hidden underneath the left rail.
-    await page.getByRole('button', { name: /Universe Outliner/ }).click();
+    await toggle.click();
+    await expect(outliner).toHaveAttribute('data-open', 'false');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await outliner.evaluate((element) => Promise.all(
+      element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+    ));
+    const collapsed = (await outliner.boundingBox())!;
+    expect(collapsed.x).toBeCloseTo(16, 0);
+    expect(collapsed.y).toBeCloseTo(16, 0);
+    expect(collapsed.width).toBeCloseTo(16 * 16, 0);
+    expect(collapsed.height).toBeCloseTo(3.75 * 16, 0);
+    expect(await outliner.evaluate((element) => getComputedStyle(element).borderTopLeftRadius))
+      .not.toBe('0px');
+
+    // Reserving the rail is an immediate canvas layout change; only the panel
+    // surface animates so WebGL does not reallocate a framebuffer each frame.
+    await toggle.click();
+    await expect(outliner).toHaveAttribute('data-open', 'true');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect((await canvas.boundingBox())!.x).toBeCloseTo(18 * 16, 0);
+    await outliner.evaluate((element) => Promise.all(
+      element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+    ));
+    const restored = (await outliner.boundingBox())!;
+    expect(restored.x).toBeCloseTo(expanded.x, 0);
+    expect(restored.y).toBeCloseTo(expanded.y, 0);
+    expect(restored.width).toBeCloseTo(expanded.width, 0);
+
+    // The body remains interactive after reopening, rather than being removed
+    // before its close transition completes.
+    const firstRow = page.locator('[data-testid^="outliner-row-"]').first();
+    await expect(firstRow).toBeVisible();
+    await firstRow.click();
+    await expect(firstRow).toHaveAttribute('data-selected', 'true');
+
+    // Verify the horizontal dock uses the free canvas centre, not the full
+    // viewport centre hidden underneath the left rail.
     const dockBox = (await dock.boundingBox())!;
     const canvasBox = (await canvas.boundingBox())!;
     expect(dockBox.x).toBeGreaterThanOrEqual(canvasBox.x);

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, List } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { ChevronDown, List } from 'lucide-react';
 import type { BodyCategory } from '../../constants';
 import { useStore } from '../../utils/store';
 import { checkHabitability } from '../../utils/HabitabilityService';
@@ -146,6 +146,10 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
   // whether the left rail is claiming canvas width.
   const isOpen = outlinerOpen;
   const toggleOpen = () => setOutlinerOpen(!outlinerOpen);
+  const contentId = useId();
+  // Desktop keeps the body mounted while closing so CSS can animate its
+  // disclosure. Smaller layouts retain their existing conditional mounting.
+  const keepContentMounted = breakpoint === 'desktop';
 
   return (
     <div
@@ -158,7 +162,6 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
         'universe-outliner-anchor fixed z-20 flex flex-col overflow-hidden',
         'bg-[rgba(45,51,64,0.6)] backdrop-blur-md border border-white/10',
         'rounded-xl shadow-2xl ring-1 ring-white/5',
-        'transition-[max-height] duration-300 ease-out',
         isOpen && 'is-expanded',
       )}
     >
@@ -166,7 +169,8 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
         type="button"
         onClick={toggleOpen}
         aria-expanded={isOpen}
-        className="touch-target flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10 hover:bg-white/5 transition-colors text-left shrink-0"
+        aria-controls={contentId}
+        className="universe-outliner-toggle touch-target flex items-center justify-between gap-2 px-3 py-2 border-b border-white/10 hover:bg-white/5 transition-colors text-left shrink-0"
       >
         <span className="flex items-center gap-2 min-w-0">
           <List size={16} className="text-nova-gold shrink-0" />
@@ -178,14 +182,25 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
           <span className="text-[10px] font-mono text-pulsar-white/30">
             {filtering ? `${rows.length} / ${model.total}` : `${model.total} objects`}
           </span>
-          {isOpen
-            ? <ChevronUp size={14} className="text-pulsar-white/30" />
-            : <ChevronDown size={14} className="text-pulsar-white/30" />}
+          <ChevronDown
+            size={14}
+            className="universe-outliner-chevron text-pulsar-white/30"
+            data-open={isOpen ? 'true' : 'false'}
+          />
         </span>
       </button>
 
-      {isOpen && (
-        <>
+      {(isOpen || keepContentMounted) && (
+        <div
+          id={contentId}
+          role="region"
+          aria-label="Universe Outliner contents"
+          aria-hidden={!isOpen}
+          inert={!isOpen}
+          className="universe-outliner-content"
+          data-open={isOpen ? 'true' : 'false'}
+        >
+          <div className="universe-outliner-content-inner">
           <OutlinerToolbar
             query={query}
             onQueryChange={setQuery}
@@ -237,7 +252,8 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
               </>
             )}
           </div>
-        </>
+          </div>
+        </div>
       )}
     </div>
   );
