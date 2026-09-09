@@ -12,9 +12,11 @@ const skillData = [
 ];
 
 const SkillsRadar: React.FC<{ width: number; height: number }> = ({ width, height }) => {
-    const radius = Math.min(width, height) / 2 - 40;
+    const radius = Math.max(0, Math.min(width, height) / 2 - 40);
     const centerX = width / 2;
     const centerY = height / 2;
+
+    if (width === 0 || height === 0) return null;
 
     const scale = scaleLinear({
         range: [0, radius],
@@ -39,7 +41,7 @@ const SkillsRadar: React.FC<{ width: number; height: number }> = ({ width, heigh
                         cy={centerY}
                         r={scale(r)}
                         fill="none"
-                        stroke="#e2e8f0"
+                        stroke="rgba(255, 255, 255, 0.1)"
                         strokeWidth={1}
                     />
                 ))}
@@ -52,7 +54,7 @@ const SkillsRadar: React.FC<{ width: number; height: number }> = ({ width, heigh
                             y1={centerY}
                             x2={centerX + radius * Math.cos(angle)}
                             y2={centerY + radius * Math.sin(angle)}
-                            stroke="#e2e8f0"
+                            stroke="rgba(255, 255, 255, 0.1)"
                             strokeWidth={1}
                         />
                     );
@@ -61,9 +63,9 @@ const SkillsRadar: React.FC<{ width: number; height: number }> = ({ width, heigh
                     data={[...points, points[0]]}
                     x={(d) => d.x}
                     y={(d) => d.y}
-                    stroke="#4f46e5"
+                    stroke="#F9D423"
                     strokeWidth={2}
-                    fill="rgba(79, 70, 229, 0.2)"
+                    fill="rgba(249, 212, 35, 0.16)"
                 />
                 {skillData.map((d, i) => {
                     const angle = (Math.PI * 2 * i) / skillData.length - Math.PI / 2;
@@ -72,7 +74,7 @@ const SkillsRadar: React.FC<{ width: number; height: number }> = ({ width, heigh
                             key={`label-${i}`}
                             x={centerX + (radius + 15) * Math.cos(angle)}
                             y={centerY + (radius + 15) * Math.sin(angle)}
-                            fill="#64748b"
+                            fill="rgba(220, 229, 243, 0.55)"
                             fontSize={10}
                             fontWeight="bold"
                             textAnchor="middle"

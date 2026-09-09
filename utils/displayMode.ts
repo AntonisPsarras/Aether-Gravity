@@ -68,6 +68,19 @@ export const CURVATURE_KNEE = 25;
 export const CURVATURE_MAX_DEPTH = 220;
 
 /**
+ * Absolute render-safety ceiling on well depth, L*, applied in EVERY mode —
+ * including Advanced Mode's raw/uncompressed path, which is otherwise
+ * deliberately unclamped (see `curvatureDisplayScale`'s identity contract).
+ * A body near `PHYSICS_LIMITS.MAX_MASS` digs a well of order 10⁸-10⁹ L* by the
+ * raw formula — far past the camera's far clip plane — which pushes grid
+ * vertices out of the renderable frustum and makes the mesh appear to vanish.
+ * 20,000 L* sits comfortably above any physically-plausible star's raw well
+ * (~10⁴ L*, see `curvatureDisplay.ts`), so it never touches normal bodies; it
+ * only stops pathological masses from breaking the render.
+ */
+export const GRID_RENDER_SAFETY_MAX_DEPTH = 20000;
+
+/**
  * The grid also tints by tidal stress, `m / d³`, which has the same unbounded
  * dynamic range as the well depth. In Advanced Mode the high-stress vertices
  * are dragged thousands of units below the frame and are simply never seen;

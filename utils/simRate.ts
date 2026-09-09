@@ -20,18 +20,18 @@ import { FIXED_DT, MAX_CATCHUP_STEPS } from './physicsSoA';
 
 /**
  * Simulated years consumed per real second at speed = 1 in Advanced Mode —
- * 12.5 real seconds per Earth year. Inner planets read clearly while Jupiter
- * (11.9 yr) still visibly moves over a couple of minutes.
+ * 25 real seconds per Earth year. Inner planets read clearly at a relaxed
+ * pace while Jupiter (11.9 yr) still visibly moves over a few minutes.
  *
  * Also chosen so the entire slider stays inside the per-frame step budget at
- * 60 fps: 4x → 0.32 yr/s → 0.0053 yr/frame → 5.5 of the 8 available steps. That
- * is what makes the slider monotonic across its full range instead of
- * saturating halfway. `simRate.test.ts` guards this.
+ * 60 fps: 4x → 0.16 yr/s → 0.0027 yr/frame → 2.7 of the 8 available steps,
+ * comfortably under the cap that made higher slider positions saturate before
+ * this module existed. `simRate.test.ts` guards this.
  */
-export const BASE_YEARS_PER_REAL_SECOND = 0.08;
+export const BASE_YEARS_PER_REAL_SECOND = 0.04;
 
 /**
- * Beginner Mode runs at ~36 real seconds per Earth year at 1x. Slow enough to
+ * Beginner Mode runs at ~71 real seconds per Earth year at 1x. Slow enough to
  * watch an inner planet sweep out an orbit and see the velocity change at
  * periapsis, without being so slow that nothing appears to happen.
  */

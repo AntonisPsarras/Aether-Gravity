@@ -22,7 +22,7 @@ import { PlanetSurfaceMaterial } from './Planet/PlanetShaders';
 import { useStore } from '../utils/store';
 import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
 import {
-  CURVATURE_KNEE, CURVATURE_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
+  CURVATURE_KNEE, CURVATURE_MAX_DEPTH, GRID_RENDER_SAFETY_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
   curvatureAmountFor, visualScaleFor,
 } from '../utils/displayMode';
 import { simElapsedForFrame } from '../utils/simRate';
@@ -137,6 +137,12 @@ const GravityGridMaterial = shaderMaterial(
     uCurvatureMax: CURVATURE_MAX_DEPTH,
     uTidalKnee: TIDAL_KNEE,
     uTidalMax: TIDAL_MAX,
+    // Half-extent of the plane geometry before the infinite-reach remap below
+    // (planeGeometry args are 5000×5000). Static — never updated per frame.
+    uGridHalfSize: 2500.0,
+    // Render-safety ceiling on well depth, independent of uCurvatureMax — see
+    // GRID_RENDER_SAFETY_MAX_DEPTH doc comment in utils/displayMode.ts.
+    uGridRenderSafetyMaxDepth: GRID_RENDER_SAFETY_MAX_DEPTH,
   },
   `precision highp float;
 #include <common>
@@ -154,8 +160,22 @@ uniform float uCurvatureKnee;
 uniform float uCurvatureMax;
 uniform float uTidalKnee;
 uniform float uTidalMax;
+uniform float uGridHalfSize;
+uniform float uGridRenderSafetyMaxDepth;
 
 ${CURVATURE_DISPLAY_GLSL}
+
+// Stretches an in-plane axis so the plane's true edge (±halfSize) lands at a
+// world distance of tens of millions of units instead of halfSize itself.
+// Identity (derivative 1) at x = 0 — the camera, since the grid mesh
+// re-centers there every frame — so vertex density and curvature fidelity
+// near anything the user is actually looking at are unchanged. Density falls
+// off smoothly with distance, which is why the finite plane never shows a
+// hard edge inside the fragment shader's fade range.
+float remapGridAxis(float x, float halfSize) {
+  float L = halfSize * 1.0002;
+  return x / (1.0 - abs(x) / L);
+}
 
 varying float vDisplacement;
 varying float vTidalMagnitude;
@@ -166,7 +186,8 @@ varying vec3 vWorldPos;
 
 void main() {
   vUv = uv;
-  vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+  vec2 remappedXY = vec2(remapGridAxis(position.x, uGridHalfSize), remapGridAxis(position.y, uGridHalfSize));
+  vec4 worldPosition = modelMatrix * vec4(remappedXY.x, remappedXY.y, position.z, 1.0);
   float displacement = 0.0;
   float maxTidal = 0.0;
   float habFactor = 0.0;
@@ -195,8 +216,13 @@ void main() {
   // displacement is negative (a well). Compress its magnitude for display,
   // then restore the sign. Identity when uCurvatureAmount is 0.
   displacement = -curvatureDisplayScale(-displacement, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
+  // Render-safety floor, independent of the compression above (which is
+  // deliberately unclamped in Advanced Mode): stops a near-max-mass body from
+  // pushing vertices out of the camera's renderable range and breaking the
+  // mesh. Far above any physically-plausible star's raw well depth.
+  displacement = max(displacement, -uGridRenderSafetyMaxDepth);
 
-  vec3 newPos = position;
+  vec3 newPos = vec3(remappedXY.x, remappedXY.y, position.z);
   newPos.z += displacement;
   vWorldPos = (modelMatrix * vec4(newPos, 1.0)).xyz;
   vDisplacement = displacement;
@@ -246,7 +272,7 @@ void main() {
   }
   
   float dist = length(vWorldPos.xz - cameraPosition.xz);
-  float fade = 1.0 - smoothstep(1500.0, 4000.0, dist);
+  float fade = 1.0 - smoothstep(2500.0, 7000.0, dist);
   float totalAlpha = max(lineAlpha * 0.4 * uLineGain * uVisualBoost, habAlpha) * fade;
   if (totalAlpha < 0.01) discard;
   gl_FragColor = vec4(finalColor, totalAlpha);

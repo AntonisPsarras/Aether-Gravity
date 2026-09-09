@@ -11,8 +11,8 @@ import { PHYSICS_LIMITS } from './physicsBounds';
 import { FIXED_DT, MAX_CATCHUP_STEPS } from './physicsSoA';
 
 describe('simYearsPerRealSecond', () => {
-  it('runs one Earth year in ~12.5 s at 1x in Advanced Mode', () => {
-    expect(realSecondsPerEarthYear(1, 'advanced')).toBeCloseTo(12.5, 6);
+  it('runs one Earth year in ~25 s at 1x in Advanced Mode', () => {
+    expect(realSecondsPerEarthYear(1, 'advanced')).toBeCloseTo(25, 6);
     expect(simYearsPerRealSecond(1, 'advanced')).toBeCloseTo(BASE_YEARS_PER_REAL_SECOND, 12);
   });
 
@@ -21,8 +21,8 @@ describe('simYearsPerRealSecond', () => {
     const advanced = simYearsPerRealSecond(1, 'advanced');
     expect(beginner / advanced).toBeCloseTo(BEGINNER_TIME_SCALE, 12);
     expect(beginner).toBeLessThan(advanced);
-    // ~36 s per Earth year — slow enough to follow an inner orbit by eye.
-    expect(realSecondsPerEarthYear(1, 'beginner')).toBeGreaterThan(30);
+    // ~71 s per Earth year — slow enough to follow an inner orbit by eye.
+    expect(realSecondsPerEarthYear(1, 'beginner')).toBeGreaterThan(60);
   });
 
   it('is linear in speed, so the slider is monotonic across its range', () => {

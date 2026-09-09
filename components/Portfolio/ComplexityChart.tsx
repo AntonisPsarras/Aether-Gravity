@@ -31,11 +31,14 @@ const ComplexityChart: React.FC<{ width: number; height: number }> = ({ width, h
         nice: true,
     });
 
+    const axisColor = 'rgba(220, 229, 243, 0.32)';
+    const labelColor = 'rgba(220, 229, 243, 0.4)';
+
     return (
         <svg width={width} height={height}>
             <Group left={margin.left} top={margin.top}>
-                <AxisLeft scale={yScale} label="Computational Cost" stroke="#94a3b8" tickStroke="#94a3b8" labelProps={{ fill: '#64748b', fontSize: 10, textAnchor: 'middle' }} tickLabelProps={{ fill: '#64748b', fontSize: 10 }} />
-                <AxisBottom scale={xScale} top={innerHeight} label="Number of Bodies (N)" stroke="#94a3b8" tickStroke="#94a3b8" labelProps={{ fill: '#64748b', fontSize: 10, textAnchor: 'middle' }} tickLabelProps={{ fill: '#64748b', fontSize: 10 }} />
+                <AxisLeft scale={yScale} label="Computational Cost" stroke={axisColor} tickStroke={axisColor} labelProps={{ fill: labelColor, fontSize: 10, textAnchor: 'middle' }} tickLabelProps={{ fill: labelColor, fontSize: 10 }} />
+                <AxisBottom scale={xScale} top={innerHeight} label="Number of Bodies (N)" stroke={axisColor} tickStroke={axisColor} labelProps={{ fill: labelColor, fontSize: 10, textAnchor: 'middle' }} tickLabelProps={{ fill: labelColor, fontSize: 10 }} />
 
                 {/* O(N^2) Path */}
                 <LinePath<ComplexityMetric>
@@ -43,7 +46,7 @@ const ComplexityChart: React.FC<{ width: number; height: number }> = ({ width, h
                     data={data}
                     x={(d) => xScale(d.nodeCount)}
                     y={(d) => yScale(d.oNSquaredValue)}
-                    stroke="#ef4444"
+                    stroke="#f87171"
                     strokeWidth={2}
                     strokeDasharray="4,2"
                 />
@@ -54,12 +57,12 @@ const ComplexityChart: React.FC<{ width: number; height: number }> = ({ width, h
                     data={data}
                     x={(d) => xScale(d.nodeCount)}
                     y={(d) => yScale(d.oNLogNValue)}
-                    stroke="#10b981"
+                    stroke="#5ee2ae"
                     strokeWidth={3}
                 />
 
-                <text x={innerWidth - 80} y={20} fill="#ef4444" fontSize={10} fontWeight="bold">O(N²)</text>
-                <text x={innerWidth - 80} y={innerHeight - 40} fill="#10b981" fontSize={10} fontWeight="bold">O(N log N)</text>
+                <text x={innerWidth - 80} y={20} fill="#f87171" fontSize={10} fontWeight="bold">O(N²)</text>
+                <text x={innerWidth - 80} y={innerHeight - 40} fill="#5ee2ae" fontSize={10} fontWeight="bold">O(N log N)</text>
             </Group>
         </svg>
     );
