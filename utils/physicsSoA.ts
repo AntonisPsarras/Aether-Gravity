@@ -24,6 +24,7 @@ import { G_CONSTANT } from '../constants';
 import { clampBodiesInPlace } from './physicsBounds';
 import { pairSofteningSq } from './physicsUtils';
 import { isSatellite } from './moonSystem';
+import type { DeviceTier } from './deviceCapabilities';
 
 /**
  * Bodies the integrator owns. Satellites on Kepler rails are excluded: they are
@@ -82,13 +83,8 @@ const primeCurrentAccel = (bodies: CelestialBody[]): boolean => {
 
 /** Write computed accelerations back to the persistent store. */
 const storeAccel = (bodies: CelestialBody[], src: Float32Array) => {
-  // Prune ids no longer present (cheap O(N))
-  if (accelById.size > bodies.length * 2) {
-    const live = new Set(bodies.map(b => b.id));
-    for (const key of accelById.keys()) {
-      if (!live.has(key)) accelById.delete(key);
-    }
-  }
+  // Structural changes call resetVerletCache, so pruning does not belong in
+  // the steady-state tick (where building a Set used to allocate).
   for (let i = 0; i < bodies.length; i++) {
     const b = i * 3;
     let triple = accelById.get(bodies[i].id);
@@ -227,16 +223,27 @@ export const FIXED_DT = 1 / 1024;
  * slider into one rate.
  */
 export const MAX_CATCHUP_STEPS = 8;
-let accumulator = 0;
+export const LOW_TIER_FIXED_DT = 1 / 512;
+export const LOW_TIER_MAX_CATCHUP_STEPS = 6;
+
+const HIGH_STEP_POLICY = Object.freeze({ fixedDt: FIXED_DT, maxCatchupSteps: MAX_CATCHUP_STEPS });
+const LOW_STEP_POLICY = Object.freeze({ fixedDt: LOW_TIER_FIXED_DT, maxCatchupSteps: LOW_TIER_MAX_CATCHUP_STEPS });
+export const physicsStepPolicy = (tier: DeviceTier): Readonly<{ fixedDt: number; maxCatchupSteps: number }> =>
+  tier === 'low' ? LOW_STEP_POLICY : HIGH_STEP_POLICY;
+
+// Mutable fractional scalars kept in typed storage. Updating a captured JS
+// number can allocate boxed HeapNumbers in V8's optimized code.
+const clockState = new Float64Array(2);
+const ACCUMULATOR_INDEX = 0;
+const SIM_TIME_INDEX = 1;
 
 /**
  * Total simulated time in years. Kepler-propagated satellites need an absolute
  * clock (their mean anomaly is defined against an epoch), and it is what the UI
  * shows as elapsed simulation time.
  */
-let simTime = 0;
-export const getSimTime = (): number => simTime;
-export const setSimTime = (t: number): void => { simTime = isFinite(t) ? t : 0; };
+export const getSimTime = (): number => clockState[SIM_TIME_INDEX];
+export const setSimTime = (t: number): void => { clockState[SIM_TIME_INDEX] = isFinite(t) ? t : 0; };
 
 /**
  * Run zero or more verlet steps to consume `elapsed` simulated time.
@@ -246,35 +253,37 @@ export const setSimTime = (t: number): void => { simTime = isFinite(t) ? t : 0; 
 export const runFixedSteps = (
   bodiesRef: { current: CelestialBody[] },
   elapsed: number,
-  stepCallback?: (bodies: CelestialBody[]) => CelestialBody[]
-): { steps: number; bodies: CelestialBody[] } => {
+  stepCallback?: (bodies: CelestialBody[]) => CelestialBody[],
+  tier: DeviceTier = 'high',
+): number => {
   if (!isFinite(elapsed) || elapsed === 0 || !bodiesRef.current) {
-    return { steps: 0, bodies: bodiesRef.current || [] };
+    return 0;
   }
+  const policy = physicsStepPolicy(tier);
   // Velocity-Verlet is time-symmetric, so running it with a negative dt
   // integrates backwards. The pre-2.0 loop returned early on elapsed <= 0, so
   // the reverse half of the speed slider silently did nothing.
   const reverse = elapsed < 0;
-  const dt = reverse ? -FIXED_DT : FIXED_DT;
-  accumulator += Math.min(Math.abs(elapsed), 0.2); // hard cap to avoid death spiral
+  const dt = reverse ? -policy.fixedDt : policy.fixedDt;
+  clockState[ACCUMULATOR_INDEX] += Math.min(Math.abs(elapsed), 0.2); // hard cap to avoid death spiral
   let steps = 0;
   let bodies = bodiesRef.current;
-  while (accumulator >= FIXED_DT && steps < MAX_CATCHUP_STEPS) {
+  while (clockState[ACCUMULATOR_INDEX] >= policy.fixedDt && steps < policy.maxCatchupSteps) {
     bodies = verletStepInPlace(bodies, dt);
-    simTime += dt;
+    clockState[SIM_TIME_INDEX] += dt;
     clampBodiesInPlace(bodies);
     if (stepCallback) bodies = stepCallback(bodies);
     clampBodiesInPlace(bodies);
-    accumulator -= FIXED_DT;
+    clockState[ACCUMULATOR_INDEX] -= policy.fixedDt;
     steps++;
   }
   // If we hit the catchup cap, drop residual time to avoid lag accumulation.
-  if (steps >= MAX_CATCHUP_STEPS) accumulator = 0;
+  if (steps >= policy.maxCatchupSteps) clockState[ACCUMULATOR_INDEX] = 0;
   bodiesRef.current = bodies;
-  return { steps, bodies };
+  return steps;
 };
 
 export const resetAccumulator = () => {
-  accumulator = 0;
-  simTime = 0;
+  clockState[ACCUMULATOR_INDEX] = 0;
+  clockState[SIM_TIME_INDEX] = 0;
 };

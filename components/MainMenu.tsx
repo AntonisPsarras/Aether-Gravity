@@ -123,7 +123,7 @@ const WorldCard: React.FC<{
             {showDeleteConfirm && (
                 <div className="absolute inset-0 z-10 bg-[rgba(16,20,28,0.96)] backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 animate-in fade-in duration-200">
                     <Trash2 size={24} className="text-red-400 mb-3" />
-                    <p className="text-sm text-pulsar-white/70 text-center mb-4">Delete "{world.name}"?</p>
+                    <p className="text-sm text-pulsar-white/70 text-center mb-4">Permanently delete “{world.name}” from this device? This cannot be undone.</p>
                     <div className="flex gap-2">
                         <button onClick={() => setShowDeleteConfirm(false)} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg transition-colors">Cancel</button>
                         <button onClick={handleConfirmDelete} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 rounded-lg transition-colors">Delete</button>
@@ -251,6 +251,7 @@ const FolderSection: React.FC<{
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(folder.name);
     const [error, setError] = useState<string | null>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const handleSaveRename = () => {
         try {
@@ -264,8 +265,28 @@ const FolderSection: React.FC<{
         }
     };
 
+    useEffect(() => {
+        if (!showDeleteConfirm) return;
+        return registerBackHandler(() => {
+            setShowDeleteConfirm(false);
+            return true;
+        });
+    }, [showDeleteConfirm]);
+
     return (
-        <div className="mb-6">
+        <div className="mb-6 relative">
+            {showDeleteConfirm && (
+                <div className="absolute inset-0 z-30 min-h-32 bg-[rgba(16,20,28,0.98)] backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 border border-red-500/20">
+                    <Trash2 size={24} className="text-red-400 mb-3" />
+                    <p className="text-sm text-pulsar-white/70 text-center mb-4">
+                        Delete the “{folder.name}” collection? The collection cannot be restored, but its {worlds.length} {worlds.length === 1 ? 'universe' : 'universes'} will be kept under Independent systems.
+                    </p>
+                    <div className="flex gap-2">
+                        <button onClick={() => setShowDeleteConfirm(false)} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg">Cancel</button>
+                        <button onClick={() => { onDeleteFolder(folder.id); setShowDeleteConfirm(false); }} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 rounded-lg">Delete collection</button>
+                    </div>
+                </div>
+            )}
             <div className="flex items-center gap-2 mb-3 px-1">
                 <button onClick={() => setIsExpanded(!isExpanded)} className="touch-target flex h-11 w-11 shrink-0 items-center justify-center hover:bg-white/10 rounded-md text-pulsar-white/50 hover:text-white transition-colors" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse folder' : 'Expand folder'}>
                     {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -313,7 +334,7 @@ const FolderSection: React.FC<{
                             </button>
                             <button
                                 type="button"
-                                onClick={() => onDeleteFolder(folder.id)}
+                                onClick={() => setShowDeleteConfirm(true)}
                                 className="inline-flex size-11 items-center justify-center text-pulsar-white/50 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                 aria-label={`Delete ${folder.name}`}
                             >
@@ -443,10 +464,22 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
         try { renameWorld(id, name); setWorlds(getWorldList()); setError(null); }
         catch (e: any) { setError(e.message); }
     };
-    const handleRenameFolder = (id: string, name: string) => { renameFolder(id, name); setFolders(getFolderList()); };
-    const handleMoveWorld = (worldId: string, folderId?: string) => { moveWorldToFolder(worldId, folderId); setWorlds(getWorldList()); };
-    const handleDelete = (id: string) => { deleteWorld(id); setWorlds(getWorldList()); };
-    const handleDeleteFolder = (id: string) => { deleteFolder(id); setFolders(getFolderList()); setWorlds(getWorldList()); };
+    const handleRenameFolder = (id: string, name: string) => {
+        try { renameFolder(id, name); setFolders(getFolderList()); setError(null); }
+        catch (e: any) { setError(e.message); }
+    };
+    const handleMoveWorld = (worldId: string, folderId?: string) => {
+        try { moveWorldToFolder(worldId, folderId); setWorlds(getWorldList()); setError(null); }
+        catch (e: any) { setError(e.message); }
+    };
+    const handleDelete = (id: string) => {
+        try { deleteWorld(id); setWorlds(getWorldList()); setError(null); }
+        catch (e: any) { setError(e.message); }
+    };
+    const handleDeleteFolder = (id: string) => {
+        try { deleteFolder(id); setFolders(getFolderList()); setWorlds(getWorldList()); setError(null); }
+        catch (e: any) { setError(e.message); }
+    };
     const closeTutorial = () => {
         markTutorialSeen();
         setShowTutorial(false);

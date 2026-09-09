@@ -142,4 +142,42 @@ test.describe('Performance soak', () => {
       contentType: 'application/json',
     });
   });
+
+  test('steady-state physics stays off the allocation and Zustand hot paths', async ({ page }) => {
+    await page.goto(e2eUrl(FIXTURE_STRESS, { tier: 'low', touch: '1', dpr: '1' }));
+    await waitForSimulationReady(page);
+
+    const storeIdentityStable = await page.evaluate(async () => {
+      const store = (window as any).__AETHER_VISUAL_TEST__.getStore();
+      const bodies = store.bodies;
+      store.setPaused(false);
+      await new Promise((resolve) => setTimeout(resolve, 2_500));
+      return (window as any).__AETHER_VISUAL_TEST__.getStore().bodies === bodies;
+    });
+    expect(storeIdentityStable).toBe(true);
+
+    const session = await page.context().newCDPSession(page);
+    await session.send('HeapProfiler.enable');
+    await session.send('HeapProfiler.startSampling', { samplingInterval: 64 });
+    await page.waitForTimeout(3_000);
+    const { profile } = await session.send('HeapProfiler.stopSampling');
+    await session.detach();
+
+    const hotFunctions = new Set([
+      'verletStepInPlace', 'computeAccelerationsInArray', 'clampBodiesInPlace',
+      'clampPositionVector', 'scanCollisionsInPlace', 'runFixedSteps',
+    ]);
+    const sampledBytes: Record<string, number> = {};
+    const visit = (node: any) => {
+      const name = node.callFrame?.functionName;
+      if (hotFunctions.has(name)) sampledBytes[name] = (sampledBytes[name] ?? 0) + (node.selfSize ?? 0);
+      for (const child of node.children ?? []) visit(child);
+    };
+    visit(profile.head);
+    test.info().attach('physics-allocation-sampling.json', {
+      body: JSON.stringify(sampledBytes, null, 2),
+      contentType: 'application/json',
+    });
+    expect(sampledBytes).toEqual({});
+  });
 });

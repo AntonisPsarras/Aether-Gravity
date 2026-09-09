@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { registerBlackHoleVisual } from './BlackHoleLensCapture';
@@ -11,6 +11,7 @@ import {
 import { displayDiskTemperatureK } from '../../utils/bodyAppearance';
 import { relativityChunk } from '../Planet/PlanetShaders';
 import { environmentReflectionGLSL, useEnvironment } from '../Environment/EnvironmentContext';
+import type { DeviceTier } from '../../utils/deviceCapabilities';
 
 export type BlackHoleRigProps = {
   radius: number;
@@ -20,11 +21,8 @@ export type BlackHoleRigProps = {
   onSelect: () => void;
   interactive: boolean;
   lensTexture?: THREE.Texture | null;
+  tier: DeviceTier;
 };
-
-type QualityTier = 'high' | 'low';
-
-const MOBILE_UA_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 const horizonVertex = `
 varying vec3 vNormal;
@@ -247,6 +245,8 @@ uniform float u_accretion;
 uniform float u_parallax;
 uniform float u_layer;
 uniform float u_inner;
+uniform sampler2D u_bg_texture;
+uniform vec2 u_resolution;
 varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vDiskNormalWorld;
@@ -272,6 +272,14 @@ void main() {
 
   float horizon = smoothstep(u_inner * 1.2, u_inner, r);
   vec3 color = mix(diskColor, vec3(0.0), horizon);
+  // Only the back layer samples the shared low-resolution capture. The other
+  // two layers retain parallax depth without tripling the texture cost.
+  if (u_layer < 0.5) {
+    vec2 screenUv = gl_FragCoord.xy / max(u_resolution, vec2(1.0));
+    vec2 lensDir = normalize(uv + 1e-5);
+    float lensAmt = smoothstep(0.9, 0.15, r) * 0.06 * (1.0 + u_spin);
+    color += texture2D(u_bg_texture, clamp(screenUv + lensDir * lensAmt, 0.0, 1.0)).rgb * 0.25;
+  }
   float alpha = clamp(max(diskMask, horizon * 0.9), 0.0, 1.0) * (0.55 + u_layer * 0.15);
   if (alpha < 0.03) discard;
   gl_FragColor = vec4(color, alpha);
@@ -313,13 +321,10 @@ export default function BlackHoleRig({
   onSelect,
   interactive,
   lensTexture,
+  tier,
 }: BlackHoleRigProps): React.ReactElement {
   const environment = useEnvironment();
   const decorativeTime = useRef(0);
-  const [qualityTier, setQualityTier] = useState<QualityTier>('high');
-  const frameProbeRef = useRef<number[]>([]);
-  const lowStreakRef = useRef(0);
-  const highStreakRef = useRef(0);
   const fallbackBgRef = useRef<THREE.DataTexture | null>(null);
   const { size, scene } = useThree();
 
@@ -410,6 +415,8 @@ export default function BlackHoleRig({
         uEnvironmentIntensity: { value: environment.quality.reflectionIntensity },
         u_layer: { value: layer },
         u_inner: { value: 0.2 },
+        u_bg_texture: { value: bgTexture },
+        u_resolution: { value: new THREE.Vector2(size.width, size.height) },
       },
       vertexShader: diskVertex,
       fragmentShader: parallaxDiskFragment,
@@ -465,17 +472,6 @@ export default function BlackHoleRig({
   );
 
   useEffect(() => {
-    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-    const isMobile = MOBILE_UA_REGEX.test(ua);
-    const memory =
-      typeof navigator !== 'undefined'
-        ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8
-        : 8;
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency ?? 8 : 8;
-    setQualityTier(isMobile && (memory <= 4 || cores <= 4) ? 'low' : 'high');
-  }, []);
-
-  useEffect(() => {
     return () => {
       horizonGeo.dispose();
       diskGeo.dispose();
@@ -505,7 +501,6 @@ export default function BlackHoleRig({
   useFrame((state, delta) => {
     if (!environment.reducedMotion) decorativeTime.current += Math.min(delta, 0.05);
     const t = decorativeTime.current;
-    let nextTier = qualityTier;
 
     // Brightness tracks the disk's radiative efficiency, which rises from 5.7%
     // at zero spin to ~32% at the Thorne limit as the ISCO moves inwards. A
@@ -544,14 +539,17 @@ export default function BlackHoleRig({
       diskPeakTemperatureK(mass, spin, Math.max(accretion, 0.02)),
     );
 
-    lowDiskMats.forEach((m) => {
+    for (let materialIndex = 0; materialIndex < lowDiskMats.length; materialIndex++) {
+      const m = lowDiskMats[materialIndex];
       m.uniforms.uEnvironment.value = environment.texture;
       m.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
       m.uniforms.u_time.value = t;
       m.uniforms.u_spin.value = spin;
       m.uniforms.u_accretion.value = luminous;
       m.uniforms.u_inner.value = innerFraction;
-    });
+      m.uniforms.u_bg_texture.value = bgTexture;
+      m.uniforms.u_resolution.value.set(size.width, size.height);
+    }
 
     ergoMat.uniforms.u_time.value = t;
     ergoMat.uniforms.u_spin.value = spin;
@@ -568,28 +566,7 @@ export default function BlackHoleRig({
       if (!environment.reducedMotion) diskGroupRef.current.rotation.y += delta * 0.15 * Math.min(omegaRel, 20);
     }
 
-    if (qualityTier === 'high' && frameProbeRef.current.length < 60) {
-      frameProbeRef.current.push(delta);
-      if (frameProbeRef.current.length === 60) {
-        const avg = frameProbeRef.current.reduce((s, d) => s + d, 0) / 60;
-        if (1 / Math.max(avg, 1e-4) < 55) nextTier = 'low';
-      }
-    } else if (qualityTier === 'high') {
-      const fps = 1 / Math.max(delta, 1e-4);
-      if (fps < 52) lowStreakRef.current += 1;
-      else lowStreakRef.current = 0;
-      if (lowStreakRef.current > 45) nextTier = 'low';
-    } else {
-      const fps = 1 / Math.max(delta, 1e-4);
-      if (fps > 58) highStreakRef.current += 1;
-      else highStreakRef.current = 0;
-      if (highStreakRef.current > 90) nextTier = 'high';
-    }
-
-    if (nextTier !== qualityTier) setQualityTier(nextTier);
   });
-
-  const tier = qualityTier;
   const horizonScale = radius * 0.55;
 
   /**
@@ -639,7 +616,7 @@ export default function BlackHoleRig({
     >
       <mesh ref={horizonMeshRef} geometry={horizonGeo} scale={horizonScale} renderOrder={2} material={tier === 'high' ? horizonMatHigh : horizonMatLow} />
 
-      {showErgo && tier === 'high' && (
+      {showErgo && (
         // Non-uniform scale: the ergosphere bulges at the equator (XZ) and
         // meets the horizon at the poles (Y).
         <mesh

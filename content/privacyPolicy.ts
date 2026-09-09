@@ -2,7 +2,7 @@
 export const PRIVACY_POLICY_URL =
   'https://www.termsfeed.com/live/cded6b3e-c46c-465e-a562-f1a73cd79f1c';
 
-export const PRIVACY_POLICY_LAST_UPDATED = 'September 8, 2026';
+export const PRIVACY_POLICY_LAST_UPDATED = 'September 9, 2026';
 
 export const PRIVACY_CONTACT_EMAIL = 'antonpsar10@gmail.com';
 
@@ -27,7 +27,7 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
   {
     title: 'Who We Are',
     paragraphs: [
-      'The Application is provided by Antonis Psarras, based in Greece.',
+      'The Application is provided by Antonios Psarras, based in Greece.',
       'For privacy-related questions, contact us at the email address listed at the end of this policy.',
     ],
   },
@@ -47,7 +47,8 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
   {
     title: 'How Data Is Stored',
     paragraphs: [
-      'The items listed above are stored locally on your device using browser or WebView storage (for example localStorage). This includes migration backups of older universe saves. Data stays on your device unless you clear app storage or uninstall the Application.',
+      'The items listed above are stored locally on your device using browser or WebView storage (localStorage). Temporary migration backups may be created while an older universe is upgraded, then removed after the upgraded save is verified.',
+      'Clearing app storage or uninstalling the Application permanently deletes this local data. The Application cannot recover it afterward.',
       'The Android Application excludes its app data from cloud backup and device-transfer backup.',
       'We do not sync this data to our servers.',
     ],

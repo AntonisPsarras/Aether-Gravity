@@ -22,10 +22,11 @@ test('orbit estimates respond while paused, toggle, and survive scene replacemen
     state.updateBody(id, { velocity: body.velocity.clone().multiplyScalar(0.9) });
   }, path.name.replace('orbit-estimate:', ''));
   await expect.poll(async () => (await visuals(page)).paths.find((p: any) => p.name === path.name)?.radius).not.toBe(path.radius);
-  const toggle = page.getByRole('checkbox', { name: /Orbit estimates/ });
-  await toggle.uncheck();
+  await page.getByTestId('open-settings').click();
+  const toggle = page.getByRole('switch', { name: /Orbit estimates/ });
+  await toggle.click();
   await expect.poll(async () => (await visuals(page)).paths.length).toBe(0);
-  await toggle.check();
+  await toggle.click();
   await expect.poll(async () => (await visuals(page)).paths.length).toBeGreaterThan(0);
   await page.evaluate(async () => {
 
@@ -37,7 +38,7 @@ test('orbit estimates respond while paused, toggle, and survive scene replacemen
 });
 
 for (const tier of ['high', 'low'] as const) {
-  test(`environment renders on ${tier} tier and restores context`, async ({ page }, info) => {
+  test(`environment renders on ${tier} tier and restores context`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -54,7 +55,20 @@ for (const tier of ['high', 'low'] as const) {
     expect(snapshot.effects.dust).toBe(1);
     expect(snapshot.effects.gas).toBe(tier === 'low' ? 2 : 4);
     expect(snapshot.effects.radiation).toBeGreaterThan(0);
-    await page.screenshot({ path: info.outputPath(`environment-${tier}.png`) });
+    await test.info().attach(`environment-${tier}.png`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
+    await page.evaluate(() => {
+      const state = (window as any).__AETHER_VISUAL_TEST__.getStore();
+      const closeTarget = state.bodies.find((body: any) => body.type === 'Planet') ?? state.bodies[0];
+      if (closeTarget) state.selectBody(closeTarget.id);
+    });
+    await page.waitForTimeout(900);
+    await test.info().attach(`environment-${tier}-close.png`, {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
     await page.evaluate(() => {
       const canvas = document.querySelector('[data-testid="sim-canvas"] canvas') as HTMLCanvasElement;
       const gl = canvas.getContext('webgl2')!;

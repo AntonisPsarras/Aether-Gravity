@@ -605,13 +605,25 @@ export const calculateGravity = (bodies: CelestialBody[],Gt: number): CelestialB
 const _collisionRemove = new Set<string>();
 
 export const checkCollisions = (bodies: CelestialBody[], _time: number): { active: CelestialBody[], merged: boolean, events: PhysicsEvent[], waveEvents: WaveEvent[] } => {
-  if (!bodies || !Array.isArray(bodies) || bodies.length === 0) {
-    return { active: bodies || [], merged: false, events: [], waveEvents: [] };
-  }
-
-  _collisionRemove.clear();
   const events: PhysicsEvent[] = [];
   const waveEvents: WaveEvent[] = [];
+  const merged = scanCollisionsInPlace(bodies, events, waveEvents);
+  return { active: bodies || [], merged, events, waveEvents };
+};
+
+/** Allocation-free collision scan when callers provide reusable event sinks. */
+export const scanCollisionsInPlace = (
+  bodies: CelestialBody[],
+  events: PhysicsEvent[],
+  waveEvents: WaveEvent[],
+): boolean => {
+  if (!bodies || !Array.isArray(bodies) || bodies.length === 0) {
+    return false;
+  }
+
+  // V8 may replace a Set's backing table on clear(); do not do that on the
+  // overwhelmingly common empty/collision-free path.
+  if (_collisionRemove.size > 0) _collisionRemove.clear();
   let merged = false;
 
   for (let i = 0; i < bodies.length; i++) {
@@ -704,7 +716,7 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
   }
 
   if (!merged || _collisionRemove.size === 0) {
-    return { active: bodies, merged: false, events, waveEvents };
+    return false;
   }
 
   let write = 0;
@@ -716,7 +728,7 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
   }
   bodies.length = write;
 
-  return { active: bodies, merged: true, events, waveEvents };
+  return true;
 };
 
 /**
@@ -727,6 +739,12 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
  */
 export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody[], events: PhysicsEvent[] } => {
   const events: PhysicsEvent[] = [];
+  checkEvolutionInPlace(bodies, events);
+  return { bodies, events };
+};
+
+/** Allocation-free evolution scan when the caller owns the event buffer. */
+export const checkEvolutionInPlace = (bodies: CelestialBody[], events: PhysicsEvent[]): void => {
 
   for (let i = 0; i < bodies.length; i++) {
     const b = bodies[i];
@@ -762,7 +780,6 @@ export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody
     }
   }
 
-  return { bodies, events };
 };
 
 export const generateSystem = (): CelestialBody[] => {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Stars } from '@react-three/drei';
@@ -9,6 +9,7 @@ import { PlanetSurfaceMaterial } from './Planet/PlanetShaders';
 import { TEXTURE_IDS } from '../constants';
 import {
   AdaptivePostFX,
+  DeviceCapabilityProbe,
   detectIsTouch,
   exposureForTier,
   RendererConfig,
@@ -17,6 +18,7 @@ import {
 } from './CanvasSetup';
 import { EnvironmentProvider, useEnvironment, useReducedMotion } from './Environment/EnvironmentContext';
 import { GasClouds } from './Environment/GasClouds';
+import { getE2EConfig } from '../utils/e2eConfig';
 
 export type MenuBackgroundMode = 'landing' | 'creator';
 
@@ -226,10 +228,8 @@ const CosmicDust: React.FC<{ count: number; color: string; reducedMotion: boolea
   );
 };
 
-const MenuScene: React.FC<MenuSpaceBackgroundProps & { gpuEffectsOk: boolean; onContextLost: () => void; onContextRestored: () => void }> = ({ mode = 'landing', presetId, gpuEffectsOk, onContextLost, onContextRestored }) => {
+const MenuScene: React.FC<MenuSpaceBackgroundProps & { tier: DeviceTier; gpuEffectsOk: boolean; onContextLost: () => void; onContextRestored: () => void }> = ({ mode = 'landing', presetId, tier, gpuEffectsOk, onContextLost, onContextRestored }) => {
   const reducedMotion = useReducedMotion();
-  const detectedTier = useDeviceTier();
-  const tier = gpuEffectsOk ? detectedTier : 'low';
   const isTouch = detectIsTouch();
   const quality = qualityForMenu(tier, isTouch);
   const theme = THEMES[presetId ?? 'procedural'] ?? THEMES.procedural;
@@ -278,8 +278,14 @@ const MenuScene: React.FC<MenuSpaceBackgroundProps & { gpuEffectsOk: boolean; on
 };
 
 const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landing', presetId = null }) => {
-  const deviceTier = useDeviceTier();
+  const detectedTier = useDeviceTier();
+  const e2eConfig = getE2EConfig();
+  const [adaptiveTier, setAdaptiveTier] = useState<DeviceTier>(detectedTier);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
+  const deviceTier: DeviceTier = gpuEffectsOk ? adaptiveTier : 'low';
+  const handleDetectedTier = useCallback((tier: DeviceTier) => {
+    if (!e2eConfig.tier) setAdaptiveTier(tier);
+  }, [e2eConfig.tier]);
   const theme = THEMES[presetId ?? 'procedural'] ?? THEMES.procedural;
 
   return (
@@ -301,9 +307,11 @@ const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landi
           }}
         >
           <EnvironmentProvider tier={deviceTier} isTouch={detectIsTouch()}>
+            {!e2eConfig.tier && <DeviceCapabilityProbe initialTier={detectedTier} onTierChange={handleDetectedTier} />}
             <MenuScene
               mode={mode}
               presetId={presetId}
+              tier={deviceTier}
               gpuEffectsOk
               onContextLost={() => setGpuEffectsOk(false)}
               onContextRestored={() => setGpuEffectsOk(true)}

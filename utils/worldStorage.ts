@@ -17,6 +17,17 @@ import {
 import { G_CONSTANT } from '../constants';
 import { M_SUN_IN_EARTH } from './units';
 import { reconcileBodyDerivedState } from './physicsUtils';
+import {
+  readStorageJson,
+  readStorageRaw,
+  removeStorageVerified,
+  reportStorageIssue,
+  storageFailureKind,
+  StorageOperationError,
+  stringifyStorageJson,
+  writeStorageJsonVerified,
+  writeStorageRawVerified,
+} from './browserStorage';
 
 const STORAGE_KEYS = {
     INDEX: 'aether:worlds:index',
@@ -29,10 +40,23 @@ const STORAGE_KEYS = {
  * v2: Aether units — mass in M⊕, G derived from SI, physical `radiusKm` split
  *     from the visual `radius`.
  */
-const CURRENT_VERSION = 2;
+export const CURRENT_WORLD_VERSION = 2;
 
 /** Where a pre-migration copy of each world is kept, in case v2 misbehaves. */
 const V1_BACKUP_PREFIX = 'aether:worlds:v1backup:';
+
+let worldIndexHealthy = true;
+let folderIndexHealthy = true;
+const loadedWorldRaw = new Map<string, string>();
+
+// Annotated on the const, not just the arrow: TypeScript only treats a call as
+// never-returning (and so narrows the code after it) when the callee has an
+// explicit type annotation on its declaration.
+const corrupt: (key: string, message: string) => never = (key, message) => {
+  const issue = { kind: 'corrupt' as const, key, message };
+  reportStorageIssue(issue);
+  throw new StorageOperationError(issue);
+};
 
 /** Maximum character length enforced on all user-visible name fields. */
 const MAX_NAME_LENGTH = 64;
@@ -41,31 +65,31 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   v != null && typeof v === 'object' && !Array.isArray(v);
 
 const parseFolderList = (raw: unknown): FolderMeta[] => {
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) corrupt(STORAGE_KEYS.FOLDERS, 'The saved folder list is not an array.');
   const out: FolderMeta[] = [];
   for (const item of raw) {
-    if (!isRecord(item)) continue;
+    if (!isRecord(item)) corrupt(STORAGE_KEYS.FOLDERS, 'The saved folder list contains an invalid entry.');
     const id = typeof item.id === 'string' ? item.id : '';
     const name = sanitizeName(item.name);
     const createdAt = safeNum(item.createdAt, Date.now());
-    if (!id) continue;
+    if (!id) corrupt(STORAGE_KEYS.FOLDERS, 'A saved folder is missing its identifier.');
     out.push({ id, name, createdAt });
   }
   return out;
 };
 
 const parseWorldMetaList = (raw: unknown): WorldMeta[] => {
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) corrupt(STORAGE_KEYS.INDEX, 'The saved universe index is not an array.');
   const out: WorldMeta[] = [];
   for (const item of raw) {
-    if (!isRecord(item)) continue;
+    if (!isRecord(item)) corrupt(STORAGE_KEYS.INDEX, 'The saved universe index contains an invalid entry.');
     const id = typeof item.id === 'string' ? item.id : '';
     const name = sanitizeName(item.name);
     const createdAt = safeNum(item.createdAt, Date.now());
     const lastOpenedAt = safeNum(item.lastOpenedAt, createdAt);
     const folderId = typeof item.folderId === 'string' ? item.folderId : undefined;
     const presetId = typeof item.presetId === 'string' ? item.presetId : undefined;
-    if (!id) continue;
+    if (!id) corrupt(STORAGE_KEYS.INDEX, 'A saved universe is missing its identifier.');
     out.push({ id, name, createdAt, lastOpenedAt, folderId, presetId });
   }
   return out;
@@ -73,13 +97,18 @@ const parseWorldMetaList = (raw: unknown): WorldMeta[] => {
 
 export const getFolderList = (): FolderMeta[] => {
     try {
-        const raw = localStorage.getItem(STORAGE_KEYS.FOLDERS);
-        return raw ? parseFolderList(JSON.parse(raw)) : [];
-    } catch { return []; }
+        const raw = readStorageJson(STORAGE_KEYS.FOLDERS);
+        folderIndexHealthy = true;
+        return raw === null ? [] : parseFolderList(raw);
+    } catch {
+        folderIndexHealthy = false;
+        return [];
+    }
 };
 
 const saveFolderList = (list: FolderMeta[]): void => {
-    localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(list));
+    if (!folderIndexHealthy) corrupt(STORAGE_KEYS.FOLDERS, 'The folder list is unreadable and will not be overwritten.');
+    writeStorageJsonVerified(STORAGE_KEYS.FOLDERS, list);
 };
 
 export const createFolder = (name: string): string => {
@@ -110,12 +139,23 @@ export const renameFolder = (id: string, newName: string): void => {
 };
 
 export const deleteFolder = (id: string): void => {
+    const previousFolders = readStorageRaw(STORAGE_KEYS.FOLDERS);
+    const previousWorlds = readStorageRaw(STORAGE_KEYS.INDEX);
     const folders = getFolderList().filter(f => f.id !== id);
-    saveFolderList(folders);
-    // Orphan worlds in this folder
     const worlds = getWorldList();
     worlds.forEach(w => { if (w.folderId === id) delete w.folderId; });
-    saveWorldList(worlds);
+    try {
+        saveWorldList(worlds);
+        saveFolderList(folders);
+    } catch (error) {
+        try {
+            if (previousWorlds === null) removeStorageVerified(STORAGE_KEYS.INDEX);
+            else writeStorageRawVerified(STORAGE_KEYS.INDEX, previousWorlds);
+            if (previousFolders === null) removeStorageVerified(STORAGE_KEYS.FOLDERS);
+            else writeStorageRawVerified(STORAGE_KEYS.FOLDERS, previousFolders);
+        } catch { /* the original failure has already been reported */ }
+        throw error;
+    }
 };
 
 export const isWorldNameTaken = (name: string): boolean => {
@@ -125,25 +165,23 @@ export const isWorldNameTaken = (name: string): boolean => {
 
 export const getWorldList = (): WorldMeta[] => {
     try {
-        const raw = localStorage.getItem(STORAGE_KEYS.INDEX);
-        if (!raw) return [];
-        const worlds = parseWorldMetaList(JSON.parse(raw));
+        const raw = readStorageJson(STORAGE_KEYS.INDEX);
+        worldIndexHealthy = true;
+        if (raw === null) return [];
+        const worlds = parseWorldMetaList(raw);
         return worlds.sort((a, b) => (b.lastOpenedAt || 0) - (a.lastOpenedAt || 0));
-    } catch (e) {
-        console.error('Failed to load world list:', e);
+    } catch {
+        worldIndexHealthy = false;
         return [];
     }
 };
 
 const saveWorldList = (list: WorldMeta[]): void => {
-    try {
-        localStorage.setItem(STORAGE_KEYS.INDEX, JSON.stringify(list));
-    } catch (e) {
-        console.error('Failed to save world list:', e);
-    }
+    if (!worldIndexHealthy) corrupt(STORAGE_KEYS.INDEX, 'The universe index is unreadable and will not be overwritten.');
+    writeStorageJsonVerified(STORAGE_KEYS.INDEX, list);
 };
 
-export type SaveWorldResult = 'ok' | 'quota' | 'error';
+export type SaveWorldResult = 'ok' | 'quota' | 'conflict' | 'error';
 
 /** Validate persisted world JSON before it enters the simulation store. */
 export const parseWorldData = (raw: unknown): WorldData | null => {
@@ -167,7 +205,7 @@ export const parseWorldData = (raw: unknown): WorldData | null => {
         id: d.id,
         // The bodies below have been migrated, so the returned document is v2
         // regardless of what was on disk.
-        version: CURRENT_VERSION,
+        version: CURRENT_WORLD_VERSION,
         bodies: deserializeBodies(
             Array.isArray(d.bodies) ? (d.bodies as CelestialBodyData[]) : [],
             sourceVersion,
@@ -195,49 +233,101 @@ export const parseWorldData = (raw: unknown): WorldData | null => {
 };
 
 export const getWorld = (id: string): WorldData | null => {
+    const key = STORAGE_KEYS.DATA_PREFIX + id;
+    const backupKey = V1_BACKUP_PREFIX + id;
     try {
-        const raw = localStorage.getItem(STORAGE_KEYS.DATA_PREFIX + id);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        // The unit-system migration is lossy and one-way, so keep a verbatim
-        // copy of the v1 document the first time a world is opened under v2.
-        const onDiskVersion = typeof parsed?.version === 'number' ? parsed.version : 1;
-        if (onDiskVersion < CURRENT_VERSION) backupV1World(id, raw);
-        return parseWorldData(parsed);
-    } catch (e) {
-        console.error('Failed to load world:', e);
+        let raw = readStorageRaw(key);
+        const leftoverBackup = readStorageRaw(backupKey);
+
+        // A migration interrupted after creating its backup can always restart
+        // from that verbatim v1 document.
+        if (raw === null && leftoverBackup !== null) raw = leftoverBackup;
+        if (raw === null) return null;
+
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            if (leftoverBackup === null || leftoverBackup === raw) {
+                corrupt(key, `Universe ${id} contains malformed JSON.`);
+            }
+            try {
+                parsed = JSON.parse(leftoverBackup);
+                raw = leftoverBackup;
+            } catch {
+                corrupt(key, `Universe ${id} and its migration backup are both unreadable.`);
+            }
+        }
+
+        if (!isRecord(parsed)) corrupt(key, `Universe ${id} is not a valid saved record.`);
+        const onDiskVersion = typeof parsed.version === 'number' ? parsed.version : 1;
+        if (onDiskVersion > CURRENT_WORLD_VERSION) {
+            corrupt(key, `Universe ${id} uses unsupported schema version ${onDiskVersion}.`);
+        }
+        if (parsed.id !== id) corrupt(key, `Universe ${id} has a mismatched internal identifier.`);
+
+        const world = parseWorldData(parsed);
+        if (!world) corrupt(key, `Universe ${id} is missing required saved fields.`);
+
+        if (onDiskVersion < CURRENT_WORLD_VERSION) {
+            const migratedRaw = stringifyStorageJson(key, world);
+            backupV1World(id, raw);
+            try {
+                writeStorageRawVerified(key, migratedRaw);
+                const verified = readStorageRaw(key);
+                if (verified === null || !parseWorldData(JSON.parse(verified))) {
+                    throw new Error('Migrated universe did not validate.');
+                }
+                removeStorageVerified(backupKey);
+                loadedWorldRaw.set(id, migratedRaw);
+                return world;
+            } catch (error) {
+                // setItem replacement is atomic, but restore explicitly if a
+                // hostile/no-op storage implementation failed verification.
+                try { writeStorageRawVerified(key, raw); } catch { /* original backup remains */ }
+                reportStorageIssue({
+                    kind: 'migration', key,
+                    message: `Universe ${id} could not be migrated safely.`,
+                });
+                return null;
+            }
+        }
+
+        if (leftoverBackup !== null) {
+            try { removeStorageVerified(backupKey); } catch { /* primary is already valid */ }
+        }
+        loadedWorldRaw.set(id, raw);
+        return world;
+    } catch {
         return null;
     }
 };
 
 const backupV1World = (id: string, raw: string): void => {
-    try {
-        const key = V1_BACKUP_PREFIX + id;
-        if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
-    } catch {
-        // A full quota must not block opening the world; the migration is still
-        // safe, the user just loses the undo path.
-    }
+    const key = V1_BACKUP_PREFIX + id;
+    const existing = readStorageRaw(key);
+    if (existing === null) writeStorageRawVerified(key, raw);
+    else if (existing !== raw) corrupt(key, `The migration backup for ${id} does not match its legacy save.`);
 };
 
 export const saveWorld = (world: WorldData): SaveWorldResult => {
+    const key = STORAGE_KEYS.DATA_PREFIX + world.id;
     try {
-        localStorage.setItem(STORAGE_KEYS.DATA_PREFIX + world.id, JSON.stringify(world));
-        const list = getWorldList();
-        const idx = list.findIndex(w => w.id === world.id);
-        if (idx >= 0) {
-            list[idx].lastOpenedAt = Date.now();
-            saveWorldList(list);
+        const currentRaw = readStorageRaw(key);
+        const expectedRaw = loadedWorldRaw.get(world.id);
+        if (expectedRaw !== undefined && currentRaw !== expectedRaw) {
+            reportStorageIssue({ kind: 'conflict', key, message: `Universe ${world.id} changed outside this session.` });
+            return 'conflict';
         }
+
+        const persistedWorld = { ...world, version: CURRENT_WORLD_VERSION };
+        const nextRaw = stringifyStorageJson(key, persistedWorld);
+        if (currentRaw === nextRaw) return 'ok';
+        writeStorageRawVerified(key, nextRaw);
+        loadedWorldRaw.set(world.id, nextRaw);
         return 'ok';
     } catch (e) {
-        if (
-            e instanceof DOMException &&
-            (e.name === 'QuotaExceededError' || e.code === 22)
-        ) {
-            return 'quota';
-        }
-        console.error('Failed to save world:', e);
+        if (storageFailureKind(e) === 'quota') return 'quota';
         return 'error';
     }
 };
@@ -262,7 +352,7 @@ export const createWorld = (name: string, folderId?: string, presetId?: string):
 
     const data: WorldData = {
         id,
-        version: CURRENT_VERSION,
+        version: CURRENT_WORLD_VERSION,
         bodies: [],
         settings: {
             speed: 1.0,
@@ -276,19 +366,38 @@ export const createWorld = (name: string, folderId?: string, presetId?: string):
 
     const list = getWorldList();
     list.unshift(meta);
-    saveWorldList(list);
-    localStorage.setItem(STORAGE_KEYS.DATA_PREFIX + id, JSON.stringify(data));
+    const dataKey = STORAGE_KEYS.DATA_PREFIX + id;
+    const dataRaw = stringifyStorageJson(dataKey, data);
+    writeStorageRawVerified(dataKey, dataRaw);
+    try {
+        saveWorldList(list);
+    } catch (error) {
+        try { removeStorageVerified(dataKey); } catch { /* write failure already reported */ }
+        throw error;
+    }
+    loadedWorldRaw.set(id, dataRaw);
 
     return id;
 };
 
 export const deleteWorld = (id: string): void => {
+    const dataKey = STORAGE_KEYS.DATA_PREFIX + id;
+    const backupKey = V1_BACKUP_PREFIX + id;
+    const previousIndex = readStorageRaw(STORAGE_KEYS.INDEX);
+    const previousData = readStorageRaw(dataKey);
     try {
         const list = getWorldList().filter(w => w.id !== id);
         saveWorldList(list);
-        localStorage.removeItem(STORAGE_KEYS.DATA_PREFIX + id);
-    } catch (e) {
-        console.error('Failed to delete world:', e);
+        removeStorageVerified(dataKey);
+        if (readStorageRaw(backupKey) !== null) removeStorageVerified(backupKey);
+        loadedWorldRaw.delete(id);
+    } catch (error) {
+        try {
+            if (previousIndex === null) removeStorageVerified(STORAGE_KEYS.INDEX);
+            else writeStorageRawVerified(STORAGE_KEYS.INDEX, previousIndex);
+            if (previousData !== null) writeStorageRawVerified(dataKey, previousData);
+        } catch { /* original failure is already visible */ }
+        throw error;
     }
 };
 
@@ -424,8 +533,8 @@ export const migrateV1Bodies = (data: CelestialBodyData[]): CelestialBodyData[] 
     });
 };
 
-export const serializeBodies = (bodies: CelestialBody[]): CelestialBodyData[] => {
-    return sanitizeCelestialBodies(bodies).map(b => ({
+export const serializeBodies = (bodies: readonly CelestialBody[]): CelestialBodyData[] => {
+    return sanitizeCelestialBodies(Array.from(bodies)).map(b => ({
         id: b.id,
         type: b.type,
         mass: b.mass,
@@ -455,7 +564,7 @@ const VALID_HABITABILITY = new Set<CelestialBody['habitability']>([
     'HABITABLE', 'FROZEN', 'BURNING', 'TOXIC', 'STELLAR', 'SINGULARITY', 'STERILIZED', 'N/A',
 ]);
 
-export const deserializeBodies = (data: CelestialBodyData[], version = CURRENT_VERSION): CelestialBody[] => {
+export const deserializeBodies = (data: CelestialBodyData[], version = CURRENT_WORLD_VERSION): CelestialBody[] => {
     const source = version < 2 ? migrateV1Bodies(data) : data;
     const bodies = source.slice(0, PHYSICS_LIMITS.MAX_BODIES).map((b) =>
         sanitizeCelestialBody({
@@ -533,4 +642,10 @@ export const markWorldOpened = (id: string): void => {
         list[idx].lastOpenedAt = Date.now();
         saveWorldList(list);
     }
+};
+
+export const resetWorldStorageStateForTests = (): void => {
+    worldIndexHealthy = true;
+    folderIndexHealthy = true;
+    loadedWorldRaw.clear();
 };

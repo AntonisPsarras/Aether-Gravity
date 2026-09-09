@@ -49,9 +49,8 @@ type BlackHoleLensCaptureProps = {
 
   enabled?: boolean;
 
-  /** Reduce capture rate on weak GPUs. */
-
-  lowQuality?: boolean;
+  resolution?: number;
+  captureInterval?: number;
 
 };
 
@@ -65,19 +64,16 @@ export function BlackHoleLensCapture({
 
   enabled = true,
 
-  lowQuality = false,
+  resolution = 256,
+  captureInterval = 3,
 
 }: BlackHoleLensCaptureProps): React.ReactElement {
 
-  const fbo = useFBO(256, 256, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+  const fbo = useFBO(resolution, resolution, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 
   const { gl, scene, camera } = useThree();
 
   const frameRef = useRef(0);
-
-  const captureInterval = lowQuality ? 6 : 3;
-
-
 
   useEffect(() => () => {
 

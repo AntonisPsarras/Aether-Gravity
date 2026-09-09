@@ -16,8 +16,8 @@ export default function DecorativeDust({ floatingOffset }: { floatingOffset: Rea
   }, [quality.dustCount]);
   const uniforms = useMemo(() => ({
     uTime: { value: 0 }, uOffset: { value: new THREE.Vector3() }, uRange: { value: DUST_CONFIG.AREA },
-    uSize: { value: quality.dustSize }, uPixelRatio: { value: 1 },
-  }), [quality.dustSize]);
+    uSize: { value: quality.dustSize }, uPixelRatio: { value: 1 }, uOpacityGain: { value: quality.dustOpacityGain },
+  }), [quality.dustSize, quality.dustOpacityGain]);
   useFrame(({ gl }, dt) => {
     if (!reducedMotion && !useStore.getState().paused) time.current += Math.min(dt, 0.05) * quality.dustMotion;
     uniforms.uTime.value = time.current;
@@ -44,10 +44,11 @@ export default function DecorativeDust({ floatingOffset }: { floatingOffset: Rea
       }`} fragmentShader={`
       #include <common>
       #include <logdepthbuf_pars_fragment>
+      uniform float uOpacityGain;
       varying float vFade,vSeed;
       void main(){
         float r=length(gl_PointCoord-0.5)*2.0;
-        float alpha=exp(-r*r*4.0)*(1.0-smoothstep(0.65,1.0,r))*vFade*0.32;
+        float alpha=exp(-r*r*4.0)*(1.0-smoothstep(0.65,1.0,r))*vFade*0.32*uOpacityGain;
         if(alpha<0.002) discard;
         gl_FragColor=vec4(mix(vec3(0.5,0.65,0.8),vec3(0.9,0.77,0.6),vSeed),alpha);
         #include <logdepthbuf_fragment>

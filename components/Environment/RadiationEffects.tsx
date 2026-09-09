@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { CelestialBody } from '../../types';
 import { useStore } from '../../utils/store';
 import { bodySeed, obliquityDegOf } from '../../utils/bodyAppearance';
+import { toRenderSpace } from '../../utils/scratchVectors';
 import { useEnvironment } from './EnvironmentContext';
 import { gasNoise } from './GasClouds';
 
@@ -34,9 +35,9 @@ void main(){
 #include <logdepthbuf_fragment>
 }`;
 
-function RadiationEmitter({ id, bodiesRef, bodyObjectsRef }: {
+function RadiationEmitter({ id, bodiesRef, floatingOffset }: {
   id: string; bodiesRef: React.MutableRefObject<CelestialBody[]>;
-  bodyObjectsRef: React.MutableRefObject<Map<string, THREE.Object3D>>;
+  floatingOffset: React.MutableRefObject<THREE.Vector3>;
 }) {
   const { quality, reducedMotion } = useEnvironment();
   const root = useRef<THREE.Group>(null);
@@ -47,11 +48,14 @@ function RadiationEmitter({ id, bodiesRef, bodyObjectsRef }: {
     uWind: { value: 0 }, uDetail: { value: quality.radiationDetail }, uColor: { value: new THREE.Color() },
   }), [quality.radiationDetail]);
   useFrame((_, delta) => {
-    const b = bodiesRef.current.find(b => b.id === id);
-    const object = bodyObjectsRef.current.get(id);
+    let b: CelestialBody | undefined;
+    const liveBodies = bodiesRef.current;
+    for (let i = 0; i < liveBodies.length; i++) {
+      if (liveBodies[i].id === id) { b = liveBodies[i]; break; }
+    }
     if (!root.current || !windMesh.current || !jets.current) return;
-    root.current.visible = !!b && !!object;
-    if (!b || !object) return;
+    root.current.visible = !!b;
+    if (!b) return;
     const p = b.properties;
     const compact = b.type === 'Pulsar' || b.type === 'Neutron Star';
     const bh = b.type === 'Black Hole';
@@ -68,7 +72,7 @@ function RadiationEmitter({ id, bodiesRef, bodyObjectsRef }: {
       ? Math.min(0.075, 0.014 + (p?.massLoss ?? 0) * 0.045 + (p?.flareActivity ?? 0) * 0.016)
       : bh ? Math.max(0, Math.min(1, p?.accretionRate ?? 0.5)) * 0.22
       : Math.min(0.22, 0.09 + (p?.magneticFieldTG ?? 1) * 0.015);
-    root.current.position.copy(object.position);
+    toRenderSpace(root.current.position, b.position, floatingOffset.current);
     root.current.rotation.set(0, bodySeed(b.id) / 100 * Math.PI * 2, THREE.MathUtils.degToRad(obliquityDegOf(b)));
     const radius = compact ? Math.max(b.radius * 5, 3) : b.radius;
     root.current.scale.setScalar(radius);
@@ -91,12 +95,13 @@ function RadiationEmitter({ id, bodiesRef, bodyObjectsRef }: {
 
 export default function RadiationEffects(props: {
   bodiesRef: React.MutableRefObject<CelestialBody[]>;
-  bodyObjectsRef: React.MutableRefObject<Map<string, THREE.Object3D>>;
+  floatingOffset: React.MutableRefObject<THREE.Vector3>;
 }) {
   const { quality } = useEnvironment();
   const bodies = useStore(s => s.bodies);
-  const emitters = bodies.filter(b => ['Pulsar', 'Neutron Star', 'Black Hole', 'Star', 'Red Giant', 'White Dwarf'].includes(b.type))
+  const emitters = useMemo(() => bodies
+    .filter(b => ['Pulsar', 'Neutron Star', 'Black Hole', 'Star', 'Red Giant', 'White Dwarf'].includes(b.type))
     .sort((a, b) => Number(['Pulsar', 'Black Hole'].includes(b.type)) - Number(['Pulsar', 'Black Hole'].includes(a.type)))
-    .slice(0, quality.radiationEmitterCap);
+    .slice(0, quality.radiationEmitterCap), [bodies, quality.radiationEmitterCap]);
   return <group name="environment-radiation">{emitters.map(b => <RadiationEmitter key={b.id} id={b.id} {...props} />)}</group>;
 }

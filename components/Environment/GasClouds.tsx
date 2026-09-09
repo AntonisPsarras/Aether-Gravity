@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CelestialBody } from '../../types';
 import { bodyLuminositySolar } from '../../utils/physicsUtils';
 import { useStore } from '../../utils/store';
+import { toRenderSpace } from '../../utils/scratchVectors';
 import { useEnvironment } from './EnvironmentContext';
 
 export type GasRemnant = { position: THREE.Vector3; age: number };
@@ -15,6 +16,24 @@ float noise(vec3 p) {
     mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);
 }
 `;
+
+/** Fill a caller-owned, luminosity-sorted emitter buffer without temporary arrays. */
+export function fillHotGasEmitters(bodies: readonly CelestialBody[], out: CelestialBody[], cap: number): void {
+  out.length = 0;
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    const luminousGas = body.type === 'Star' || body.type === 'Red Giant' || body.type === 'White Dwarf';
+    if (!luminousGas || body.temperature <= 7500) continue;
+    const luminosity = bodyLuminositySolar(body);
+    let insertAt = out.length;
+    while (insertAt > 0 && bodyLuminositySolar(out[insertAt - 1]) < luminosity) insertAt--;
+    if (insertAt >= cap) continue;
+    const end = Math.min(out.length, cap - 1);
+    for (let move = end; move > insertAt; move--) out[move] = out[move - 1];
+    out[insertAt] = body;
+    if (out.length > cap) out.length = cap;
+  }
+}
 const vertex = `
 #include <common>
 #include <logdepthbuf_pars_vertex>
@@ -54,6 +73,8 @@ export function GasClouds({ bodiesRef, floatingOffset, remnants, menu = false }:
   const { quality, reducedMotion } = useEnvironment();
   const meshes = useRef<(THREE.Mesh | null)[]>([]);
   const time = useRef(0);
+  const hotEmitters = useRef<CelestialBody[]>([]);
+  const hotRefreshAt = useRef(-Infinity);
   useEffect(() => useStore.subscribe((next, prev) => {
     if (!remnants) return;
     const loaded = next.bodies !== prev.bodies && next.inspectorLocks !== prev.inspectorLocks;
@@ -66,7 +87,7 @@ export function GasClouds({ bodiesRef, floatingOffset, remnants, menu = false }:
     uOpacity: { value: quality.gasOpacity }, uShell: { value: 0 },
     uOctaves: { value: quality.gasOctaves }, uTint: { value: new THREE.Color('#536480') },
   })), [count, quality]);
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera, clock }, delta) => {
     const paused = !menu && useStore.getState().paused;
     const dt = reducedMotion || paused ? 0 : Math.min(delta, 0.05);
     time.current += dt;
@@ -76,8 +97,11 @@ export function GasClouds({ bodiesRef, floatingOffset, remnants, menu = false }:
         if (remnants.current[j].age >= 24) remnants.current.splice(j, 1);
       }
     }
-    const hot = bodiesRef?.current.filter(b => ['Star', 'Red Giant', 'White Dwarf'].includes(b.type) && b.temperature > 7500)
-      .sort((a, b) => bodyLuminositySolar(b) - bodyLuminositySolar(a)) ?? [];
+    if (bodiesRef && clock.elapsedTime - hotRefreshAt.current >= 0.5) {
+      fillHotGasEmitters(bodiesRef.current, hotEmitters.current, quality.gasEmitterCap);
+      hotRefreshAt.current = clock.elapsedTime;
+    }
+    const hot = hotEmitters.current;
     for (let i = 0; i < count; i++) {
       const mesh = meshes.current[i]; if (!mesh) continue;
       const u = uniforms[i]; u.uTime.value = time.current;
@@ -99,8 +123,11 @@ export function GasClouds({ bodiesRef, floatingOffset, remnants, menu = false }:
       const star = hot[slot - (remnants?.current.length ?? 0)];
       mesh.visible = !!remnant || !!star;
       if (!mesh.visible) continue;
-      mesh.position.copy(remnant ? remnant.position : star.position);
-      if (floatingOffset) mesh.position.sub(floatingOffset.current);
+      if (floatingOffset) {
+        toRenderSpace(mesh.position, remnant ? remnant.position : star.position, floatingOffset.current);
+      } else {
+        mesh.position.copy(remnant ? remnant.position : star.position);
+      }
       const age = remnant?.age ?? 0;
       const size = remnant ? 45 + (reducedMotion ? 0 : age * 5) : Math.max(40, star.radius * 8);
       mesh.translateZ((layer - 0.5) * size * 0.12);

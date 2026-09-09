@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   e2eUrl,
   FIXTURE_MINIMAL,
+  FIXTURE_SOLAR,
   readStore,
   waitForSimulationReady,
 } from './helpers';
@@ -101,5 +102,81 @@ test.describe('Simulation controls', () => {
     expect(energy.n).toBe(3);
     expect(energy.driftPercent).not.toBeNull();
     expect(energy.driftPercent!).toBeLessThan(15);
+  });
+});
+
+/**
+ * Physics correctness is not evidence that the screen is correct: the integrator
+ * and the render transform are updated by different code. A regression once left
+ * every mesh frozen at its mount position while physics kept advancing, so bodies
+ * merged that visually never touched. These assertions compare the two directly.
+ */
+test.describe('Rendered bodies track the physics state', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(e2eUrl(FIXTURE_SOLAR));
+    await waitForSimulationReady(page);
+    await page.evaluate(() => {
+      window.__AETHER_TEST__!.setPaused(false);
+      window.__AETHER_TEST__!.setSpeed(1);
+    });
+  });
+
+  test('every body mesh is registered, moves, and matches its physics position', async ({ page }) => {
+    const sample = () =>
+      page.evaluate(() => ({
+        physics: window.__AETHER_TEST__!.getPhysicsSnapshot(),
+        render: window.__AETHER_TEST__!.getRenderSnapshot(),
+      }));
+
+    const before = await sample();
+    await page.waitForTimeout(motionSettleMs);
+    const after = await sample();
+
+    const renderById = new Map(after.render.bodies.map((b) => [b.id, b.position]));
+    const renderBefore = new Map(before.render.bodies.map((b) => [b.id, b.position]));
+
+    // 1. Nothing may drop out of the render registry. The regression emptied it
+    //    on the camera's first recenter, and every mesh silently stopped moving.
+    expect(after.physics.length).toBeGreaterThan(1);
+    for (const body of after.physics) {
+      expect(renderById.has(body.id), `${body.name} has no render transform`).toBe(true);
+    }
+
+    const offset = after.render.floatingOffset;
+    let movedCount = 0;
+
+    for (const body of after.physics) {
+      const now = renderById.get(body.id)!;
+      const then = renderBefore.get(body.id);
+      const physThen = before.physics.find((b) => b.id === body.id);
+      if (!then || !physThen) continue;
+
+      const physicsMoved = Math.hypot(
+        body.position.x - physThen.position.x,
+        body.position.z - physThen.position.z,
+      );
+      const renderMoved = Math.hypot(now.x - then.x, now.z - then.z);
+
+      // 2. A body the engine moved must have moved on screen too.
+      if (physicsMoved > 0.5) {
+        movedCount++;
+        expect(renderMoved, `${body.name} is frozen on screen`).toBeGreaterThan(0.1);
+      }
+
+      // 3. Free bodies are drawn at exactly world - floatingOffset. (Satellites
+      //    are deliberately drawn at an exaggerated separation from their parent,
+      //    so only the motion assertion above applies to them.)
+      if (!body.isSatellite) {
+        const err = Math.hypot(
+          now.x + offset.x - body.position.x,
+          now.y + offset.y - body.position.y,
+          now.z + offset.z - body.position.z,
+        );
+        expect(err, `${body.name} render position drifted from physics`).toBeLessThan(0.5);
+      }
+    }
+
+    // Guard the guard: if nothing moved, the assertions above proved nothing.
+    expect(movedCount).toBeGreaterThan(0);
   });
 });

@@ -1,11 +1,13 @@
 import React from 'react';
 import {
   X, Settings, Hexagon, Sparkles, Globe, Orbit, Waves, Activity, GraduationCap, Gauge,
+  HardDrive,
 } from 'lucide-react';
 import { useStore } from '../utils/store';
 import type { UiMode } from '../utils/displayMode';
 import { realSecondsPerEarthYear } from '../utils/simRate';
 import { cn } from './ui/cn';
+import { CONSERVATIVE_LOCAL_STORAGE_BYTES, getAetherStorageUsage } from '../utils/browserStorage';
 
 /**
  * In-world settings.
@@ -106,6 +108,9 @@ export const SettingsPanel: React.FC = () => {
   const pace = Number.isFinite(yearSeconds)
     ? `At ${speed.toFixed(1)}x, one Earth year takes about ${Math.round(yearSeconds)} s.`
     : 'Paused — the clock is not advancing.';
+  const storageUsage = getAetherStorageUsage();
+  const usageMiB = storageUsage.bytes / (1024 * 1024);
+  const usagePercent = Math.min(100, (storageUsage.bytes / CONSERVATIVE_LOCAL_STORAGE_BYTES) * 100);
 
   return (
     <div
@@ -210,6 +215,20 @@ export const SettingsPanel: React.FC = () => {
               )}
             </Group>
           )}
+
+          <Group title="Data & storage">
+            <div data-testid="data-storage-note" className="rounded-xl border border-nebula-rust/25 bg-nebula-rust/[0.07] px-3 py-3 text-[11px] leading-relaxed text-pulsar-white/55">
+              <div className="mb-2 flex items-center gap-2 font-bold text-pulsar-white/80">
+                <HardDrive size={15} className="text-nebula-rust" /> Stored only on this device
+              </div>
+              <p>Clearing app storage or uninstalling Aether Gravity permanently deletes every universe and cannot be undone. Android backup and device transfer are disabled, so there is no off-device recovery copy.</p>
+              <p className="mt-2 tabular-nums text-pulsar-white/40">
+                {storageUsage.available
+                  ? `Approximate Aether storage: ${usageMiB < 0.01 ? '<0.01' : usageMiB.toFixed(2)} MiB (${usagePercent.toFixed(1)}% of a conservative 5 MiB planning limit).`
+                  : 'Storage usage is unavailable because local storage could not be read.'}
+              </p>
+            </div>
+          </Group>
         </div>
       </div>
     </div>

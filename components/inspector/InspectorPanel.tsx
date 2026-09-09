@@ -28,6 +28,7 @@ import { RelativisticSection } from './sections/RelativisticSection';
 import { OrbitSection } from './sections/OrbitSection';
 import { AnalysisSection } from './sections/AnalysisSection';
 import type { CelestialBody } from '../../types';
+import { getPhysicsBodiesSnapshot } from '../../utils/physicsBridge';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   settings: Settings, thermometer: Thermometer, layers: Layers, wind: Wind,
@@ -74,7 +75,9 @@ export const InspectorPanel: React.FC<{
   const isDesktop = breakpoint === 'desktop';
   const reducedMotion = useReducedMotion();
 
-  const body = useStore((s) => s.bodies.find((b) => b.id === s.inspectorBodyId));
+  const storeBody = useStore((s) => s.bodies.find((b) => b.id === s.inspectorBodyId));
+  const [liveBody, setLiveBody] = useState<CelestialBody | undefined>(storeBody);
+  const body = liveBody?.id === storeBody?.id ? liveBody : storeBody;
   const bodies = useStore((s) => s.bodies);
   const updateBody = useStore((s) => s.updateBody);
   const removeBody = useStore((s) => s.removeBody);
@@ -87,6 +90,28 @@ export const InspectorPanel: React.FC<{
   const setDetent = useStore((s) => s.setInspectorDetent);
 
   const bodyId = body?.id ?? null;
+
+  // Physics stays off the React/store hot path. Only an open inspector samples
+  // its selected live body, at 2 Hz, so telemetry never reconciles the canvas.
+  useEffect(() => {
+    if (!storeBody) {
+      setLiveBody(undefined);
+      return;
+    }
+    const refresh = () => {
+      const live = getPhysicsBodiesSnapshot().find((candidate) => candidate.id === storeBody.id);
+      if (!live) return;
+      setLiveBody({
+        ...live,
+        position: live.position.clone(),
+        velocity: live.velocity.clone(),
+        properties: live.properties ? { ...live.properties } : live.properties,
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 500);
+    return () => window.clearInterval(timer);
+  }, [storeBody]);
 
   const [activeTab, setActiveTab] = useState<InspectorTab>('props');
   const [tabDir, setTabDir] = useState<1 | -1>(1);

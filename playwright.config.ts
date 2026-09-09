@@ -5,6 +5,7 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
   testDir: './e2e',
+  globalTeardown: './e2e/globalTeardown.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -57,7 +58,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx vite --configLoader runner',
+    // The wrapper closes Vite through its JS API when globalTeardown drops a
+    // cache sentinel. This avoids Playwright's hanging Windows taskkill path.
+    command: 'node ./scripts/playwright-server.mjs',
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

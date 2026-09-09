@@ -12,7 +12,7 @@ import { getHabitableZoneInGameUnits } from '../utils/HabitabilityService';
 
 import { CelestialBody } from '../types';
 
-import { scratchV0, scratchV1 } from '../utils/scratchVectors';
+import { scratchV0, scratchV1, toRenderSpace } from '../utils/scratchVectors';
 
 import { getPhysicsBodiesSnapshot } from '../utils/physicsBridge';
 
@@ -261,7 +261,7 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
 
 
-    scratchV0.copy(star.position).sub(floatingOffset.current);
+    toRenderSpace(scratchV0, star.position, floatingOffset.current);
 
     materialRef.current.uCenter.copy(scratchV0);
 
@@ -279,7 +279,7 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
       const b = list[i];
 
-      scratchV1.copy(b.position).sub(floatingOffset.current);
+      toRenderSpace(scratchV1, b.position, floatingOffset.current);
 
       shaderData.positions[i * 3] = scratchV1.x;
 

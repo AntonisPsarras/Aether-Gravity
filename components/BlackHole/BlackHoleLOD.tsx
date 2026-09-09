@@ -1,16 +1,14 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import type { DeviceTier } from '../../utils/deviceCapabilities';
 
 type BlackHoleLODProps = {
   radius: number;
   onSelect: () => void;
   interactive: boolean;
+  tier: DeviceTier;
 };
-
-type QualityTier = 'high' | 'low';
-
-const MOBILE_UA_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 const vertexShader = `
 varying vec2 vUv;
@@ -127,11 +125,8 @@ function createFallbackBackgroundTexture(): THREE.DataTexture {
   return texture;
 }
 
-export default function BlackHoleLOD({ radius, onSelect, interactive }: BlackHoleLODProps): React.ReactElement {
+export default function BlackHoleLOD({ radius, onSelect, interactive, tier }: BlackHoleLODProps): React.ReactElement {
   const meshRef = useRef<THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>>(null);
-  const qualityRef = useRef<QualityTier>('high');
-  const frameProbeRef = useRef<number[]>([]);
-  const lowStreakRef = useRef(0);
   const fallbackBgTextureRef = useRef<THREE.DataTexture | null>(null);
   const { size, camera, scene } = useThree();
 
@@ -171,17 +166,10 @@ export default function BlackHoleLOD({ radius, onSelect, interactive }: BlackHol
   const geometry = useMemo(() => new THREE.PlaneGeometry(radius * 16.0, radius * 16.0, 1, 1), [radius]);
 
   useEffect(() => {
-    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-    const isMobile = MOBILE_UA_REGEX.test(ua);
-    const memory = typeof navigator !== 'undefined' ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8 : 8;
-    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency ?? 8 : 8;
-    const startLow = isMobile && (memory <= 4 || cores <= 4);
-    qualityRef.current = startLow ? 'low' : 'high';
-
     if (meshRef.current) {
-      meshRef.current.material = startLow ? lowMaterial : highMaterial;
+      meshRef.current.material = tier === 'low' ? lowMaterial : highMaterial;
     }
-  }, [highMaterial, lowMaterial]);
+  }, [highMaterial, lowMaterial, tier]);
 
   useEffect(() => {
     return () => {
@@ -192,7 +180,7 @@ export default function BlackHoleLOD({ radius, onSelect, interactive }: BlackHol
     };
   }, [geometry, highMaterial, lowMaterial]);
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     const mesh = meshRef.current;
     if (!mesh) return;
 
@@ -202,28 +190,6 @@ export default function BlackHoleLOD({ radius, onSelect, interactive }: BlackHol
     highMaterial.uniforms.u_resolution.value.set(size.width, size.height);
     lowMaterial.uniforms.u_time.value = now;
 
-    if (qualityRef.current === 'high' && frameProbeRef.current.length < 60) {
-      frameProbeRef.current.push(delta);
-      if (frameProbeRef.current.length === 60) {
-        const avg = frameProbeRef.current.reduce((sum, d) => sum + d, 0) / 60;
-        const fps = 1 / Math.max(avg, 1e-4);
-        if (fps < 55) {
-          mesh.material = lowMaterial;
-          qualityRef.current = 'low';
-        }
-      }
-    } else if (qualityRef.current === 'high') {
-      const instantFps = 1 / Math.max(delta, 1e-4);
-      if (instantFps < 52) {
-        lowStreakRef.current += 1;
-      } else {
-        lowStreakRef.current = 0;
-      }
-      if (lowStreakRef.current > 45) {
-        mesh.material = lowMaterial;
-        qualityRef.current = 'low';
-      }
-    }
   });
 
   return (

@@ -17,7 +17,7 @@ The following has been configured for you:
 ✅ Mobile optimizations added
 ✅ Android manifest configured with necessary permissions
 ✅ Build configuration optimized for mobile
-✅ **Automated ProGuard Fix:** A script now automatically fixes the Capacitor plugin build issues after `npm install`.
+✅ **Automated ProGuard Fix:** A script now automatically fixes the Capacitor plugin build issues after `npm install`. Note that the `release` build type currently sets `minifyEnabled false`, so ProGuard does not actually run — the patch matters the moment you turn minification on, and keeping it in place costs nothing until then. See [`PROGUARD_FIX.md`](./PROGUARD_FIX.md).
 
 ## Building the Android App
 
@@ -148,18 +148,24 @@ The signed AAB will be created in: `android/app/release/app-release.aab`
   ```
 
 - **Full description** (4000 chars max):
-  Use the content from your README.md, highlighting:
-  - N-body physics simulation
-  - Create custom solar systems
-  - Realistic black holes with lensing
-  - Beautiful planetary visuals
-  - Time manipulation controls
+  The store listing is maintained separately from `README.md` — the README is
+  written for developers reading the source, and its licensing and build
+  sections do not belong on a store page. Keep the two consistent on *features*
+  only:
+  - N-body physics (Velocity-Verlet, fixed timestep, conserved energy)
+  - 14 celestial classes, built and launched by hand
+  - Measured presets: the Solar System, TRAPPIST-1, Alpha Centauri
+  - Relativistic black holes — Kerr horizons, ergospheres, accretion disks
+  - Beginner and Advanced presentation modes
+  - Time control, including reverse
+  - Fully offline: no accounts, no ads, no data collection
 
 #### Graphics Assets Needed:
 
 **App Icon:**
 - 512 x 512 PNG
-- Use your existing `thumbnail.png` as a base
+- Derive it from the committed adaptive-icon source rather than a screenshot —
+  see [`ICONS_README.md`](./ICONS_README.md)
 
 **Feature Graphic:**
 - 1024 x 500 PNG
@@ -217,11 +223,15 @@ Fill out required sections:
 
 When you make changes:
 
-1. Update version in `android/app/build.gradle`:
+1. Update version in `android/app/build.gradle`. The shipped values are
+   `versionCode 4` / `versionName "1.5.0"`, so the next release is:
    ```gradle
-   versionCode 2  // Increment by 1
-   versionName "1.1"  // Update version string
+   versionCode 5      // Increment by 1 — Play rejects a reused code
+   versionName "1.6.0"  // Human-facing version string
    ```
+   Note that `package.json`'s `version` field is tracked separately and is
+   currently out of step with the Android version; the Play release is governed
+   by `build.gradle` alone.
 
 2. Build and sync:
    ```bash

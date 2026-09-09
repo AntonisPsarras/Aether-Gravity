@@ -12,6 +12,7 @@ import {
   markTutorialSeen,
   resetOnboardingMemoryForTests,
 } from './onboarding';
+import { subscribeStorageIssues, type StorageIssue } from './browserStorage';
 
 // Same in-memory localStorage stub the onboarding suite uses; the test env is
 // `node`, so there is no DOM storage to clear.
@@ -92,5 +93,22 @@ describe('persistence', () => {
     const prefs = getDisplayPrefs();
     prefs.uiMode = 'beginner';
     expect(getUiMode()).toBe('advanced');
+  });
+
+  it('keeps the session choice and reports when a preference cannot persist', () => {
+    const issues: StorageIssue[] = [];
+    const unsubscribe = subscribeStorageIssues((issue) => issues.push(issue));
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => { throw new DOMException('blocked', 'QuotaExceededError'); },
+      },
+    });
+
+    saveUiMode('advanced');
+    expect(getUiMode()).toBe('advanced');
+    expect(issues.some((issue) => issue.kind === 'quota' && issue.key === DISPLAY_PREFS_STORAGE_KEY)).toBe(true);
+    unsubscribe();
   });
 });

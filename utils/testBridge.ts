@@ -2,6 +2,8 @@ import { G_CONSTANT } from '../constants';
 import type { CelestialBody, WorldData } from '../types';
 import { getE2EConfig, isE2EMode } from './e2eConfig';
 import { getPhysicsBodiesSnapshot } from './physicsBridge';
+import { getRenderSnapshot, type RenderSnapshot } from './renderBridge';
+import { isSatellite } from './moonSystem';
 import { parseWorldData } from './worldStorage';
 import { useStore } from './store';
 import type { UiMode } from './displayMode';
@@ -14,6 +16,8 @@ export interface SerializedBody {
   position: { x: number; y: number; z: number };
   velocity: { x: number; y: number; z: number };
   name: string;
+  parentId?: string;
+  isSatellite: boolean;
 }
 
 export interface StoreSnapshot {
@@ -67,6 +71,8 @@ export interface AetherTestAPI {
   isE2E: boolean;
   getStore: () => StoreSnapshot;
   getPhysicsSnapshot: () => SerializedBody[];
+  /** What is actually drawn: each body mesh's render-space position. */
+  getRenderSnapshot: () => RenderSnapshot;
   getEnergy: () => PhysicsEnergySample;
   loadFixture: (world: WorldData) => void;
   setPaused: (paused: boolean) => void;
@@ -131,6 +137,10 @@ function serializeBody(b: CelestialBody): SerializedBody {
     position: { x: b.position.x, y: b.position.y, z: b.position.z },
     velocity: { x: b.velocity.x, y: b.velocity.y, z: b.velocity.z },
     name: b.name,
+    // Kepler-rail satellites are drawn at an exaggerated separation from their
+    // parent, so a render-vs-physics comparison has to know which these are.
+    parentId: b.parentId,
+    isSatellite: isSatellite(b),
   };
 }
 
@@ -194,6 +204,7 @@ function buildApi(): AetherTestAPI {
       getPhysicsBodiesSnapshot().map(serializeBody),
 
     getEnergy: () => computeEnergy(getPhysicsBodiesSnapshot()),
+    getRenderSnapshot: () => getRenderSnapshot(),
 
     loadFixture: (world) => {
       const parsed = parseWorldData(world);

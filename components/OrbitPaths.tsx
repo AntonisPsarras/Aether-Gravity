@@ -6,7 +6,11 @@ import { useStore } from '../utils/store';
 import { getSimTime } from '../utils/physicsSoA';
 import { fillParentMap } from '../utils/physicsUtils';
 import { sampleOrbitPath } from '../utils/orbitPaths';
+import { bodyRenderPosition } from '../utils/renderPosition';
 import { useEnvironment } from './Environment/EnvironmentContext';
+
+/** Module-scope scratch — the per-frame anchor pass must not allocate. */
+const _anchor = new THREE.Vector3();
 
 type Props = {
   bodiesRef: React.MutableRefObject<CelestialBody[]>;
@@ -86,7 +90,15 @@ export default function OrbitPaths({ bodiesRef, floatingOffset, parentMapRef }: 
     lines.current.forEach(({ line, parentId }, id) => {
       const parent = byId.get(parentId);
       line.visible = !!parent;
-      if (parent) line.position.copy(parent.position).sub(floatingOffset.current);
+      if (parent) {
+        // Anchor on the parent's *render* position, through the same helper that
+        // places the parent's mesh — otherwise a path and the body it belongs to
+        // can drift apart.
+        const grandparent = parent.parentId ? byId.get(parent.parentId) : undefined;
+        line.position.copy(
+          bodyRenderPosition(_anchor, parent, grandparent, floatingOffset.current, uiMode),
+        );
+      }
       (line.material as THREE.LineBasicMaterial).opacity = selected === id ? 0.8 : 0.26;
     });
   });

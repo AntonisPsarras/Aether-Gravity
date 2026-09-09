@@ -12,6 +12,7 @@
  */
 import { isUiMode, type UiMode } from './displayMode';
 import { getOnboardingProgress } from './onboarding';
+import { readStorageJson, reportStorageIssue, writeStorageJsonVerified } from './browserStorage';
 
 export const DISPLAY_PREFS_STORAGE_KEY = 'aether:prefs:v1';
 
@@ -49,10 +50,17 @@ export function getDisplayPrefs(): DisplayPrefs {
   if (memoryPrefs) return { ...memoryPrefs };
   try {
     if (typeof localStorage !== 'undefined') {
-      const parsed = parseDisplayPrefs(JSON.parse(localStorage.getItem(DISPLAY_PREFS_STORAGE_KEY) || 'null'));
+      const stored = readStorageJson(DISPLAY_PREFS_STORAGE_KEY);
+      const parsed = parseDisplayPrefs(stored);
       if (parsed) {
         memoryPrefs = parsed;
         return { ...memoryPrefs };
+      }
+      if (stored !== null) {
+        reportStorageIssue({
+          kind: 'corrupt', key: DISPLAY_PREFS_STORAGE_KEY,
+          message: 'The saved display preference has an invalid shape.',
+        });
       }
     }
   } catch {
@@ -66,7 +74,7 @@ export function saveDisplayPrefs(prefs: DisplayPrefs): DisplayPrefs {
   memoryPrefs = parseDisplayPrefs(prefs) ?? defaultPrefs();
   try {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(DISPLAY_PREFS_STORAGE_KEY, JSON.stringify(memoryPrefs));
+      writeStorageJsonVerified(DISPLAY_PREFS_STORAGE_KEY, memoryPrefs);
     }
   } catch {
     // Keep the session-level memory fallback when persistent storage is unavailable.

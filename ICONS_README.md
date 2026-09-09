@@ -1,64 +1,57 @@
 # App Icons and Splash Screen
 
-Your app currently uses the default Capacitor icons. To customize them with your Aether Gravity branding:
+## Current status
 
-## Option 1: Use Existing Thumbnail (Quick)
+Custom icons and splash screens are **already generated and committed**. There is nothing to do here for a normal build — this document exists for when you want to change the artwork.
 
-Your `thumbnail.png` can be used as a base for the app icon:
+What is in the repo today, under `android/app/src/main/res/`:
 
-1. Create a square version (1024x1024) of your thumbnail
-2. Save it as `resources/icon.png`
-3. Create a splash screen image (2732x2732) and save as `resources/splash.png`
+| Resource | Location |
+|---|---|
+| Legacy launcher icon | `mipmap-{m,h,x,xx,xxx}hdpi/ic_launcher.png` |
+| Adaptive icon foreground | `mipmap-{m,h,x,xx,xxx}hdpi/ic_launcher_foreground.png` |
+| Adaptive icon definition | `mipmap-anydpi-v26/ic_launcher.xml`, `ic_launcher_round.xml` |
+| Adaptive icon background colour | `values/ic_launcher_background.xml` — currently `#0a0a0a` |
+| Splash screens | `drawable/`, `drawable-{land,port}-{m,h,x,xx,xxx}hdpi/splash.png` |
 
-## Option 2: Use Online Icon Generator (Recommended)
+The splash screen's own background and behaviour (duration, scale type, fullscreen) are configured in `capacitor.config.ts` under `plugins.SplashScreen`, not in these resource files.
 
-1. Go to [Icon Kitchen](https://icon.kitchen/) or [App Icon Generator](https://www.appicon.co/)
-2. Upload your logo/icon design
-3. Download the generated Android icons
-4. Replace the icons in `android/app/src/main/res/mipmap-*` folders
+## Regenerating the icons
 
-## Option 3: Use Capacitor Assets Plugin
+`@capacitor/assets` is already a devDependency — no install step is needed.
 
-Install and use the official Capacitor assets plugin:
+1. Create a `resources/` directory at the repo root (it is not checked in):
+   - `resources/icon.png` — 1024×1024, square, no transparency at the edges
+   - `resources/icon-foreground.png` and `resources/icon-background.png` — optional, for finer control over the Android adaptive icon
+   - `resources/splash.png` — 2732×2732, subject centred well inside the safe area
+   - `resources/splash-dark.png` — optional
 
-```bash
-npm install @capacitor/assets --save-dev
-```
+2. Generate:
 
-Create `resources/` folder with:
-- `icon.png` (1024x1024) - Your app icon
-- `splash.png` (2732x2732) - Your splash screen
+   ```bash
+   npx capacitor-assets generate --android
+   ```
 
-Then run:
+3. Review the diff under `android/app/src/main/res/` before committing — the generator overwrites every density at once.
 
-```bash
-npx capacitor-assets generate --android
-```
+If you would rather not run the generator, [Icon Kitchen](https://icon.kitchen/) produces the same Android density set by hand; drop the output into the matching `mipmap-*` folders.
 
-This will automatically generate all required icon sizes and splash screens.
+## Required sizes (manual route)
 
-## Required Icon Sizes
+| Density | `ic_launcher.png` |
+|---|---|
+| mdpi | 48×48 |
+| hdpi | 72×72 |
+| xhdpi | 96×96 |
+| xxhdpi | 144×144 |
+| xxxhdpi | 192×192 |
 
-If manually creating icons, you need these sizes in `android/app/src/main/res/`:
+Adaptive-icon foregrounds are larger (108dp square at each density) and must keep the subject inside the central 66dp safe zone, since Android masks the outer ring to the device's icon shape.
 
-- `mipmap-mdpi/ic_launcher.png` (48x48)
-- `mipmap-hdpi/ic_launcher.png` (72x72)
-- `mipmap-xhdpi/ic_launcher.png` (96x96)
-- `mipmap-xxhdpi/ic_launcher.png` (144x144)
-- `mipmap-xxxhdpi/ic_launcher.png` (192x192)
+## Design guidelines
 
-## Design Guidelines
-
-For best results:
-- Use a simple, recognizable design
-- Avoid text (it won't be readable at small sizes)
-- Use your brand colors (#22d3ee cyan/turquoise)
-- Ensure good contrast against various backgrounds
-- Test on actual devices to see how it looks
-
-## Current Status
-
-✅ Default Capacitor icons are in place
-⚠️ Custom icons need to be created and added
-
-The app will work with default icons, but custom icons will make it look more professional on the Play Store and user devices.
+- Keep the mark simple and recognisable at 48×48.
+- Avoid text — it will not be readable at launcher sizes.
+- Stay inside the app's palette: Void Navy `#10141C` and Pulsar White `#F4F4FB` (see the design-system section of [`README.md`](./README.md)). The adaptive-icon background is currently the near-black `#0a0a0a`.
+- Check contrast against both light and dark launcher wallpapers, and against the Play Store's white listing background.
+- Test on a real device — adaptive-icon masking is hard to judge from a flat PNG.

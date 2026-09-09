@@ -1,13 +1,14 @@
 
-import React, { useRef, useMemo, useEffect, useLayoutEffect, useState } from 'react';
+import React, { useRef, useMemo, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree, extend, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Stars, shaderMaterial, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialBody, BodyType, WaveEvent, PhysicsEvent } from '../types';
-import { checkCollisions, checkEvolution, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState, bodyLuminositySolar } from '../utils/physicsUtils';
+import { scanCollisionsInPlace, checkEvolutionInPlace, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState, bodyLuminositySolar } from '../utils/physicsUtils';
 import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime } from '../utils/physicsSoA';
-import { propagateSatellites, promoteEscapedMoons, satelliteRenderPosition } from '../utils/moonSystem';
+import { propagateSatellites, promoteEscapedMoons } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
+import { bodyRenderPosition } from '../utils/renderPosition';
 import { TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS, LUMINOUS_TYPES } from '../constants';
 import {
   PHYSICS_LIMITS,
@@ -55,6 +56,7 @@ import OrbitPaths from './OrbitPaths';
 import DevPhysicsDiagnostics from './DevPhysicsDiagnostics';
 import TestMetricsCollector from './TestMetricsCollector';
 import { registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
+import { registerRenderObjects, unregisterRenderObjects } from '../utils/renderBridge';
 import { getE2EConfig, isE2EMode } from '../utils/e2eConfig';
 import {
   incrementTestBridgeContextLost,
@@ -69,7 +71,9 @@ import { createRafScheduler, deferDoubleFrame } from '../utils/deferFrames';
 import {
   RendererConfig,
   AdaptivePostFX,
+  DeviceCapabilityProbe,
   useDeviceTier,
+  environmentQualityForDevice,
   exposureForTier,
   gridVisualBoostForDevice,
   detectIsTouch,
@@ -308,7 +312,7 @@ const StabilityOverlay = ({ floatingOffset, bodiesRef, parentMapRef }: {
   const groupRef = useRef<THREE.Group>(null);
   const hillMeshRef = useRef<THREE.Mesh>(null);
   const rocheMeshRef = useRef<THREE.Mesh>(null);
-  const { selectedId } = useStore();
+  const selectedId = useStore((s) => s.selectedId);
 
   useFrame(() => {
     const hillMesh = hillMeshRef.current;
@@ -370,16 +374,22 @@ function isOrbitControlsLike(controls: unknown): controls is OrbitControlsLike {
   return c.target instanceof THREE.Vector3 && typeof c.update === 'function' && typeof c.enabled === 'boolean';
 }
 
-/** Reset floating origin and snap the orbit camera to a body (spawn-style framing). */
+/**
+ * Reset floating origin and snap the orbit camera to a body (spawn-style framing).
+ *
+ * This deliberately does *not* touch `bodyObjectsRef`. That registry is owned by
+ * BodyMesh's mount/unmount and is the only handle PhysicsEngine has on the body
+ * meshes; clearing it here froze every body in place for the life of the world
+ * (physics kept advancing, the meshes did not). Moving the origin needs no
+ * invalidation — the next physics frame rewrites every registered mesh position.
+ */
 const snapCameraToBody = (
   camera: THREE.Camera,
   controls: OrbitControlsLike,
   target: CelestialBody,
   floatingOffset: THREE.Vector3,
-  bodyObjectsRef: React.MutableRefObject<Map<string, THREE.Object3D>>,
 ) => {
   floatingOffset.set(0, 0, 0);
-  bodyObjectsRef.current.clear();
 
   toRenderSpace(scratchV1, target.position, floatingOffset);
   const dist = framingDistanceFor(target.radius);
@@ -408,10 +418,8 @@ const snapCameraToBody = (
  */
 const CameraFlyTo = ({
   floatingOffset,
-  bodyObjectsRef,
 }: {
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
-  bodyObjectsRef: React.MutableRefObject<Map<string, THREE.Object3D>>;
 }) => {
   const selectedId = useStore((s) => s.selectedId);
   const recenterNonce = useStore((s) => s.cameraRecenterNonce);
@@ -435,11 +443,11 @@ const CameraFlyTo = ({
     if (!body || !isOrbitControlsLike(controls)) return;
 
     if (reducedMotion) {
-      snapCameraToBody(camera, controls, body, floatingOffset.current, bodyObjectsRef);
+      snapCameraToBody(camera, controls, body, floatingOffset.current);
       return;
     }
     flying.current = { id: selectedId, distance: framingDistanceFor(body.radius) };
-  }, [selectedId, recenterNonce, reducedMotion, controls, camera, floatingOffset, bodyObjectsRef]);
+  }, [selectedId, recenterNonce, reducedMotion, controls, camera, floatingOffset]);
 
   // Any deliberate camera input wins over the tween.
   useEffect(() => {
@@ -487,10 +495,8 @@ const CameraFlyTo = ({
 /** Snap orbit camera to the primary star after generate / new universe only. */
 const CameraRecenter = ({
   floatingOffset,
-  bodyObjectsRef,
 }: {
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
-  bodyObjectsRef: React.MutableRefObject<Map<string, THREE.Object3D>>;
 }) => {
   const cameraRecenterNonce = useStore((s) => s.cameraRecenterNonce);
   const { camera, controls } = useThree();
@@ -518,13 +524,7 @@ const CameraRecenter = ({
         return;
       }
 
-      snapCameraToBody(
-        camera,
-        controls,
-        target,
-        floatingOffset.current,
-        bodyObjectsRef,
-      );
+      snapCameraToBody(camera, controls, target, floatingOffset.current);
     };
 
     const cancelDefer = deferDoubleFrame(trySnap);
@@ -533,7 +533,7 @@ const CameraRecenter = ({
       raf.cancel();
       cancelDefer();
     };
-  }, [cameraRecenterNonce, controls, camera, floatingOffset, bodyObjectsRef]);
+  }, [cameraRecenterNonce, controls, camera, floatingOffset]);
 
   return null;
 };
@@ -620,14 +620,29 @@ const PhysicsEngine = ({
   const gridMeshRef = useRef<THREE.Mesh>(null);
   const visualEffectsRef = useRef<VisualEffect[]>([]);
   const [effectsVersion, setEffectsVersion] = useState(0);
-  const lastStoreSyncRef = useRef(0);
   const lastTempUpdateRef = useRef(0);
   const lastParentMapUpdateRef = useRef(0);
   const lastBodyCountRef = useRef(0);
   const { camera, controls } = useThree();
   const shaderData = useMemo(() => ({ positions: new Float32Array(50 * 3), masses: new Float32Array(50), radii: new Float32Array(50), types: new Float32Array(50) }), []);
 
-  const { syncBodiesFromPhysics, paused, speed, selectBody, cameraLockedId, showGrid, showHabitable, uiMode } = useStore();
+  const syncBodiesFromPhysics = useStore((s) => s.syncBodiesFromPhysics);
+  const paused = useStore((s) => s.paused);
+  const speed = useStore((s) => s.speed);
+  const selectBody = useStore((s) => s.selectBody);
+  const cameraLockedId = useStore((s) => s.cameraLockedId);
+  const showGrid = useStore((s) => s.showGrid);
+  const showHabitable = useStore((s) => s.showHabitable);
+  const uiMode = useStore((s) => s.uiMode);
+  const eventBufferRef = useRef<PhysicsEvent[]>([]);
+  const waveEventBufferRef = useRef<WaveEvent[]>([]);
+  const stepStateRef = useRef({ collisionOccurred: false });
+  const fixedStepCallback = useCallback((bodies: CelestialBody[]) => {
+    if (scanCollisionsInPlace(bodies, eventBufferRef.current, waveEventBufferRef.current)) {
+      stepStateRef.current.collisionOccurred = true;
+    }
+    return bodies;
+  }, []);
 
   useFrame((state, delta) => {
     // Floating-origin recentre shifts render space; freeze it during slingshot drags
@@ -656,29 +671,26 @@ const PhysicsEngine = ({
       }
     }
 
+    const newEvents = eventBufferRef.current;
+    newEvents.length = 0;
+    waveEventBufferRef.current.length = 0;
+    stepStateRef.current.collisionOccurred = false;
     let collisionOccurred = false;
-    const newEvents: PhysicsEvent[] = [];
 
     if (!paused && Math.abs(speed) > 0.01 && bodiesRef.current && bodiesRef.current.length > 0) {
       // Fixed-timestep Velocity-Verlet — deterministic regardless of frame rate.
       // Collision + evolution checks run at each fixed step so contact events
       // are not missed when the user runs at high speed multipliers.
-      runFixedSteps(bodiesRef, simElapsed, (bodies) => {
-        const colResult = checkCollisions(bodies, currentTime);
-        if (colResult.events.length > 0) newEvents.push(...colResult.events);
-        if (colResult.merged) {
-          collisionOccurred = true;
-          return colResult.active;
-        }
-        return bodies;
-      });
+      runFixedSteps(bodiesRef, simElapsed, fixedStepCallback, deviceTier);
+      collisionOccurred = stepStateRef.current.collisionOccurred;
 
       if (bodiesRef.current && bodiesRef.current.length > 0) {
-        const { bodies: evolvedBodies, events: evoEvents } = checkEvolution(bodiesRef.current);
-        if (evoEvents.length > 0) newEvents.push(...evoEvents);
+        const evolvedBodies = bodiesRef.current;
+        checkEvolutionInPlace(evolvedBodies, newEvents);
         bodiesRef.current = evolvedBodies;
 
-        newEvents.forEach(e => {
+        for (let eventIndex = 0; eventIndex < newEvents.length; eventIndex++) {
+          const e = newEvents[eventIndex];
           if (e.type === 'supernova') {
             gasRemnants.current.unshift({ position: e.position.clone(), age: 0 });
             gasRemnants.current.length = Math.min(gasRemnants.current.length, 2);
@@ -692,7 +704,7 @@ const PhysicsEngine = ({
             });
             effectsChanged = true;
           }
-        });
+        }
 
         // Refresh equilibrium temperatures at ~2 Hz — cheap O(N · S) and
         // avoids per-step jitter from changing distances.
@@ -709,11 +721,9 @@ const PhysicsEngine = ({
         // panels to refresh their derived analytics.
         const shouldSync =
           collisionOccurred ||
-          newEvents.length > 0 ||
-          currentTime - (lastStoreSyncRef.current ?? 0) > 1.5;
+          newEvents.length > 0;
         if (shouldSync) {
           syncBodiesFromPhysics(evolvedBodies);
-          lastStoreSyncRef.current = currentTime;
           if (collisionOccurred) {
             selectBody(null);
             useStore.getState().closeInspector();
@@ -769,16 +779,8 @@ const PhysicsEngine = ({
         const body = physicsBodies[i];
         const obj = bodyObjectsRef.current.get(body.id);
         if (obj && body.position) {
-          // A satellite's *true* separation from its parent is far smaller than
-          // the parent's exaggerated drawn radius, so it is drawn through the
-          // same exaggeration to keep the real orbit-to-radius ratio visible.
           const parent = body.parentId ? bodyByIdRef.current.get(body.parentId) : undefined;
-          if (parent && body.orbit) {
-            satelliteRenderPosition(body, parent, scratchV1, uiMode);
-            toRenderSpace(scratchV0, scratchV1, floatingOffset.current);
-          } else {
-            toRenderSpace(scratchV0, body.position, floatingOffset.current);
-          }
+          bodyRenderPosition(scratchV0, body, parent, floatingOffset.current, uiMode);
           obj.position.copy(scratchV0);
         }
       }
@@ -1273,12 +1275,14 @@ const BlackHoleBody = ({
   spin,
   accretion,
   mass,
+  deviceTier,
 }: {
   visualRadius: number;
   eventHorizonScale: number;
   spin: number;
   accretion: number;
   mass: number;
+  deviceTier: DeviceTier;
 }) => {
   const lensTexture = useBlackHoleLensTexture();
   return (
@@ -1288,13 +1292,14 @@ const BlackHoleBody = ({
       accretion={accretion}
       mass={mass}
       lensTexture={lensTexture}
+      tier={deviceTier}
       interactive={false}
       onSelect={() => {}}
     />
   );
 };
 
-const BodyMesh = ({
+const BodyMesh = React.memo(({
   data,
   onBodyGesture,
   creationMode,
@@ -1326,7 +1331,7 @@ const BodyMesh = ({
   const ringRef = useRef<THREE.Mesh>(null);
   const environment = useEnvironment();
   const haloRef = useRef<THREE.Mesh>(null);
-  const { camera } = useThree();
+  const { camera, size: viewportSize } = useThree();
   // Narrow selector: re-renders this mesh only when the mode itself flips.
   const uiMode = useStore((s) => s.uiMode);
   const localScratch = useRef({
@@ -1453,7 +1458,9 @@ const BodyMesh = ({
 
   // The cloud shell is a second transparent pass per planet, so it is high-tier
   // only; the surface shader draws a flat cloud bed on low instead.
-  const showClouds = isPlanet && shaderQuality === 1 && cloudCover > 0.05;
+  // Keep the shell mounted on low tier so projected-size LOD can reveal it for
+  // a close/selected body without a React render. Invisible meshes do not draw.
+  const showClouds = isPlanet && cloudCover > 0.05;
 
   const isGiant = data.type === 'Gas Giant' || data.type === 'Ice Giant';
 
@@ -1495,6 +1502,12 @@ const BodyMesh = ({
     const t = state.clock.elapsedTime;
     const dt = delta * 1.0;
     const liveBody = bodyByIdRef.current.get(data.id);
+    let detailedVisual = deviceTier === 'high' || isSelected;
+    if (!detailedVisual && groupRef.current && camera instanceof THREE.PerspectiveCamera) {
+      const distance = Math.max(camera.position.distanceTo(groupRef.current.position), 1e-3);
+      const focalPixels = viewportSize.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5));
+      detailedVisual = (visualRadius / distance) * focalPixels >= environment.quality.detailedBodyPixelRadius;
+    }
 
     // Direction to the illuminating star, computed once: the surface, cloud
     // shell, ring plane and atmosphere all need the same vector, and they must
@@ -1504,7 +1517,7 @@ const BodyMesh = ({
       const parentBody = parentMapRef.current.get(data.id);
       const starId = primaryStarIdRef.current;
       const star =
-        parentBody && ['Star', 'Red Giant'].includes(parentBody.type)
+        parentBody && (parentBody.type === 'Star' || parentBody.type === 'Red Giant')
           ? parentBody
           : starId
             ? bodyByIdRef.current.get(starId) ?? null
@@ -1526,6 +1539,7 @@ const BodyMesh = ({
       }
       if (isPlanet && liveBody && meshMaterial && 'uSunDirection' in meshMaterial) {
         meshMaterial.uSunDirection = sunDir;
+        if ('uQuality' in meshMaterial) meshMaterial.uQuality = detailedVisual ? 1 : 0;
 
         const nextState = habitabilityToState(
           liveBody.habitability,
@@ -1570,10 +1584,12 @@ const BodyMesh = ({
       // Cloud parallax: the deck super-rotates relative to the surface (Venus
       // does this at ~60x), so a small excess is enough to read as depth.
       if (cloudRef.current) {
+        cloudRef.current.visible = detailedVisual;
         cloudRef.current.rotation.y += (spinRate * 1.18 + 0.012) * dt;
         const cloudMat = cloudRef.current.material as any;
         if (cloudMat && typeof cloudMat === 'object') {
           if ('uTime' in cloudMat) cloudMat.uTime = t;
+          if ('uQuality' in cloudMat) cloudMat.uQuality = detailedVisual ? 1 : 0;
           if ('uSunDirection' in cloudMat) cloudMat.uSunDirection = sunDir;
           if ('uCover' in cloudMat && liveBody) {
             // Cover tracks live temperature, so a world that is heating up
@@ -1594,6 +1610,7 @@ const BodyMesh = ({
       const ringMat = ringRef.current.material as any;
       if (ringMat && typeof ringMat === 'object') {
         if ('uTime' in ringMat) ringMat.uTime = t;
+        if ('uQuality' in ringMat) ringMat.uQuality = detailedVisual ? 1 : 0;
         if ('uSunDirection' in ringMat) ringMat.uSunDirection = sunDir;
         // The ring shader ray-casts the planet shadow in world space, so it
         // needs the body's render-space centre every frame.
@@ -1634,6 +1651,7 @@ const BodyMesh = ({
       mat.uDensity = atmosphereVisual.density;
       mat.uHaze = atmosphereVisual.haze;
       mat.uScaleHeight = atmosphereVisual.scaleHeight;
+      mat.uSteps = detailedVisual ? 8 : 4;
       }
     }
   });
@@ -1766,12 +1784,15 @@ const BodyMesh = ({
     if (!group) return;
     const live = bodiesRef.current.find((b) => b.id === data.id) ?? data;
     if (live.position) {
-      toRenderSpace(scratchV0, live.position, floatingOffset.current);
+      // Same helper the per-frame loop uses, so a moon does not mount at its
+      // true separation and jump into the exaggerated frame one frame later.
+      const parent = live.parentId ? bodyByIdRef.current.get(live.parentId) : undefined;
+      bodyRenderPosition(scratchV0, live, parent, floatingOffset.current, uiMode);
       group.position.copy(scratchV0);
     }
     registerBodyObject(data.id, group);
     return () => registerBodyObject(data.id, null);
-  }, [data.id, registerBodyObject, bodiesRef, floatingOffset, data]);
+  }, [data.id, registerBodyObject, bodiesRef, bodyByIdRef, floatingOffset, uiMode, data]);
 
   useEffect(() => {
     return () => {
@@ -1890,6 +1911,7 @@ const BodyMesh = ({
           spin={props.spinParameter ?? 0}
           accretion={props.accretionRate ?? 0.5}
           mass={data.mass}
+          deviceTier={deviceTier}
         />
         </group>
       )}
@@ -1931,7 +1953,7 @@ const BodyMesh = ({
 
     </group>
   );
-};
+});
 
 /** Narrow-viewport breakpoint — matches Tailwind `md` and inspector/outliner layout. */
 const NARROW_VIEWPORT_PX = 768;
@@ -1979,15 +2001,24 @@ const SpaceCanvas: React.FC<{
   onBodyCreate: (snapshot: CelestialBody[], createdBody: CelestialBody) => void;
 }> = ({ creationMode, setCreationMode, onBodyCreate }) => {
   const isTouchDevice = detectIsTouch();
-  const deviceTier = useDeviceTier();
+  const detectedTier = useDeviceTier();
   const e2eConfig = getE2EConfig();
-  const canvasDpr =
-    e2eConfig.dpr != null ? ([e2eConfig.dpr, e2eConfig.dpr] as [number, number]) : ([1, 2] as [number, number]);
+  const [adaptiveTier, setAdaptiveTier] = useState<DeviceTier>(detectedTier);
   const [creationDragging, setCreationDragging] = useState(false);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
   const [glEpoch, setGlEpoch] = useState(0);
   const gasRemnants = useRef<GasRemnant[]>([]);
-  const effectiveTier = gpuEffectsOk ? deviceTier : 'low';
+  const effectiveTier: DeviceTier = gpuEffectsOk ? adaptiveTier : 'low';
+  const canvasDpr: [number, number] = e2eConfig.dpr != null
+    ? [e2eConfig.dpr, e2eConfig.dpr]
+    : effectiveTier === 'low' ? [1, 1.25] : [1, 2];
+  const renderQuality = useMemo(
+    () => environmentQualityForDevice(effectiveTier, isTouchDevice),
+    [effectiveTier, isTouchDevice],
+  );
+  const handleDetectedTier = useCallback((tier: DeviceTier) => {
+    if (!e2eConfig.tier) setAdaptiveTier(tier);
+  }, [e2eConfig.tier]);
 
   useEffect(() => {
     setTestBridgeDeviceTier(effectiveTier);
@@ -2005,10 +2036,15 @@ const SpaceCanvas: React.FC<{
   const parentMapRef = useRef<Map<string, CelestialBody | null>>(new Map());
   const bodyByIdRef = useRef<Map<string, CelestialBody>>(new Map());
   const primaryStarIdRef = useRef<string | null>(null);
-  const {
-    bodies, selectedId, selectBody, openInspector, closeInspector,
-    showDust, showStability, showOrbitPaths, historyVersion, isInteractingWithUI,
-  } = useStore();
+  const bodies = useStore((s) => s.bodies);
+  const selectedId = useStore((s) => s.selectedId);
+  const selectBody = useStore((s) => s.selectBody);
+  const closeInspector = useStore((s) => s.closeInspector);
+  const showDust = useStore((s) => s.showDust);
+  const showStability = useStore((s) => s.showStability);
+  const showOrbitPaths = useStore((s) => s.showOrbitPaths);
+  const historyVersion = useStore((s) => s.historyVersion);
+  const isInteractingWithUI = useStore((s) => s.isInteractingWithUI);
 
   const handleCreationDragChange = React.useCallback((active: boolean) => {
     creationDragActiveRef.current = active;
@@ -2048,6 +2084,11 @@ const SpaceCanvas: React.FC<{
   }, []);
 
   useEffect(() => {
+    registerRenderObjects(bodyObjectsRef, floatingOffset);
+    return () => unregisterRenderObjects(bodyObjectsRef);
+  }, []);
+
+  useEffect(() => {
     const clearUiInteractionLock = () => useStore.getState().setInteractingWithUI(false);
     window.addEventListener('pointerup', clearUiInteractionLock, { passive: true });
     window.addEventListener('pointercancel', clearUiInteractionLock, { passive: true });
@@ -2081,6 +2122,9 @@ const SpaceCanvas: React.FC<{
     resetAccumulator();
   }, [bodiesSignature, historyVersion]);
 
+  // BodyMesh's mount/unmount is the *only* writer of this registry. PhysicsEngine
+  // reads it every frame to place the meshes, so anything else emptying it (a
+  // camera snap used to) silently freezes every body on screen.
   const registerBodyObject = React.useCallback((bodyId: string, obj: THREE.Object3D | null) => {
     if (obj) {
       bodyObjectsRef.current.set(bodyId, obj);
@@ -2103,6 +2147,9 @@ const SpaceCanvas: React.FC<{
       } as any}
       onPointerMissed={handleCanvasPointerMissed}
     >
+      {!e2eConfig.tier && (
+        <DeviceCapabilityProbe initialTier={detectedTier} onTierChange={handleDetectedTier} />
+      )}
       <RendererConfig
         exposure={exposure}
         managePixelRatio={false}
@@ -2117,8 +2164,9 @@ const SpaceCanvas: React.FC<{
       />
       <EnvironmentProvider tier={effectiveTier} isTouch={isTouchDevice}>
       <BlackHoleLensCapture
-        enabled={hasBlackHole && effectiveTier !== 'low' && gpuEffectsOk}
-        lowQuality={effectiveTier === 'low'}
+        enabled={hasBlackHole && gpuEffectsOk}
+        resolution={renderQuality.blackHoleCaptureResolution}
+        captureInterval={renderQuality.blackHoleCaptureInterval}
       >
         <color attach="background" args={['#050505']} />
         <ambientLight intensity={0.06} />
@@ -2132,8 +2180,8 @@ const SpaceCanvas: React.FC<{
           fade
           speed={1}
         />
-        <CameraRecenter floatingOffset={floatingOffset} bodyObjectsRef={bodyObjectsRef} />
-        <CameraFlyTo floatingOffset={floatingOffset} bodyObjectsRef={bodyObjectsRef} />
+        <CameraRecenter floatingOffset={floatingOffset} />
+        <CameraFlyTo floatingOffset={floatingOffset} />
         {isE2EMode() && <TestMetricsCollector />}
         <PhysicsEngine
           bodiesRef={bodiesRef}
@@ -2142,7 +2190,7 @@ const SpaceCanvas: React.FC<{
           parentMapRef={parentMapRef}
           bodyByIdRef={bodyByIdRef}
           primaryStarIdRef={primaryStarIdRef}
-          deviceTier={deviceTier}
+          deviceTier={effectiveTier}
           gridVisualBoost={gridVisualBoost}
           creationDragActiveRef={creationDragActiveRef}
           gasRemnants={gasRemnants}
@@ -2186,9 +2234,9 @@ const SpaceCanvas: React.FC<{
             <HabitableZoneVisual key={`hz-${star.id}`} star={star} floatingOffset={floatingOffset} />
           ))}
         </group>
-        <RadiationEffects bodiesRef={bodiesRef} bodyObjectsRef={bodyObjectsRef} />
+        <RadiationEffects bodiesRef={bodiesRef} floatingOffset={floatingOffset} />
         <AdaptiveOrbitControls enabled={!creationDragging && !isInteractingWithUI} />
-        {gpuEffectsOk && <AdaptivePostFX tier={deviceTier} isTouch={isTouchDevice} />}
+        {gpuEffectsOk && <AdaptivePostFX tier={effectiveTier} isTouch={isTouchDevice} />}
       </BlackHoleLensCapture>
       </EnvironmentProvider>
     </Canvas>

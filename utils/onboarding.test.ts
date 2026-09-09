@@ -12,6 +12,7 @@ import {
   parseOnboardingProgress,
   resetOnboardingMemoryForTests,
 } from './onboarding';
+import { subscribeStorageIssues, type StorageIssue } from './browserStorage';
 
 const body = (overrides: Partial<CelestialBody> = {}): CelestialBody => ({
   id: 'body', type: 'Planet', mass: 1, radius: 1, radiusKm: 6371,
@@ -67,6 +68,8 @@ describe('onboarding progress', () => {
   });
 
   it('keeps a session fallback when localStorage rejects writes', () => {
+    const issues: StorageIssue[] = [];
+    const unsubscribe = subscribeStorageIssues((issue) => issues.push(issue));
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       value: {
@@ -76,6 +79,8 @@ describe('onboarding progress', () => {
     });
     markHelperSeen('panel:analysis');
     expect(getOnboardingProgress().seenHelperIds).toEqual(['panel:analysis']);
+    expect(issues.some((issue) => issue.kind === 'quota' && issue.key === ONBOARDING_STORAGE_KEY)).toBe(true);
+    unsubscribe();
   });
 });
 

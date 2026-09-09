@@ -5,7 +5,15 @@ import { InspectorPanel, ControlBar, CreationToolbar, ConfirmationModal } from '
 import MainMenu from './components/MainMenu';
 import UniverseOutliner from './components/UniverseOutliner';
 import ErrorBoundary from './components/ErrorBoundary';
-import { getWorld, saveWorld, serializeBodies, markWorldOpened, parseWorldData } from './utils/worldStorage';
+import {
+  CURRENT_WORLD_VERSION,
+  getWorld,
+  saveWorld,
+  serializeBodies,
+  markWorldOpened,
+  parseWorldData,
+  type SaveWorldResult,
+} from './utils/worldStorage';
 import { useStore, detentBelow } from './utils/store';
 import { BREAKPOINTS, useBreakpoint } from './components/hooks/useMediaQuery';
 import { getE2EConfig } from './utils/e2eConfig';
@@ -18,17 +26,45 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { consumeBackPress } from './utils/backNavigation';
 import LiveHelper from './components/LiveHelper';
+import { getPhysicsBodiesSnapshot } from './utils/physicsBridge';
 import SettingsPanel from './components/SettingsPanel';
 import {
   enqueueUnseenHelpers, getOnboardingProgress, helperDefinition, markHelperSeen,
   type HelperId, type HelperTrigger, type QueuedHelper,
 } from './utils/onboarding';
+import { storageIssueMessage, subscribeStorageIssues } from './utils/browserStorage';
+
+const StorageNotice: React.FC = () => {
+  const notice = useStore((state) => state.storageNotice);
+  const setNotice = useStore((state) => state.setStorageNotice);
+  if (!notice) return null;
+  return (
+    <div
+      role="alert"
+      className="pointer-events-auto fixed z-[160] left-1/2 -translate-x-1/2 bottom-[max(1.25rem,env(safe-area-inset-bottom))] w-[min(92vw,32rem)] bg-nebula-rust/15 border border-nebula-rust/40 text-pulsar-white px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-start gap-3"
+    >
+      <p className="text-sm flex-1 leading-snug">{notice}</p>
+      <button
+        type="button"
+        onClick={() => setNotice(null)}
+        className="touch-target shrink-0 text-xs font-bold uppercase tracking-wide text-pulsar-white/70 hover:text-pulsar-white"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+};
 
 const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu }) => {
-  const {
-    bodies, setBodies, selectedId, inspectorBodyId, generateNewSystem, selectBody, closeInspector,
-    worldId, resetSessionUiState,
-  } = useStore();
+  const bodies = useStore((s) => s.bodies);
+  const setBodies = useStore((s) => s.setBodies);
+  const selectedId = useStore((s) => s.selectedId);
+  const inspectorBodyId = useStore((s) => s.inspectorBodyId);
+  const generateNewSystem = useStore((s) => s.generateNewSystem);
+  const selectBody = useStore((s) => s.selectBody);
+  const closeInspector = useStore((s) => s.closeInspector);
+  const worldId = useStore((s) => s.worldId);
+  const resetSessionUiState = useStore((s) => s.resetSessionUiState);
   const inspectorOpen = useStore(
     (s) => s.inspectorBodyId != null && s.bodies.some((b) => b.id === s.inspectorBodyId),
   );
@@ -86,14 +122,17 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 
   const storageNotice = useStore((s) => s.storageNotice);
   const setStorageNotice = useStore((s) => s.setStorageNotice);
+  const [showLeaveWithoutSaving, setShowLeaveWithoutSaving] = useState(false);
+  const skipUnmountSaveRef = useRef(false);
 
-  const saveCurrentWorld = useCallback(() => {
+  const saveCurrentWorld = useCallback((): SaveWorldResult => {
     const state = useStore.getState();
-    if (!state.worldId) return;
+    if (!state.worldId) return 'ok';
+    const physicsBodies = getPhysicsBodiesSnapshot();
     const result = saveWorld({
       id: state.worldId,
-      version: 1,
-      bodies: serializeBodies(state.bodies),
+      version: CURRENT_WORLD_VERSION,
+      bodies: serializeBodies(physicsBodies.length ? physicsBodies : state.bodies),
       settings: {
         speed: state.speed,
         showGrid: state.showGrid,
@@ -107,14 +146,40 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       setStorageNotice('Device storage is full — your universe could not be saved.');
     } else if (result === 'error') {
       setStorageNotice('Failed to save universe. Changes may be lost if you leave.');
+    } else if (result === 'conflict') {
+      setStorageNotice('This universe changed in another tab. Saving was stopped to avoid overwriting it.');
     }
+    return result;
   }, [setStorageNotice]);
 
   useEffect(() => {
     const interval = setInterval(saveCurrentWorld, 30000);
     return () => clearInterval(interval);
   }, [saveCurrentWorld]);
-  useEffect(() => () => saveCurrentWorld(), [saveCurrentWorld]);
+  useEffect(() => () => {
+    if (!skipUnmountSaveRef.current) saveCurrentWorld();
+  }, [saveCurrentWorld]);
+
+  useEffect(() => {
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') saveCurrentWorld();
+    };
+    const saveOnPageHide = () => { saveCurrentWorld(); };
+    document.addEventListener('visibilitychange', saveWhenHidden);
+    window.addEventListener('pagehide', saveOnPageHide);
+
+    let nativeListener: { remove: () => Promise<void> } | undefined;
+    if (Capacitor.isNativePlatform()) {
+      void CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive) saveCurrentWorld();
+      }).then((handle) => { nativeListener = handle; });
+    }
+    return () => {
+      document.removeEventListener('visibilitychange', saveWhenHidden);
+      window.removeEventListener('pagehide', saveOnPageHide);
+      void nativeListener?.remove();
+    };
+  }, [saveCurrentWorld]);
 
   useEffect(() => {
     if (selectedId && !bodies.some((b) => b.id === selectedId)) {
@@ -140,19 +205,28 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   };
   const handleReturnToMenu = useCallback(() => {
     if (worldId) {
-      saveCurrentWorld();
-      markWorldOpened(worldId);
+      const result = saveCurrentWorld();
+      if (result !== 'ok') {
+        setShowLeaveWithoutSaving(true);
+        return;
+      }
     }
     resetSessionUiState();
     onReturnToMenu();
   }, [worldId, saveCurrentWorld, resetSessionUiState, onReturnToMenu]);
+
+  const leaveWithoutSaving = useCallback(() => {
+    skipUnmountSaveRef.current = true;
+    resetSessionUiState();
+    onReturnToMenu();
+  }, [resetSessionUiState, onReturnToMenu]);
 
   useEffect(() => {
     return registerBackHandler(() => {
       const state = useStore.getState();
       const action = resolveSimBackAction({
         storageNotice: !!storageNotice,
-        confirmOpen: showConfirmGenerate,
+        confirmOpen: showConfirmGenerate || showLeaveWithoutSaving,
         settingsOpen: state.settingsOpen,
         helperOpen: helperQueue.length > 0,
         creationMode: !!creationMode,
@@ -167,7 +241,10 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 
       switch (action) {
         case 'dismissNotice': setStorageNotice(null); return true;
-        case 'cancelConfirm': setShowConfirmGenerate(false); return true;
+        case 'cancelConfirm':
+          if (showLeaveWithoutSaving) setShowLeaveWithoutSaving(false);
+          else setShowConfirmGenerate(false);
+          return true;
         case 'closeSettings': state.setSettingsOpen(false); return true;
         case 'dismissHelper': acknowledgeHelper(); return true;
         case 'exitCreationMode': setCreationMode(null); return true;
@@ -188,6 +265,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   }, [
     storageNotice,
     showConfirmGenerate,
+    showLeaveWithoutSaving,
     creationMode,
     helperQueue.length,
     acknowledgeHelper,
@@ -226,21 +304,6 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         />
         {activeHelper && <LiveHelper helper={activeHelper} onAcknowledge={acknowledgeHelper} />}
       </div>
-      {storageNotice && (
-        <div
-          role="alert"
-          className="pointer-events-auto fixed z-50 left-1/2 -translate-x-1/2 bottom-[max(1.25rem,env(safe-area-inset-bottom))] w-[min(92vw,28rem)] bg-nebula-rust/15 border border-nebula-rust/40 text-pulsar-white px-4 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-start gap-3"
-        >
-          <p className="text-sm flex-1 leading-snug">{storageNotice}</p>
-          <button
-            type="button"
-            onClick={() => setStorageNotice(null)}
-            className="touch-target shrink-0 text-xs font-bold uppercase tracking-wide text-pulsar-white/70 hover:text-pulsar-white"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
       <div className="absolute inset-0 z-10 pointer-events-none safe-pad">
         <div className="pointer-events-auto">
           <CreationToolbar
@@ -271,6 +334,15 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         </div>
       </div>
       <ConfirmationModal isOpen={showConfirmGenerate} onConfirm={handleGenerate} onCancel={() => setShowConfirmGenerate(false)} />
+      <ConfirmationModal
+        isOpen={showLeaveWithoutSaving}
+        onConfirm={leaveWithoutSaving}
+        onCancel={() => setShowLeaveWithoutSaving(false)}
+        title="Leave without saving?"
+        message="The latest changes could not be saved. Leaving now will permanently discard those unsaved changes."
+        confirmLabel="Leave without saving"
+        danger
+      />
       {/* Renders nothing until opened; reads `settingsOpen` from the store so
           the control-bar gear and the Android back handler share one source. */}
       <SettingsPanel />
@@ -284,7 +356,16 @@ const App: React.FC = () => {
   const [e2eBootstrapping, setE2eBootstrapping] = useState(
     e2eConfig.enabled && !!e2eConfig.fixture,
   );
-  const { loadWorld, setBodies, generateNewSystem, loadRealSystem, resetSessionUiState } = useStore();
+  const loadWorld = useStore((s) => s.loadWorld);
+  const setBodies = useStore((s) => s.setBodies);
+  const generateNewSystem = useStore((s) => s.generateNewSystem);
+  const loadRealSystem = useStore((s) => s.loadRealSystem);
+  const resetSessionUiState = useStore((s) => s.resetSessionUiState);
+  const setStorageNotice = useStore((s) => s.setStorageNotice);
+
+  useEffect(() => subscribeStorageIssues((issue) => {
+    setStorageNotice(storageIssueMessage(issue));
+  }), [setStorageNotice]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !e2eConfig.enabled || !e2eConfig.fixture) {
@@ -384,7 +465,7 @@ const App: React.FC = () => {
   const handleOpenWorld = (id: string) => {
     const data = getWorld(id);
     if (data) {
-      markWorldOpened(id);
+      try { markWorldOpened(id); } catch { /* global storage notice already reported */ }
       loadWorld(data);
       setActiveWorldId(id);
     }
@@ -423,15 +504,21 @@ const App: React.FC = () => {
 
   if (!activeWorldId) {
     return (
-      <ErrorBoundary label="Main Menu" onReset={handleReturnToMenu}>
-        <MainMenu onOpenWorld={handleOpenWorld} onCreateWorld={handleCreateWorld} />
-      </ErrorBoundary>
+      <>
+        <ErrorBoundary label="Main Menu" onReset={handleReturnToMenu}>
+          <MainMenu onOpenWorld={handleOpenWorld} onCreateWorld={handleCreateWorld} />
+        </ErrorBoundary>
+        <StorageNotice />
+      </>
     );
   }
   return (
-    <ErrorBoundary label="Simulation" onReset={handleReturnToMenu}>
-      <Simulation onReturnToMenu={handleReturnToMenu} />
-    </ErrorBoundary>
+    <>
+      <ErrorBoundary label="Simulation" onReset={handleReturnToMenu}>
+        <Simulation onReturnToMenu={handleReturnToMenu} />
+      </ErrorBoundary>
+      <StorageNotice />
+    </>
   );
 };
 

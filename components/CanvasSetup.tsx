@@ -1,8 +1,14 @@
-import React, { useEffect, useMemo } from 'react';
-import { useThree } from '@react-three/fiber';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { getE2EConfig } from '../utils/e2eConfig';
+import {
+  classifyDeviceCapabilities,
+  combineDeviceTiers,
+  DeviceTierHysteresis,
+  type DeviceTier,
+} from '../utils/deviceCapabilities';
 
 /**
  * Device capability tiering.
@@ -13,7 +19,7 @@ import { getE2EConfig } from '../utils/e2eConfig';
  * `high` → desktop *and* capable phones. Gets the bloom-driven look so the
  *          cosmos and gravity grid read identically across devices.
  */
-export type DeviceTier = 'low' | 'high';
+export type { DeviceTier } from '../utils/deviceCapabilities';
 
 /** Rendering-only budgets. TODO: profile fill rate on older GPUs before further tuning. */
 export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
@@ -31,10 +37,15 @@ export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
     radiationDetail: low ? 0 : 1,
     radiationAnimationRate: 1,
     dustCount: low ? 240 : isTouch ? 525 : 1500,
-    dustSize: low ? 2 : 3,
+    dustSize: low ? 3.8 : 3,
+    dustOpacityGain: low ? 1.65 : 1,
     dustMotion: low ? 0.5 : 1,
     orbitSegments: low ? 64 : 128,
     orbitRefreshHz: low ? 2 : 5,
+    blackHoleCaptureResolution: low ? 128 : 256,
+    blackHoleCaptureInterval: low ? 6 : 3,
+    bloomResolutionScale: low ? 0.25 : 0.5,
+    detailedBodyPixelRadius: low ? 110 : 0,
   };
 }
 export type EnvironmentQuality = ReturnType<typeof environmentQualityForDevice>;
@@ -53,11 +64,54 @@ export function useDeviceTier(): DeviceTier {
     if (e2e.tier) return e2e.tier;
     if (typeof navigator === 'undefined') return 'high';
     const isMobile = MOBILE_UA_REGEX.test(navigator.userAgent);
-    if (!isMobile) return 'high';
     const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
     const cores = navigator.hardwareConcurrency ?? 8;
-    return memory <= 4 || cores <= 4 ? 'low' : 'high';
+    return classifyDeviceCapabilities({ memoryGb: memory, logicalCores: cores, isMobile, isTouch: detectIsTouch() });
   }, []);
+}
+
+function readRendererStrings(gl: THREE.WebGLRenderer): { renderer?: string; vendor?: string } {
+  const ctx = gl.getContext();
+  const ext = ctx.getExtension('WEBGL_debug_renderer_info');
+  if (!ext) return {};
+  return {
+    renderer: String(ctx.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? ''),
+    vendor: String(ctx.getParameter(ext.UNMASKED_VENDOR_WEBGL) ?? ''),
+  };
+}
+
+/** Refines the pre-canvas tier with real WebGL limits and sustained frame timing. */
+export function DeviceCapabilityProbe({
+  initialTier,
+  onTierChange,
+}: {
+  initialTier: DeviceTier;
+  onTierChange: (tier: DeviceTier) => void;
+}): null {
+  const gl = useThree((s) => s.gl);
+  const adaptive = useRef(new DeviceTierHysteresis(initialTier));
+  const warmupFrames = useRef(0);
+
+  useEffect(() => {
+    const ctx = gl.getContext();
+    const strings = readRendererStrings(gl);
+    const refined = combineDeviceTiers(initialTier, classifyDeviceCapabilities({
+      ...strings,
+      webgl2: typeof WebGL2RenderingContext !== 'undefined' && ctx instanceof WebGL2RenderingContext,
+      maxTextureSize: gl.capabilities.maxTextureSize,
+      maxRenderbufferSize: Number(ctx.getParameter(ctx.MAX_RENDERBUFFER_SIZE)),
+    }));
+    adaptive.current = new DeviceTierHysteresis(refined);
+    onTierChange(refined);
+  }, [gl, initialTier, onTierChange]);
+
+  useFrame((_, delta) => {
+    if (document.hidden || warmupFrames.current++ < 120) return;
+    const fps = 1 / Math.max(delta, 1e-4);
+    const changed = adaptive.current.observe(fps);
+    if (changed) onTierChange(changed);
+  });
+  return null;
 }
 
 /**
@@ -167,7 +221,13 @@ export function gridVisualBoostForDevice(
  *  - Weak mobile (`low`): nothing — brightness is handled by exposure instead.
  */
 export function AdaptivePostFX({ tier, isTouch }: { tier: DeviceTier; isTouch: boolean }): React.ReactElement | null {
-  if (tier === 'low') return null;
+  if (tier === 'low') {
+    return (
+      <EffectComposer multisampling={0} enableNormalPass={false}>
+        <Bloom luminanceThreshold={0.28} mipmapBlur intensity={1.35} radius={0.72} resolutionScale={0.25} levels={3} />
+      </EffectComposer>
+    );
+  }
 
   if (isTouch) {
     return (

@@ -8,6 +8,7 @@ import {
   kerrOuterHorizonKm,
 } from './relativity';
 import { fmtRadiusKm } from './units';
+import { readStorageJson, reportStorageIssue, writeStorageJsonVerified } from './browserStorage';
 
 export type TutorialIconId =
   | 'model' | 'navigate' | 'outliner' | 'create' | 'orbit'
@@ -176,9 +177,15 @@ export function getOnboardingProgress(): OnboardingProgress {
   }
   try {
     if (typeof localStorage === 'undefined') return { ...memoryProgress, seenHelperIds: [...memoryProgress.seenHelperIds] };
-    const raw = localStorage.getItem(ONBOARDING_STORAGE_KEY);
-    if (!raw) return { ...memoryProgress, seenHelperIds: [...memoryProgress.seenHelperIds] };
-    memoryProgress = parseOnboardingProgress(JSON.parse(raw));
+    const stored = readStorageJson(ONBOARDING_STORAGE_KEY);
+    if (stored === null) return { ...memoryProgress, seenHelperIds: [...memoryProgress.seenHelperIds] };
+    if (!stored || typeof stored !== 'object') {
+      reportStorageIssue({
+        kind: 'corrupt', key: ONBOARDING_STORAGE_KEY,
+        message: 'The saved onboarding progress has an invalid shape.',
+      });
+    }
+    memoryProgress = parseOnboardingProgress(stored);
   } catch {
     // Private browsing, quota policies, and corrupt JSON must not block the app.
   }
@@ -189,7 +196,7 @@ export function saveOnboardingProgress(progress: OnboardingProgress): Onboarding
   memoryProgress = parseOnboardingProgress(progress);
   try {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(memoryProgress));
+      writeStorageJsonVerified(ONBOARDING_STORAGE_KEY, memoryProgress);
     }
   } catch {
     // Keep the session-level memory fallback when persistent storage is unavailable.

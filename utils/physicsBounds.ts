@@ -128,11 +128,10 @@ export const clampVelocityVector = (
 /** Clamp each position component to a finite simulation envelope. */
 export const clampPositionVector = (p: THREE.Vector3): THREE.Vector3 => {
   const lim = PHYSICS_LIMITS.MAX_POSITION_ABS;
-  const c = (n: number) => {
-    if (!isFinite(n)) return 0;
-    return Math.max(-lim, Math.min(lim, n));
-  };
-  p.set(c(p.x), c(p.y), c(p.z));
+  const x = isFinite(p.x) ? Math.max(-lim, Math.min(lim, p.x)) : 0;
+  const y = isFinite(p.y) ? Math.max(-lim, Math.min(lim, p.y)) : 0;
+  const z = isFinite(p.z) ? Math.max(-lim, Math.min(lim, p.z)) : 0;
+  p.set(x, y, z);
   return p;
 };
 

@@ -103,8 +103,15 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
 
 
 export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMenu: () => void, onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean }> = ({ creationMode, onReturnToMenu, onUndo, onRedo, canUndo, canRedo }) => {
-  const { paused, speed, cameraLockedId, selectedId, settingsOpen } = useStore();
-  const { setPaused, setSpeed, setCameraLock, setSettingsOpen } = useStore();
+  const paused = useStore((s) => s.paused);
+  const speed = useStore((s) => s.speed);
+  const cameraLockedId = useStore((s) => s.cameraLockedId);
+  const selectedId = useStore((s) => s.selectedId);
+  const settingsOpen = useStore((s) => s.settingsOpen);
+  const setPaused = useStore((s) => s.setPaused);
+  const setSpeed = useStore((s) => s.setSpeed);
+  const setCameraLock = useStore((s) => s.setCameraLock);
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const [lockWarning, setLockWarning] = useState(false);
 
   const handleCameraLock = () => {
@@ -172,7 +179,7 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
           </button>
           <div className="h-4 md:h-6 w-px bg-white/10 mx-1"></div>
           {onReturnToMenu && (
-            <button onClick={onReturnToMenu} className="touch-target p-1.5 md:p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>
+            <button onClick={onReturnToMenu} title="Return to Menu" aria-label="Return to Menu" className="touch-target p-1.5 md:p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>
           )}
         </div>
       </div>
@@ -200,25 +207,41 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
   );
 };
 
-export const ConfirmationModal = ({ isOpen, onConfirm, onCancel }: { isOpen: boolean, onConfirm: () => void, onCancel: () => void }) => {
+export const ConfirmationModal = ({
+  isOpen,
+  onConfirm,
+  onCancel,
+  title = 'New System',
+  message = 'This will generate a new random star system. Current simulation state will be pushed to undo history.',
+  confirmLabel = 'Generate',
+  danger = false,
+}: {
+  isOpen: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
+  danger?: boolean;
+}) => {
   if (!isOpen) return null;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm ag-fade-in"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="confirm-generate-title"
+        aria-labelledby="confirmation-title"
       onClick={onCancel}
     >
       <div
         className="bg-[rgba(16,20,28,0.98)] border border-white/10 p-6 rounded-xl shadow-2xl max-w-sm w-full mx-4 ring-1 ring-white/5 ag-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 id="confirm-generate-title" className="text-lg font-bold text-pulsar-white mb-2 flex items-center gap-2"><AlertTriangle className="text-nebula-rust" size={20} /> New System</h3>
-        <p className="text-pulsar-white/50 text-sm mb-6">This will generate a new random star system. Current simulation state will be pushed to undo history.</p>
+        <h3 id="confirmation-title" className="text-lg font-bold text-pulsar-white mb-2 flex items-center gap-2"><AlertTriangle className="text-nebula-rust" size={20} /> {title}</h3>
+        <p className="text-pulsar-white/50 text-sm mb-6">{message}</p>
         <div className="flex gap-3 justify-end">
           <button onClick={onCancel} className="touch-target min-h-[2.75rem] px-4 py-2.5 rounded-lg text-sm font-medium text-pulsar-white/60 hover:text-pulsar-white hover:bg-white/5 transition-colors">Cancel</button>
-          <button onClick={() => { onConfirm(); onCancel(); }} className="touch-target min-h-[2.75rem] px-4 py-2.5 rounded-lg text-sm font-bold bg-nova-gold hover:bg-nova-gold/90 text-void-navy shadow-lg shadow-nova-gold/20 transition-all">Generate</button>
+          <button onClick={() => { onConfirm(); onCancel(); }} className={`touch-target min-h-[2.75rem] px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${danger ? 'bg-red-500/25 text-red-200 border border-red-500/40 hover:bg-red-500/35' : 'bg-nova-gold hover:bg-nova-gold/90 text-void-navy shadow-lg shadow-nova-gold/20'}`}>{confirmLabel}</button>
         </div>
       </div>
     </div>
