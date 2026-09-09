@@ -114,9 +114,8 @@ test('black hole created with the slingshot gesture', async ({ page }) => {
   await waitForSimulationReady(page);
   await settle(page, 1500);
 
-  // On the desktop tier the creation dock sits behind the docked outliner rail,
-  // so a real click lands on the outliner. Dispatch straight at the button.
-  await page.getByRole('button', { name: 'Hole' }).dispatchEvent('click');
+  // The creation dock is centred in the unobstructed canvas between the rails.
+  await page.getByRole('button', { name: 'Hole' }).click();
 
   // Press to place, drag to aim, release to launch.
   const canvas = page.locator('.canvas-viewport');

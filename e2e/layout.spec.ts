@@ -49,6 +49,38 @@ test.describe('layout tiers', () => {
 test.describe('desktop rails', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) < DESKTOP_MIN, 'desktop only');
 
+  test('keeps the collapsed outliner anchored and centers creation in the free canvas', async ({ page }) => {
+    const outliner = page.getByTestId('outliner-panel');
+    const dock = page.getByTestId('creation-toolbar');
+    const canvas = page.locator('.canvas-viewport');
+    const expanded = (await outliner.boundingBox())!;
+
+    await page.getByRole('button', { name: /Universe Outliner/ }).click();
+    await outliner.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+    const collapsed = (await outliner.boundingBox())!;
+    expect(collapsed.x).toBeCloseTo(expanded.x, 0);
+    expect(collapsed.y).toBeCloseTo(expanded.y, 0);
+    expect(collapsed.width).toBeCloseTo(expanded.width, 0);
+
+    // Restore the rail and verify the horizontal dock uses the canvas centre,
+    // not the full viewport centre hidden underneath the left rail.
+    await page.getByRole('button', { name: /Universe Outliner/ }).click();
+    const dockBox = (await dock.boundingBox())!;
+    const canvasBox = (await canvas.boundingBox())!;
+    expect(dockBox.x).toBeGreaterThanOrEqual(canvasBox.x);
+    expect(dockBox.x + dockBox.width).toBeLessThanOrEqual(canvasBox.x + canvasBox.width + 1);
+    expect(dockBox.x + dockBox.width / 2).toBeCloseTo(canvasBox.x + canvasBox.width / 2, 0);
+    expect(dockBox.y + dockBox.height).toBeLessThanOrEqual((page.viewportSize()?.height ?? 0) - 20);
+
+    await openInspectorFromOutliner(page);
+    const betweenBothRails = (await canvas.boundingBox())!;
+    const narrowedDock = (await dock.boundingBox())!;
+    expect(narrowedDock.x).toBeGreaterThanOrEqual(betweenBothRails.x);
+    expect(narrowedDock.x + narrowedDock.width).toBeLessThanOrEqual(betweenBothRails.x + betweenBothRails.width + 1);
+    expect(narrowedDock.x + narrowedDock.width / 2)
+      .toBeCloseTo(betweenBothRails.x + betweenBothRails.width / 2, 0);
+  });
+
   test('opening the inspector insets the canvas and closing restores it', async ({ page }) => {
     const canvas = page.locator('.canvas-viewport');
     const before = (await canvas.boundingBox())!;
@@ -88,6 +120,37 @@ test.describe('desktop rails', () => {
 
 test.describe('phone bottom sheet', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) > PHONE_MAX, 'phone only');
+
+  test('reclaims the hidden creation dock space while the outliner is open', async ({ page }) => {
+    const outliner = page.getByTestId('outliner-panel');
+    const dock = page.getByTestId('creation-toolbar');
+    const toggle = page.getByRole('button', { name: /Universe Outliner/ });
+
+    // The outliner starts open. Close it to capture the normal stacked state.
+    await toggle.click();
+    await outliner.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+    const collapsed = (await outliner.boundingBox())!;
+    const visibleDock = (await dock.boundingBox())!;
+    expect(collapsed.y + collapsed.height).toBeLessThan(visibleDock.y);
+
+    await toggle.click();
+    await outliner.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+    await page.waitForTimeout(550); // creation dock exit transition
+    const expanded = (await outliner.boundingBox())!;
+    const hiddenDock = (await dock.boundingBox())!;
+    const viewportHeight = page.viewportSize()?.height ?? 0;
+    expect(expanded.height).toBeGreaterThan(collapsed.height + 100);
+    expect(viewportHeight - (expanded.y + expanded.height)).toBeLessThanOrEqual(18);
+    expect(hiddenDock.y).toBeGreaterThanOrEqual(viewportHeight);
+
+    // Collapsing restores both controls to the non-overlapping stack.
+    await toggle.click();
+    await page.waitForTimeout(550);
+    const restoredOutliner = (await outliner.boundingBox())!;
+    const restoredDock = (await dock.boundingBox())!;
+    expect(restoredOutliner.y + restoredOutliner.height).toBeLessThan(restoredDock.y);
+    expect(restoredDock.y).toBeLessThan(viewportHeight);
+  });
 
   test('opens at the half detent and leaves the canvas full-bleed', async ({ page }) => {
     const canvas = page.locator('.canvas-viewport');

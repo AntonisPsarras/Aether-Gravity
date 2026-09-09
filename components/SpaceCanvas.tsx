@@ -1363,6 +1363,7 @@ const BodyMesh = React.memo(({
   const ringRef = useRef<THREE.Mesh>(null);
   const environment = useEnvironment();
   const haloRef = useRef<THREE.Mesh>(null);
+  const stellarSelectionRingRef = useRef<THREE.Mesh>(null);
   const { camera, size: viewportSize } = useThree();
   // Narrow selector: re-renders this mesh only when the mode itself flips.
   const uiMode = useStore((s) => s.uiMode);
@@ -1661,6 +1662,14 @@ const BodyMesh = React.memo(({
           haloMaterial.uTime = t;
         }
       }
+    }
+    if (stellarSelectionRingRef.current) {
+      // RingGeometry is authored in the XY plane. Mirroring the camera's
+      // quaternion keeps the marker screen-facing instead of turning it into
+      // another atmosphere-like globe as the camera moves around the star.
+      stellarSelectionRingRef.current.quaternion.copy(camera.quaternion);
+      const pulse = environment.reducedMotion ? 1 : 1 + Math.sin(t * 3.2) * 0.035;
+      stellarSelectionRingRef.current.scale.setScalar(pulse);
     }
     if (atmosphereRef.current) {
       const mat = atmosphereRef.current.material as any;
@@ -1962,9 +1971,30 @@ const BodyMesh = React.memo(({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Selection Halo */}
-      {isSelected && (
-        <mesh ref={haloRef} scale={scale} raycast={NO_RAYCAST}>
+      {/* Selection marker: stellar bodies use a camera-facing ring so their
+          highlight cannot be mistaken for a translucent atmosphere. */}
+      {isSelected && isStar && (
+        <mesh
+          ref={stellarSelectionRingRef}
+          name={`selection-marker:ring:${data.id}`}
+          raycast={NO_RAYCAST}
+          renderOrder={20}
+        >
+          <ringGeometry args={[visualRadius * 1.38, visualRadius * 1.5, deviceTier === 'low' ? 40 : 64]} />
+          <meshBasicMaterial
+            color={haloColor}
+            transparent
+            opacity={0.72}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            depthTest={false}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
+      {isSelected && !isStar && (
+        <mesh ref={haloRef} name={`selection-marker:halo:${data.id}`} scale={scale} raycast={NO_RAYCAST}>
           <sphereGeometry args={[visualRadius * (isBlackHole ? 1.5 : 1.3), haloSeg, haloSeg]} />
           <selectionHaloMaterial transparent side={THREE.FrontSide} blending={THREE.AdditiveBlending} depthWrite={false} uColor={haloColor} />
         </mesh>

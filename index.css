@@ -235,11 +235,14 @@ canvas {
   }
 }
 
-/* Creation toolbar — bottom on phone with gesture-safe padding */
+/* Creation toolbar — horizontal and centred in the canvas area at every tier. */
 .creation-toolbar-anchor {
   top: calc(var(--control-bar-top) + var(--control-bar-mobile-height));
   bottom: 0;
+  left: var(--rail-left);
+  right: var(--rail-right);
   padding-bottom: var(--creation-toolbar-bottom-pad);
+  padding-inline: max(0.75rem, var(--safe-left)) max(0.75rem, var(--safe-right));
 }
 
 @media (min-width: 768px) {
@@ -268,9 +271,7 @@ canvas {
   .universe-outliner-anchor {
     bottom: auto;
     top: var(--universe-outliner-desktop-top);
-    /* Clear the vertical creation rail, which is bottom-left anchored and tall
-       enough (14 body types) to reach the outliner on a tablet-height screen. */
-    left: calc(max(1rem, var(--safe-left)) + var(--creation-rail-width) + 0.75rem);
+    left: max(1rem, var(--safe-left));
     right: auto;
     margin-left: 0;
     margin-right: 0;
@@ -289,6 +290,18 @@ canvas {
 
 .universe-outliner-anchor:not(.is-expanded) {
   max-height: 3.75rem;
+}
+
+@media (max-width: 767px) {
+  /* The creation dock is translated away while this sheet is open, so reclaim
+     both its reserved bottom gap and enough height to make the list useful. */
+  .sim-shell.rail-left-open .universe-outliner-anchor.is-expanded {
+    bottom: max(1rem, var(--safe-bottom));
+    max-height: min(
+      56dvh,
+      calc(100dvh - var(--control-bar-anchor-top) - var(--control-bar-mobile-height) - var(--safe-bottom) - 1.5rem)
+    );
+  }
 }
 
 /* ─── Touch targets (min 44 × 44 px per WCAG / Apple HIG) ───────────────────*/
@@ -463,7 +476,8 @@ canvas {
 .menu-preset-card:focus-visible,
 .menu-name-row input:focus-visible,
 .menu-world-card button:focus-visible,
-.menu-footer button:focus-visible {
+.menu-footer button:focus-visible,
+.menu-scroll-cue:focus-visible {
   outline: 2px solid var(--color-nova-gold);
   outline-offset: 3px;
 }
@@ -472,7 +486,7 @@ canvas {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: max(1.75rem, var(--safe-bottom));
+  bottom: max(5.25rem, calc(var(--safe-bottom) + 4rem));
   display: flex;
   justify-content: center;
   gap: clamp(1.4rem, 5vw, 4.5rem);
@@ -485,7 +499,8 @@ canvas {
 
 .menu-telemetry span { display: inline-flex; align-items: center; gap: 0.55rem; }
 .menu-telemetry i { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: #5ee2ae; box-shadow: 0 0 12px rgba(94, 226, 174, 0.7); }
-.menu-scroll-cue { position: absolute; right: max(1.5rem, calc(var(--safe-right) + 1rem)); bottom: max(1.25rem, var(--safe-bottom)); display: flex; align-items: center; gap: 0.5rem; color: rgba(244, 244, 251, 0.42); font-size: 0.65rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.menu-scroll-cue { position: absolute; left: 50%; bottom: max(1.25rem, var(--safe-bottom)); transform: translateX(-50%); display: flex; align-items: center; justify-content: center; gap: 0.6rem; padding: 0.65rem 1rem; border: 1px solid rgba(249, 212, 35, 0.28); border-radius: 999px; background: rgba(12, 17, 28, 0.72); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 0 1px rgba(255, 255, 255, 0.06); backdrop-filter: blur(14px); color: rgba(255, 239, 157, 0.92); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; transition: color 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease; }
+.menu-scroll-cue:hover { color: #fff4b8; border-color: rgba(249, 212, 35, 0.52); background: rgba(37, 36, 24, 0.78); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36), 0 0 22px rgba(249, 212, 35, 0.08); }
 
 .menu-composer {
   width: min(76rem, 100%);
@@ -589,7 +604,6 @@ canvas {
   .menu-hero.is-composing .menu-brand-block { display: none; }
   .menu-composer { margin-top: 0; }
   .menu-telemetry { display: none; }
-  .menu-scroll-cue { display: none; }
 }
 
 @media (max-width: 640px) {
@@ -1275,22 +1289,6 @@ html[data-reduced-motion='true'] *::after {
     border-left: 0;
     border-top: 0;
     border-bottom: 0;
-  }
-  .universe-outliner-anchor:not(.is-expanded) {
-    top: var(--universe-outliner-desktop-top);
-    bottom: auto;
-    left: calc(max(1rem, var(--safe-left)) + var(--creation-rail-width) + 0.75rem);
-    width: 16rem;
-    max-width: 16rem;
-    max-height: 3.75rem;
-    border-radius: 0.75rem;
-    border-width: 1px;
-  }
-
-  /* Keep the floating chrome inside the free area between the rails. */
-  .creation-toolbar-anchor {
-    left: calc(var(--rail-left) + max(1rem, var(--safe-left)));
-    right: calc(var(--rail-right) + max(1rem, var(--safe-right)));
   }
   /* Re-centre the control bar in the space the rails leave, and cap it there.
      Without the cap it keeps its intrinsic ~44rem width and slides underneath

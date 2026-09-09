@@ -3,6 +3,28 @@ import { expect, test } from '@playwright/test';
 const menuUrl = (tier: 'low' | 'high' = 'high') => `/?e2e=1&tier=${tier}&onboarding=seen`;
 
 test.describe('premium main menu', () => {
+  test('keeps the My Universes cue visible, centered, and keyboard focusable', async ({ page }) => {
+    await page.goto(menuUrl('low'));
+    const cue = page.getByTestId('menu-universes-cue');
+    await expect(cue).toBeVisible();
+
+    const geometry = await cue.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      element.focus();
+      return {
+        center: rect.left + rect.width / 2,
+        viewportCenter: window.innerWidth / 2,
+        width: rect.width,
+        height: rect.height,
+        focused: document.activeElement === element,
+      };
+    });
+    expect(Math.abs(geometry.center - geometry.viewportCenter)).toBeLessThanOrEqual(1);
+    expect(geometry.width).toBeGreaterThanOrEqual(44);
+    expect(geometry.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.focused).toBe(true);
+  });
+
   test('opens the creator with the Solar System selected and exposes every origin', async ({ page }, testInfo) => {
     await page.goto(menuUrl());
     await expect(page.getByTestId('main-menu')).toBeVisible();

@@ -37,6 +37,7 @@ export default function TestMetricsCollector(): null {
       const paths: { name: string; count: number; first: number[]; center: number[]; radius: number }[] = [];
       const effects = { gas: 0, dust: 0, radiation: 0, orbit: 0 };
       const gas: { shell: number; opacity: number; size: number }[] = [];
+      const selectionMarkers: string[] = [];
       scene.traverseVisible(object => {
         const drawable = object as THREE.Mesh;
         if (!drawable.geometry) return;
@@ -53,6 +54,7 @@ export default function TestMetricsCollector(): null {
           gas.push({ shell: mat.uniforms.uShell.value, opacity: mat.uniforms.uOpacity.value, size: object.scale.x });
         }
         if (object.name === 'decorative-dust') effects.dust++;
+        if (object.name.startsWith('selection-marker:')) selectionMarkers.push(object.name);
         if (object.parent?.name.startsWith('radiation:') || object.parent?.parent?.name.startsWith('radiation:')) effects.radiation++;
       });
       const radiation: { name: string; time: number; strength: number }[] = [];
@@ -63,7 +65,7 @@ export default function TestMetricsCollector(): null {
             time: mat.uniforms.uTime.value, strength: mat.uniforms.uStrength.value });
         }
       });
-      return { paths, effects, radiation, gas, rendererCalls: renderStats.current.calls, triangles: renderStats.current.triangles,
+      return { paths, effects, radiation, gas, selectionMarkers, rendererCalls: renderStats.current.calls, triangles: renderStats.current.triangles,
         geometries: gl.info.memory.geometries, textures: gl.info.memory.textures };
     };
     (window as Window & { __AETHER_VISUALS__?: typeof inspect }).__AETHER_VISUALS__ = inspect;

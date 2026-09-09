@@ -617,7 +617,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                             </div>
                         )}
                     </div>
-                    {!isCreating && <button onClick={() => libraryRef.current?.scrollIntoView({ behavior: 'smooth' })} className="menu-scroll-cue touch-target" aria-label="Scroll to your universes"><span>My universes</span><ArrowDown size={17} /></button>}
+                    {!isCreating && <button onClick={() => libraryRef.current?.scrollIntoView({ behavior: 'smooth' })} className="menu-scroll-cue touch-target" data-testid="menu-universes-cue" aria-label="Scroll to your universes"><span>My universes</span><ArrowDown size={17} /></button>}
                 </section>
 
                 <section ref={libraryRef} className="menu-library safe-pad" data-testid="menu-library">

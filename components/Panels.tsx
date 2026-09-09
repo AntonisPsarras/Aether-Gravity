@@ -29,24 +29,24 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
 
   return (
     <>
-      <div className={`fixed z-20 pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] creation-toolbar-anchor left-1/2 -translate-x-1/2 flex flex-col items-center justify-end w-auto max-w-[90vw] pt-2 ${mobileHidden ? 'translate-y-[120%]' : 'translate-y-0'} md:absolute md:left-[max(1rem,var(--safe-left))] md:translate-x-0 md:max-w-[95vw] md:items-start`}>
-        <div className={`pointer-events-auto w-auto max-w-full overflow-x-auto md:overflow-visible overscroll-x-contain touch-pan-x scrollbar-hide rounded-full md:rounded-none`}>
-          <div className={`bg-[rgba(45,51,64,0.6)] backdrop-blur-xl md:backdrop-blur-md border border-white/10 rounded-full md:rounded-xl shadow-2xl flex flex-row flex-nowrap md:flex-col items-center md:items-stretch md:w-auto md:min-w-[8.75rem] gap-0 md:gap-1.5 md:p-2 ring-1 ring-white/5 ag-fade-in transition-[padding,width,min-width,height] duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded ? 'w-max min-w-0 py-1.5 pl-3 pr-3 justify-start' : 'w-[4.25rem] h-[4.25rem] min-w-0 p-3 justify-center'}`}>
+      <div className={`fixed z-20 pointer-events-none transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] creation-toolbar-anchor flex flex-col items-center justify-end pt-2 ${mobileHidden ? 'translate-y-[120%]' : 'translate-y-0'}`}>
+        <div data-testid="creation-toolbar" className="pointer-events-auto w-auto max-w-full overflow-x-auto overscroll-x-contain touch-pan-x scrollbar-hide rounded-full">
+          <div className={`bg-[rgba(45,51,64,0.6)] backdrop-blur-xl border border-white/10 rounded-full shadow-2xl flex flex-row flex-nowrap items-center gap-0 ring-1 ring-white/5 ag-fade-in transition-[padding,width,min-width,height] duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded ? 'w-max min-w-0 py-1.5 pl-3 pr-3 justify-start' : 'w-[4.25rem] h-[4.25rem] min-w-0 p-3 justify-center'} md:w-max md:h-auto md:min-w-0 md:py-1.5 md:pl-3 md:pr-3 md:justify-start`}>
             <button onClick={() => setIsExpanded(!isExpanded)} className="touch-target rounded-full bg-white/5 text-slate-400 hover:text-white active:scale-90 transition-transform md:hidden shrink-0 h-11 w-11 flex items-center justify-center">
               {isExpanded ? <ChevronDown size={20} /> : <ChevronUp size={20} />}
             </button>
             <div
-              className={`flex flex-row flex-nowrap md:contents items-center justify-evenly md:items-stretch gap-0 md:gap-1.5 overflow-hidden transition-[max-width,opacity,margin] duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded ? 'max-w-[80rem] opacity-100 ml-0' : 'max-w-0 opacity-0 ml-0 pointer-events-none'} md:max-w-none md:opacity-100 md:pointer-events-auto`}
+              className={`flex flex-row flex-nowrap items-center justify-evenly gap-0 overflow-hidden transition-[max-width,opacity,margin] duration-400 ease-[cubic-bezier(0.23,1,0.32,1)] ${isExpanded ? 'max-w-[80rem] opacity-100 ml-0' : 'max-w-0 opacity-0 ml-0 pointer-events-none'} md:max-w-[80rem] md:opacity-100 md:pointer-events-auto`}
             >
             <button
               onClick={() => setMode(null)}
-              className={`touch-target flex flex-col md:flex-row items-center md:gap-3 justify-center min-w-[2.75rem] md:min-w-0 md:w-full md:justify-start md:px-3 active:scale-95 p-1 md:p-2.5 transition-all font-bold rounded-lg shrink-0
+              className={`touch-target flex flex-col items-center justify-center min-w-[2.75rem] active:scale-95 p-1 transition-all font-bold rounded-lg shrink-0
                 ${mode === null
-                  ? 'text-nova-gold md:bg-nova-gold/20 md:ring-1 md:ring-inset md:ring-nova-gold/25'
-                  : 'text-red-400 hover:text-red-300 md:border md:border-red-500/30 md:hover:bg-red-500/20'
+                  ? 'text-nova-gold bg-nova-gold/10 ring-1 ring-inset ring-nova-gold/20'
+                  : 'text-red-400 hover:text-red-300 hover:bg-red-500/10'
                 }`}
             >
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all md:hidden
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all
                 ${mode === null
                   ? 'bg-nova-gold/25 ring-1 ring-inset ring-nova-gold/35'
                   : 'bg-red-500/10 border border-red-500/30'
@@ -54,21 +54,20 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
               >
                 {mode === null ? <MousePointer2 size={18} /> : <X size={18} />}
               </div>
-              <span className="hidden md:block">{mode === null ? <MousePointer2 size={18} /> : <X size={18} />}</span>
-              <span className="text-[9px] md:text-xs font-bold uppercase mt-0.5 md:mt-0">{mode === null ? 'Select' : 'Cancel'}</span>
+              <span className="text-[9px] font-bold uppercase mt-0.5">{mode === null ? 'Select' : 'Cancel'}</span>
             </button>
-            <div className="w-px self-stretch min-h-[2.75rem] md:min-h-0 md:h-px md:w-full bg-white/10 shrink-0 md:my-1" aria-hidden />
+            <div className="w-px self-stretch min-h-[2.75rem] bg-white/10 shrink-0" aria-hidden />
             {tools.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setMode(t.id as BodyType)}
-                className={`touch-target flex flex-col md:flex-row items-center md:gap-3 justify-center min-w-[2.75rem] md:min-w-0 md:w-full md:justify-start md:px-3 relative group shrink-0 active:scale-95 p-1 md:p-2.5 transition-all
+                className={`touch-target flex flex-col items-center justify-center min-w-[2.75rem] relative group shrink-0 active:scale-95 p-1 transition-all rounded-lg
                   ${mode === t.id
-                    ? t.color + ' md:' + t.bg + ' md:rounded-lg md:ring-1 md:ring-inset md:ring-white/20'
-                    : 'text-slate-400 hover:text-slate-200 md:bg-transparent md:hover:bg-white/5 md:rounded-lg'
+                    ? t.color + ' ' + t.bg + ' ring-1 ring-inset ring-white/20'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
                   }`}
               >
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all md:hidden
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all
                   ${mode === t.id
                     ? t.bg + ' ring-1 ring-inset ring-white/20 shadow-md'
                     : 'group-hover:bg-white/5'
@@ -76,20 +75,18 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
                 >
                   <t.icon size={18} />
                 </div>
-                <t.icon size={18} className="hidden md:block shrink-0" />
-                <span className="text-[9px] md:text-xs font-bold uppercase mt-0.5 md:mt-0">{t.label}</span>
+                <span className="text-[9px] font-bold uppercase mt-0.5">{t.label}</span>
               </button>
             ))}
-            <div className="w-px self-stretch min-h-[2.75rem] md:min-h-0 md:h-px md:w-full bg-white/10 shrink-0 md:my-1" aria-hidden />
+            <div className="w-px self-stretch min-h-[2.75rem] bg-white/10 shrink-0" aria-hidden />
             <button
               onClick={onTriggerGenerate}
-              className="touch-target flex flex-col md:flex-row items-center md:gap-3 justify-center min-w-[2.75rem] md:min-w-0 md:w-full md:justify-start md:px-3 text-white shrink-0 active:scale-95 p-1 md:p-2.5 transition-all md:bg-gradient-to-br md:from-indigo-500 md:to-purple-600 md:hover:from-indigo-400 md:hover:to-purple-500 md:rounded-lg md:shadow-lg md:shadow-purple-500/20"
+              className="touch-target flex flex-col items-center justify-center min-w-[2.75rem] text-white shrink-0 active:scale-95 p-1 transition-all rounded-lg hover:bg-white/5"
             >
-              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-purple-500/20 md:hidden">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-purple-500/20">
                 <Sparkles size={18} />
               </div>
-              <Sparkles size={18} className="hidden md:block shrink-0" />
-              <span className="text-[9px] md:text-xs font-bold uppercase mt-0.5 md:mt-0">Gen</span>
+              <span className="text-[9px] font-bold uppercase mt-0.5">Gen</span>
             </button>
             </div>
           </div>

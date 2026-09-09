@@ -5,6 +5,22 @@ async function visuals(page: Page) {
   return page.evaluate(() => (window as any).__AETHER_VISUALS__());
 }
 
+test('uses a ring for stellar selection and a halo for planets', async ({ page }) => {
+  await page.goto(e2eUrl('minimal-3body', { tier: 'high' }));
+  await waitForSimulationReady(page);
+
+  // loadWorld intentionally selects the primary star; the selection marker
+  // must not recreate the atmosphere-like globe seen on first entry.
+  await expect.poll(async () => (await visuals(page)).selectionMarkers).toEqual([
+    'selection-marker:ring:star-1',
+  ]);
+
+  await page.evaluate(() => (window as any).__AETHER_VISUAL_TEST__.getStore().selectBody('planet-1'));
+  await expect.poll(async () => (await visuals(page)).selectionMarkers).toEqual([
+    'selection-marker:halo:planet-1',
+  ]);
+});
+
 test('orbit estimates respond while paused, toggle, and survive scene replacement', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
