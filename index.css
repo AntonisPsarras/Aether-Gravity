@@ -586,14 +586,23 @@ canvas {
   scroll-snap-type: y proximity;
 }
 
+/* CSS-only impression of the WebGL black hole, anchored where MenuBlackHole
+   places it (layoutFor), for the lazy-load frame and after a lost context. */
 .menu-space-fallback {
+  --bh-x: 70%;
+  --bh-y: 48%;
+  --bh-shadow: 10vmin;
+  --bh-disk-w: 46vmin;
+  --bh-disk-h: 13vmin;
   position: absolute;
   inset: 0;
-  background-color: #050810;
+  background-color: #04060c;
   background:
-    radial-gradient(circle at 78% 45%, color-mix(in srgb, var(--menu-secondary) 22%, transparent), transparent 27%),
-    radial-gradient(circle at 10% 18%, color-mix(in srgb, var(--menu-accent) 18%, transparent), transparent 22%),
-    linear-gradient(145deg, #050810 0%, #0a101d 48%, #05070d 100%);
+    radial-gradient(circle at var(--bh-x) var(--bh-y), #000 0 var(--bh-shadow), transparent calc(var(--bh-shadow) + 0.4vmin)),
+    radial-gradient(circle at var(--bh-x) var(--bh-y), transparent 0 calc(var(--bh-shadow) * 0.98), rgba(255, 226, 180, 0.55) calc(var(--bh-shadow) * 1.06), transparent calc(var(--bh-shadow) * 1.35)),
+    radial-gradient(ellipse var(--bh-disk-w) var(--bh-disk-h) at var(--bh-x) var(--bh-y), rgba(214, 230, 255, 0.5) 0 18%, color-mix(in srgb, var(--menu-accent, #f9d423) 42%, transparent) 38%, color-mix(in srgb, var(--menu-secondary, #b777ff) 30%, transparent) 62%, transparent 100%),
+    radial-gradient(ellipse calc(var(--bh-disk-w) * 1.4) calc(var(--bh-disk-w) * 0.8) at var(--bh-x) var(--bh-y), color-mix(in srgb, var(--menu-secondary, #b777ff) 12%, transparent), transparent 70%),
+    linear-gradient(160deg, #04060c 0%, #070b16 52%, #030409 100%);
 }
 
 .menu-space-grade {
@@ -609,8 +618,8 @@ canvas {
   inset: 0;
   opacity: 0.42;
   background:
-    radial-gradient(ellipse 42% 34% at 77% 48%, color-mix(in srgb, var(--menu-secondary) 15%, transparent), transparent 72%),
-    radial-gradient(ellipse 28% 25% at 12% 20%, color-mix(in srgb, var(--menu-accent) 10%, transparent), transparent 75%);
+    radial-gradient(ellipse 34% 26% at 70% 48%, color-mix(in srgb, var(--menu-accent) 11%, transparent), transparent 72%),
+    radial-gradient(ellipse 52% 40% at 70% 52%, color-mix(in srgb, var(--menu-secondary) 10%, transparent), transparent 75%);
   transition: background 700ms var(--ease-panel), opacity 400ms ease;
 }
 
@@ -896,7 +905,14 @@ canvas {
 }
 
 @media (max-width: 640px) {
-  .menu-space-grade { background: linear-gradient(180deg, rgba(5, 8, 16, 0.18), rgba(5, 8, 16, 0.82) 42%, #070a11 100%); }
+  /* Keep the black hole (top fifth) clear; darken under the bottom-aligned copy. */
+  .menu-space-grade { background: linear-gradient(180deg, rgba(5, 8, 16, 0.12) 0%, rgba(5, 8, 16, 0) 10%, rgba(5, 8, 16, 0.3) 30%, rgba(5, 8, 16, 0.84) 48%, #070a11 100%); }
+  .menu-space-fallback { --bh-x: 56%; --bh-y: 21%; --bh-shadow: 13vmin; --bh-disk-w: 60vmin; --bh-disk-h: 17vmin; }
+  .menu-space-glow {
+    background:
+      radial-gradient(ellipse 70% 20% at 56% 21%, color-mix(in srgb, var(--menu-accent) 12%, transparent), transparent 72%),
+      radial-gradient(ellipse 90% 34% at 56% 26%, color-mix(in srgb, var(--menu-secondary) 10%, transparent), transparent 75%);
+  }
   .menu-hero { align-items: flex-end; padding-bottom: max(7.5rem, calc(var(--safe-bottom) + 6rem)); }
   .menu-title { font-size: clamp(3.4rem, 18vw, 5rem); }
   .menu-title span { display: block; }

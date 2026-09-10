@@ -1,7 +1,6 @@
 import { captureSimulationSnapshot, type SimulationSnapshot } from './utils/simulationSnapshot';
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { CelestialBody, BodyType } from './types';
-import SpaceCanvas from './components/SpaceCanvas';
 import { InspectorPanel, ControlBar, CreationToolbar, ConfirmationModal } from './components/Panels';
 import MainMenu from './components/MainMenu';
 import UniverseOutliner from './components/UniverseOutliner';
@@ -37,6 +36,10 @@ import {
   type HelperId, type HelperTrigger, type QueuedHelper,
 } from './utils/onboarding';
 import { storageIssueMessage, subscribeStorageIssues } from './utils/browserStorage';
+
+// The simulation renderer (shaders, physics visuals) is the bulk of the app
+// bundle; loading it on demand keeps the main menu's cold start light.
+const SpaceCanvas = lazy(() => import('./components/SpaceCanvas'));
 
 const StorageNotice: React.FC = () => {
   const notice = useStore((state) => state.storageNotice);
@@ -342,11 +345,15 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         className="canvas-viewport absolute inset-y-0 z-0"
         style={{ left: 'var(--rail-left)', right: 'var(--rail-right)' }}
       >
-        <SpaceCanvas
-          creationMode={creationMode}
-          setCreationMode={setCreationMode}
-          onBodyCreate={handleBodyCreate}
-        />
+        {/* Code-split so the main menu starts without parsing the simulation.
+            The fallback matches the canvas clear colour, so there is no flash. */}
+        <Suspense fallback={<div className="absolute inset-0 bg-[#050505]" />}>
+          <SpaceCanvas
+            creationMode={creationMode}
+            setCreationMode={setCreationMode}
+            onBodyCreate={handleBodyCreate}
+          />
+        </Suspense>
         {activeHelper && <LiveHelper helper={activeHelper} onAcknowledge={acknowledgeHelper} />}
       </div>
       <div className="absolute inset-0 z-10 pointer-events-none safe-pad">

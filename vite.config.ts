@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       assetsDir: 'assets',
       target: 'es2022',
+      // three.js core is a single ~670 kB vendor chunk (≈175 kB gzip) that can't
+      // be split further; everything else stays well under this.
+      chunkSizeWarningLimit: 700,
       rollupOptions: {
         output: {
           manualChunks(id) {
