@@ -234,6 +234,26 @@ export const rocheLimitRadii = (
 };
 
 /**
+ * Rigid-satellite Roche limit, expressed in radii of the primary:
+ *
+ *   d = R_primary (2 rho_primary / rho_satellite)^(1/3) ≈ 1.26 R_primary (rho_p/rho_s)^(1/3)
+ *
+ * The fluid limit above assumes a satellite that deforms freely under tides; a
+ * cohesive, monolithic body holds together much further in. Real moons occupy
+ * the band between the two — Phobos, at 2.76 R_Mars, is inside its fluid limit
+ * (3.1) but outside its rigid one (1.6) and is slowly being torn down — so this
+ * is the physical floor for placing a solid moon, and the fluid value is where
+ * a rubble pile would already have become a ring.
+ */
+export const rigidRocheLimitRadii = (
+  primaryDensityGcm3: number,
+  satelliteDensityGcm3: number,
+): number => {
+  if (!(primaryDensityGcm3 > 0) || !(satelliteDensityGcm3 > 0)) return NaN;
+  return Math.cbrt((2 * primaryDensityGcm3) / satelliteDensityGcm3);
+};
+
+/**
  * Main-sequence mass-luminosity relation, L/L☉ from mass in M⊕.
  *
  * The standard four-segment empirical broken power law (see e.g. Duric,

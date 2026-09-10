@@ -109,13 +109,13 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
 ];
 
 export type PanelHelperId =
-  | 'panel:creation' | 'panel:outliner' | 'panel:inspector'
+  | 'panel:creation' | 'panel:moon' | 'panel:outliner' | 'panel:inspector'
   | 'panel:orbit' | 'panel:analysis';
 export type BodyHelperId = `body:${BodyType}`;
 export type HelperId = PanelHelperId | BodyHelperId;
 
 export type HelperTrigger =
-  | { kind: 'creation-mode' }
+  | { kind: 'creation-mode'; mode?: BodyType | null }
   | { kind: 'outliner-interaction' }
   | { kind: 'inspector-open'; body: CelestialBody }
   | { kind: 'inspector-tab'; tab: 'orbit' | 'analysis' }
@@ -143,7 +143,7 @@ export interface QueuedHelper {
 export const ONBOARDING_STORAGE_KEY = 'aether:onboarding:v1';
 
 const PANEL_IDS: PanelHelperId[] = [
-  'panel:creation', 'panel:outliner', 'panel:inspector', 'panel:orbit', 'panel:analysis',
+  'panel:creation', 'panel:moon', 'panel:outliner', 'panel:inspector', 'panel:orbit', 'panel:analysis',
 ];
 const BODY_TYPES = Object.keys(BODY_CONFIGS) as BodyType[];
 const KNOWN_HELPER_IDS = new Set<HelperId>([
@@ -220,7 +220,7 @@ export function resetOnboardingMemoryForTests(): void {
 
 export function helpersForTrigger(trigger: HelperTrigger): QueuedHelper[] {
   switch (trigger.kind) {
-    case 'creation-mode': return [{ id: 'panel:creation' }];
+    case 'creation-mode': return [{ id: trigger.mode === 'Moon' ? 'panel:moon' : 'panel:creation' }];
     case 'outliner-interaction': return [{ id: 'panel:outliner' }];
     case 'inspector-tab': return [{ id: `panel:${trigger.tab}` }];
     case 'body-created': return [{ id: `body:${trigger.body.type}`, bodyId: trigger.body.id }];
@@ -246,6 +246,11 @@ const PANEL_HELPERS: Record<PanelHelperId, Omit<HelperDefinition, 'id'>> = {
     eyebrow: 'Creation', title: 'Launch, don’t just place',
     content: 'Press where the new body should appear, then drag and release. The drag becomes its initial velocity; a longer drag launches faster.',
     detail: 'Cancel exits creation mode, and Undo restores the complete pre-launch system.',
+  },
+  'panel:moon': {
+    eyebrow: 'Moon creation', title: 'Place it on a real orbit',
+    content: 'Pick a planet, then drag the ghost moon or use the sliders. Every setting is a bound Kepler orbit, kept between the planet’s Roche limit and the stable part of its Hill sphere.',
+    detail: 'Want a free-flying rock instead? Choose Asteroid and throw it.',
   },
   'panel:outliner': {
     eyebrow: 'Universe Outliner', title: 'A live map of the hierarchy',

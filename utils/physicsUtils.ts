@@ -147,7 +147,7 @@ export const findPrimaryStar = (
  * another. Ten is a conservative stand-in for the Hill-sphere criterion: below
  * it the pair is better described as a binary than as a primary and satellite.
  */
-const PARENT_DOMINANCE_RATIO = 10;
+export const PARENT_DOMINANCE_RATIO = 10;
 
 /**
  * The single definition of "is `candidate` a valid parent for `body`". Shared by

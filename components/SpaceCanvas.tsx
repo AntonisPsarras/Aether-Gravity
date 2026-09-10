@@ -4,16 +4,19 @@ import { Canvas, useFrame, useThree, extend, ThreeEvent } from '@react-three/fib
 import { OrbitControls, Stars, shaderMaterial, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CelestialBody, BodyType, WaveEvent, PhysicsEvent } from '../types';
-import { scanCollisionsInPlace, checkEvolutionInPlace, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, reconcileBodyDerivedState, bodyLuminositySolar } from '../utils/physicsUtils';
+import { scanCollisionsInPlace, checkEvolutionInPlace, calculateStabilityMetrics, fillParentMap, updateEquilibriumTemperatures, findPrimaryStar, bodyLuminositySolar } from '../utils/physicsUtils';
 import { runFixedSteps, resetVerletCache, resetAccumulator, getSimTime, setSimTime } from '../utils/physicsSoA';
 import { propagateSatellites, promoteEscapedMoons } from '../utils/moonSystem';
 import { scratchV0, scratchV1, scratchV2, scratchV3, toRenderSpace } from '../utils/scratchVectors';
 import { bodyRenderPosition } from '../utils/renderPosition';
-import { TEXTURE_IDS, G_CONSTANT, BODY_CONFIGS, LUMINOUS_TYPES } from '../constants';
+import { createSandboxBody, sampleMassForType } from '../utils/bodyFactory';
+import { pickMoonParent } from '../utils/moonDraft';
+import { isOrbitControlsLike, setOrbitControlsEnabled, type OrbitControlsLike } from '../utils/orbitControls';
+import MoonCreator from './MoonCreator';
+import { TEXTURE_IDS, G_CONSTANT, LUMINOUS_TYPES } from '../constants';
 import {
   PHYSICS_LIMITS,
   clampLaunchVelocity,
-  sanitizeCelestialBody,
   sanitizeCelestialBodies,
 } from '../utils/physicsBounds';
 import type { DeviceTier } from './CanvasSetup';
@@ -58,7 +61,7 @@ import RadiationEffects from './Environment/RadiationEffects';
 import OrbitPaths from './OrbitPaths';
 import DevPhysicsDiagnostics from './DevPhysicsDiagnostics';
 import TestMetricsCollector from './TestMetricsCollector';
-import { registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
+import { getPhysicsBodiesSnapshot, registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
 import { registerRenderObjects, unregisterRenderObjects } from '../utils/renderBridge';
 import { getE2EConfig, isE2EMode } from '../utils/e2eConfig';
 import {
@@ -492,20 +495,14 @@ const StabilityOverlay = ({ floatingOffset, bodiesRef, parentMapRef }: {
   );
 };
 
-type OrbitControlsLike = { target: THREE.Vector3; update: () => void; enabled: boolean };
-
-function isOrbitControlsLike(controls: unknown): controls is OrbitControlsLike {
-  if (controls == null || typeof controls !== 'object') return false;
-  const c = controls as OrbitControlsLike;
-  return c.target instanceof THREE.Vector3 && typeof c.update === 'function' && typeof c.enabled === 'boolean';
-}
-
-/** Shared by ObjectCreator's slingshot drag and BodyMesh's long-press interlock. */
-function setOrbitControlsEnabled(controls: unknown, enabled: boolean): void {
-  if (isOrbitControlsLike(controls)) {
-    controls.enabled = enabled;
-  }
-}
+/**
+ * A body as it is *now*. Store positions only sync on collision/evolution
+ * events (see PhysicsEngine), so camera framing must read the physics array or
+ * it targets wherever the body was at the last sync.
+ */
+const liveBodyById = (id: string): CelestialBody | undefined =>
+  getPhysicsBodiesSnapshot().find((b) => b.id === id)
+  ?? useStore.getState().bodies.find((b) => b.id === id);
 
 /**
  * Reset floating origin and snap the orbit camera to a body (spawn-style framing).
@@ -525,8 +522,8 @@ const snapCameraToBody = (
   floatingOffset.set(0, 0, 0);
 
   toRenderSpace(scratchV1, target.position, floatingOffset);
-  const { uiMode, bodies } = useStore.getState();
-  bodyRenderPosition(scratchV1, target, bodies.find(b => b.id === target.parentId), floatingOffset, uiMode);
+  const { uiMode } = useStore.getState();
+  bodyRenderPosition(scratchV1, target, target.parentId ? liveBodyById(target.parentId) : undefined, floatingOffset, uiMode);
   const dist = target.properties?.presetId ? Math.max(0.2, bodyVisualRadius(target, uiMode) * 6) : framingDistanceFor(target.radius);
   controls.target.set(scratchV1.x, scratchV1.y, scratchV1.z);
   camera.position.set(
@@ -574,7 +571,7 @@ const CameraFlyTo = ({
       return;
     }
 
-    const body = useStore.getState().bodies.find((b) => b.id === selectedId);
+    const body = liveBodyById(selectedId);
     if (!body || !isOrbitControlsLike(controls)) return;
 
     if (reducedMotion) {
@@ -599,10 +596,10 @@ const CameraFlyTo = ({
     if (!fly || !isOrbitControlsLike(controls)) return;
     if (useStore.getState().isInteractingWithUI) return;
 
-    const body = useStore.getState().bodies.find((b) => b.id === fly.id);
+    const body = liveBodyById(fly.id);
     if (!body) { flying.current = null; return; }
 
-    bodyRenderPosition(scratchV1, body, useStore.getState().bodies.find(b => b.id === body.parentId), floatingOffset.current, useStore.getState().uiMode);
+    bodyRenderPosition(scratchV1, body, body.parentId ? liveBodyById(body.parentId) : undefined, floatingOffset.current, useStore.getState().uiMode);
     if (scratchV1.x !== scratchV1.x) return; // NaN guard
 
     scratchV3.set(
@@ -1443,7 +1440,6 @@ const ObjectCreator: React.FC<{
       return;
     }
 
-    const config = BODY_CONFIGS[creationMode] ?? BODY_CONFIGS.Planet;
     const getNextNumber = useStore.getState().getNextNumber;
     const number = getNextNumber(creationMode);
 
@@ -1462,40 +1458,14 @@ const ObjectCreator: React.FC<{
       velocity: b.velocity.clone(),
     }));
 
-    // Log-uniform draw within the type's mass range: the ranges now span many
-    // orders of magnitude, so a linear draw would always land near the top.
-    const [massLo, massHi] = config.massRange;
-    const mass = Math.exp(
-      Math.log(massLo) + Math.random() * (Math.log(massHi) - Math.log(massLo)),
-    );
-
-    const newBody = sanitizeCelestialBody({
+    const newBody = createSandboxBody({
       id: `created-${creationMode}-${Date.now()}`,
       type: creationMode,
+      name: `${creationMode} ${number}`,
+      mass: sampleMassForType(creationMode),
       position: spawnPosition,
       velocity: launchVelocity,
-      mass,
-      // Both radii are derived from mass and type immediately below.
-      radius: 1,
-      radiusKm: 1,
-      color: config.defaultColor,
-      temperature: 300,
-      habitability: 'N/A',
-      population: 0,
-      name: `${creationMode} ${number}`,
-      texture: config.visualType === 'rocky' ? 'rock'
-        : config.visualType === 'gaseous' ? 'gas'
-        : config.visualType === 'neutron' ? 'neutron' : 'solid',
-      trailColor: config.defaultColor,
-      properties: {
-        rotationPeriod: 24.0,
-        isTidallyLocked: false,
-        compositionIron: 0.3,
-        compositionSilicates: 0.6,
-        compositionWater: 0.1,
-      },
     });
-    reconcileBodyDerivedState(newBody);
 
     appendBody(newBody);
     resetVerletCache();
@@ -2558,8 +2528,24 @@ const SpaceCanvas: React.FC<{
     setCreationDragging(active);
   }, []);
 
+  // Moon mode is not a throw: the slingshot plane stays off and body hitboxes
+  // stay pickable, because picking a parent is how the moon flow starts.
+  const launchMode = creationMode === 'Moon' ? null : creationMode;
+
   // Shared with the outliner so the two selection surfaces cannot drift apart.
-  const handleBodyGesture = useBodySelectionGesture();
+  const selectionGesture = useBodySelectionGesture();
+  const moonModeRef = useRef(false);
+  moonModeRef.current = creationMode === 'Moon';
+  // One stable callback for every (memoised) BodyMesh, so entering Moon mode
+  // does not re-render them all. In Moon mode a tap — or a hold, which must not
+  // open the inspector over the moon sheet — picks the moon's parent.
+  const handleBodyGesture = useCallback((id: string, kind: BodyGestureKind) => {
+    if (moonModeRef.current) {
+      pickMoonParent(id);
+      return;
+    }
+    selectionGesture(id, kind);
+  }, [selectionGesture]);
 
   const handleCanvasPointerMissed = React.useCallback(() => {
     // A press that began on a body owns its own release. Bodies move every
@@ -2724,12 +2710,20 @@ const SpaceCanvas: React.FC<{
         {showDust && <DecorativeDust floatingOffset={floatingOffset} />}
         {showOrbitPaths && <OrbitPaths bodiesRef={bodiesRef} floatingOffset={floatingOffset} parentMapRef={parentMapRef} />}
         <ObjectCreator
-          creationMode={creationMode}
+          creationMode={launchMode}
           setCreationMode={setCreationMode}
           onBodyCreate={onBodyCreate}
           floatingOffset={floatingOffset}
           onDragActiveChange={handleCreationDragChange}
         />
+        {creationMode === 'Moon' && (
+          <MoonCreator
+            bodiesRef={bodiesRef}
+            floatingOffset={floatingOffset}
+            onDragActiveChange={handleCreationDragChange}
+            deviceTier={effectiveTier}
+          />
+        )}
         {showStability && (
           <StabilityOverlay
             floatingOffset={floatingOffset}
@@ -2743,7 +2737,7 @@ const SpaceCanvas: React.FC<{
               key={body.id}
               data={body}
               onBodyGesture={handleBodyGesture}
-              creationMode={creationMode}
+              creationMode={launchMode}
               floatingOffset={floatingOffset}
               isSelected={selectedId === body.id}
               bodiesRef={bodiesRef}

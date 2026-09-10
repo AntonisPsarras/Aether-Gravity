@@ -6,6 +6,7 @@ import {
   AlertTriangle, X, ChevronUp, ChevronDown, Home, Settings, Hexagon,
 } from 'lucide-react';
 import { creatableTypesFor, visualFor } from './bodyTypeVisuals';
+import { useMoonDraft } from '../utils/moonDraft';
 
 /**
  * The Inspector now lives in components/inspector/. Re-exported here so the
@@ -120,7 +121,11 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
   const setSpeed = useStore((s) => s.setSpeed);
   const setCameraLock = useStore((s) => s.setCameraLock);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
+  const moonParentId = useMoonDraft((s) => s.parentId);
   const [lockWarning, setLockWarning] = useState(false);
+  const creationHint = creationMode === 'Moon'
+    ? (moonParentId ? 'Drag the moon to shape its orbit' : 'Tap a planet')
+    : 'Drag to Launch';
 
   const handleCameraLock = () => {
     if (cameraLockedId) {
@@ -212,7 +217,7 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
             {creationMode}
           </div>
           <div className="text-[9px] md:text-[11px] font-mono flex items-center gap-1.5 text-pulsar-white/60 whitespace-nowrap">
-            <MousePointer2 size={11} className="w-[11px] h-[11px] md:w-[12px] md:h-[12px]" /> Drag to Launch
+            <MousePointer2 size={11} className="w-[11px] h-[11px] md:w-[12px] md:h-[12px]" /> {creationHint}
           </div>
         </div>
       )}

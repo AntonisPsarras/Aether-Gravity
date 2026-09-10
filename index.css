@@ -372,6 +372,51 @@ canvas {
   }
 }
 
+/* Moon creator. Phone: a fixed-height bottom sheet that takes the creation
+   dock's place (App hides the dock and closes the outliner), leaving the upper
+   canvas for the orbit preview. md+: a floating card at the right of the
+   canvas area, above the dock — not centred, because the camera centres the
+   parent planet and its preview ring there. */
+.moon-creator-anchor {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 46dvh;
+  border-radius: 1rem 1rem 0 0;
+  border-bottom-width: 0;
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.moon-creator-anchor .moon-creator-footer {
+  padding-bottom: max(0.625rem, var(--safe-bottom));
+}
+
+@media (min-width: 768px) {
+  .moon-creator-anchor {
+    left: auto;
+    right: calc(var(--rail-right) + max(1rem, var(--safe-right)));
+    bottom: calc(var(--control-bar-bottom) + 5.5rem);
+    width: min(21rem, calc(100vw - var(--rail-left) - var(--rail-right) - 2rem));
+    max-height: calc(100dvh - var(--control-bar-top) - var(--control-bar-mobile-height) - var(--control-bar-bottom) - 7rem);
+    border-radius: 0.875rem;
+    border-bottom-width: 1px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .moon-creator-anchor .moon-creator-footer {
+    padding-bottom: 0.625rem;
+  }
+}
+
+/* Keep contextual helpers clear of the moon sheet, as for the inspector. */
+@media (max-width: 767px) {
+  .sim-shell.moon-creating .live-helper-host {
+    padding-bottom: calc(46dvh + 0.75rem);
+  }
+}
+
 /* Universe outliner — above creation toolbar on phone, top-left on desktop */
 .universe-outliner-anchor {
   bottom: var(--universe-outliner-mobile-bottom);
@@ -1234,8 +1279,10 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-/* Inspector sliders: small thumb on track; touch height on the input element */
-.inspector-panel-anchor input[type="range"] {
+/* Inspector sliders: small thumb on track; touch height on the input element.
+   The moon creator reuses the inspector's slider controls, so it shares these. */
+.inspector-panel-anchor input[type="range"],
+.moon-creator-anchor input[type="range"] {
   height: 1.5rem;
   min-height: 1.5rem;
   margin: 0;
@@ -1245,13 +1292,15 @@ input[type="range"]::-moz-range-thumb {
   flex-shrink: 0;
 }
 
-.inspector-panel-anchor input[type="range"]::-webkit-slider-runnable-track {
+.inspector-panel-anchor input[type="range"]::-webkit-slider-runnable-track,
+.moon-creator-anchor input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.12);
 }
 
-.inspector-panel-anchor input[type="range"]::-webkit-slider-thumb {
+.inspector-panel-anchor input[type="range"]::-webkit-slider-thumb,
+.moon-creator-anchor input[type="range"]::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
   margin-top: -4px;
@@ -1261,13 +1310,15 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 4px rgba(249, 212, 35, 0.45);
 }
 
-.inspector-panel-anchor input[type="range"]::-moz-range-track {
+.inspector-panel-anchor input[type="range"]::-moz-range-track,
+.moon-creator-anchor input[type="range"]::-moz-range-track {
   height: 4px;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.12);
 }
 
-.inspector-panel-anchor input[type="range"]::-moz-range-thumb {
+.inspector-panel-anchor input[type="range"]::-moz-range-thumb,
+.moon-creator-anchor input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
   padding: 0;
@@ -1277,7 +1328,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 767px) {
-  .inspector-panel-anchor input[type="range"] {
+  .inspector-panel-anchor input[type="range"],
+  .moon-creator-anchor input[type="range"] {
     height: 2.75rem;
     min-height: 2.75rem;
   }

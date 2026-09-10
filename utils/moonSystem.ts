@@ -28,7 +28,7 @@
  */
 
 import * as THREE from 'three';
-import type { CelestialBody } from '../types';
+import type { CelestialBody, OrbitalElements } from '../types';
 import { G_AETHER, kmToDist, visualRadiusFromKm } from './units';
 import { visualScaleFor, bodyVisualRadius, type UiMode } from './displayMode';
 import {
@@ -159,6 +159,26 @@ export const captureAsSatellite = (
   body.parentId = parent.id;
   body.orbit = elements;
   return true;
+};
+
+/**
+ * Bind a body to a parent on *prescribed* elements — the element-first sibling
+ * of `captureAsSatellite`, used by the moon creator. Position and velocity are
+ * written from the same Kepler propagation `propagateSatellites` performs, so
+ * the body is born exactly where the next frame would place it.
+ */
+export const attachSatellite = (
+  body: CelestialBody,
+  parent: CelestialBody,
+  elements: OrbitalElements,
+  t: number,
+): void => {
+  body.parentId = parent.id;
+  body.orbit = elements;
+  const mu = gravitationalParameter(parent.mass, body.mass);
+  propagateOrbit(elements, mu, t, _relPos, _relVel);
+  body.position.copy(parent.position).add(_relPos);
+  body.velocity.copy(parent.velocity).add(_relVel);
 };
 
 /**

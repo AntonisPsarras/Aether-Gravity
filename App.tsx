@@ -4,6 +4,8 @@ import SpaceCanvas from './components/SpaceCanvas';
 import { InspectorPanel, ControlBar, CreationToolbar, ConfirmationModal } from './components/Panels';
 import MainMenu from './components/MainMenu';
 import UniverseOutliner from './components/UniverseOutliner';
+import MoonCreatorPanel from './components/MoonCreatorPanel';
+import { pickMoonParent, useMoonDraft } from './utils/moonDraft';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   CURRENT_WORLD_VERSION,
@@ -113,12 +115,51 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   );
 
   useEffect(() => {
-    if (creationMode) enqueueHelperTrigger({ kind: 'creation-mode' });
+    if (creationMode) enqueueHelperTrigger({ kind: 'creation-mode', mode: creationMode });
   }, [creationMode, enqueueHelperTrigger]);
+
+  const moonMode = creationMode === 'Moon';
+
+  /**
+   * Moon mode session. The draft starts fresh (new mass variate), an eligible
+   * selection becomes the parent immediately, and the camera follows the chosen
+   * parent so the preview ring stays on screen while it orbits. The previous
+   * camera lock is restored on the way out.
+   */
+  useEffect(() => {
+    if (!moonMode) return;
+    const store = useStore.getState();
+    const previousLock = store.cameraLockedId;
+    // Below desktop the inspector sits where the moon card goes; on phone the
+    // outliner shares the bottom edge with the moon sheet.
+    if (window.matchMedia(`(max-width: ${BREAKPOINTS.tablet}px)`).matches) store.closeInspector();
+    if (window.matchMedia(`(max-width: ${BREAKPOINTS.phone}px)`).matches) store.setOutlinerOpen(false);
+
+    useMoonDraft.getState().begin();
+    if (store.selectedId) pickMoonParent(store.selectedId, { silent: true });
+
+    const follow = (id: string | null) => { if (id) useStore.getState().setCameraLock(id); };
+    follow(useMoonDraft.getState().parentId);
+    const unsubscribe = useMoonDraft.subscribe((s, prev) => {
+      if (s.parentId !== prev.parentId) follow(s.parentId);
+    });
+    return () => {
+      unsubscribe();
+      useMoonDraft.getState().reset();
+      const { bodies, setCameraLock } = useStore.getState();
+      setCameraLock(previousLock && bodies.some((b) => b.id === previousLock) ? previousLock : null);
+    };
+  }, [moonMode]);
 
   const pushToHistory = (currentBodies: CelestialBody[]) => {
     setHistory(prev => [...prev.slice(-19), currentBodies.map(b => ({ ...b, position: b.position.clone(), velocity: b.velocity.clone() }))]);
     setRedoStack([]);
+  };
+
+  /** Shared by the slingshot and the moon creator. */
+  const handleBodyCreate = (snapshot: CelestialBody[], createdBody: CelestialBody) => {
+    pushToHistory(snapshot);
+    enqueueHelperTrigger({ kind: 'body-created', body: createdBody });
   };
 
   const storageNotice = useStore((s) => s.storageNotice);
@@ -284,6 +325,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         // they are safe to set at every width.
         inspectorOpen ? 'rail-right-open' : '',
         outlinerOpen ? 'rail-left-open' : '',
+        moonMode ? 'moon-creating' : '',
       ].filter(Boolean).join(' ')}
       data-testid="simulation-root"
       data-breakpoint={breakpoint}
@@ -299,10 +341,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         <SpaceCanvas
           creationMode={creationMode}
           setCreationMode={setCreationMode}
-          onBodyCreate={(snapshot: CelestialBody[], createdBody: CelestialBody) => {
-            pushToHistory(snapshot);
-            enqueueHelperTrigger({ kind: 'body-created', body: createdBody });
-          }}
+          onBodyCreate={handleBodyCreate}
         />
         {activeHelper && <LiveHelper helper={activeHelper} onAcknowledge={acknowledgeHelper} />}
       </div>
@@ -312,9 +351,18 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
             mode={creationMode}
             setMode={setCreationMode}
             onTriggerGenerate={() => setShowConfirmGenerate(true)}
-            mobileHidden={isPhone && (inspectorOpen || outlinerOpen)}
+            mobileHidden={isPhone && (inspectorOpen || outlinerOpen || moonMode)}
           />
         </div>
+        {moonMode && (
+          <div className="pointer-events-auto">
+            <MoonCreatorPanel
+              onCreated={handleBodyCreate}
+              onCancel={() => setCreationMode(null)}
+              onSwitchMode={setCreationMode}
+            />
+          </div>
+        )}
         {/* The outliner stays mounted alongside the inspector now. On phone the
             two are mutually exclusive presentations of the bottom edge, which
             the store actions enforce. */}
