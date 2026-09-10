@@ -1278,7 +1278,7 @@ const PhysicsEngine = ({
             depthWrite={false}
             side={THREE.DoubleSide}
             logarithmicDepthBuffer={true}
-            uLineGain={(deviceTier === 'low' ? 2.4 : 1.0) * Math.sqrt(gridVisualBoost)}
+            uLineGain={Math.sqrt(gridVisualBoost)}
             uVisualBoost={gridVisualBoost}
           />
         </mesh>

@@ -23,8 +23,9 @@ import { CONSERVATIVE_LOCAL_STORAGE_BYTES, getAetherStorageUsage } from '../util
  *
  * The split from the control bar is by interaction frequency, not importance:
  * undo, pause, speed and camera lock are touched many times a minute while
- * building and need to stay one tap away; grid/dust/zone/paths are changed a
- * handful of times a session and were costing four permanent slots on a phone.
+ * building and need to stay one tap away. The grid, orbit estimates and
+ * habitable zone are flipped often enough that they are mirrored on the bar
+ * too (the habitable zone only above 390px); dust and stability live here only.
  */
 
 const MODE_COPY: Record<UiMode, { title: string; blurb: string }> = {

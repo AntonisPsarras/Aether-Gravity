@@ -1,12 +1,29 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { BodyType } from '../types';
 import { useStore } from '../utils/store';
 import {
   Play, Pause, RotateCcw, Focus, MousePointer2, Sparkles,
   AlertTriangle, X, ChevronUp, ChevronDown, Home, Settings, Hexagon,
+  Rewind, FastForward, Square, Orbit, Globe,
+  type LucideIcon,
 } from 'lucide-react';
 import { creatableTypesFor, visualFor } from './bodyTypeVisuals';
 import { useMoonDraft } from '../utils/moonDraft';
+import { PHYSICS_LIMITS } from '../utils/physicsBounds';
+import {
+  formatSpeedReadout,
+  snapSpeed,
+  speedDetentIndex,
+  timeStateFor,
+  TIME_STATE_VISUALS,
+  type TimeState,
+} from '../utils/timeState';
+import {
+  hapticSelectionEnd,
+  hapticSelectionStart,
+  hapticSelectionTick,
+  hapticTimeState,
+} from '../utils/haptics';
 
 /**
  * The Inspector now lives in components/inspector/. Re-exported here so the
@@ -109,6 +126,93 @@ export const CreationToolbar: React.FC<{ mode: BodyType | null, setMode: (m: Bod
 
 
 
+const TIME_STATE_ICONS: Record<TimeState, LucideIcon> = {
+  reverse: Rewind,
+  stopped: Square,
+  slow: Play,
+  normal: Play,
+  fast: FastForward,
+};
+
+const SPEED_SPAN = PHYSICS_LIMITS.SPEED_MAX - PHYSICS_LIMITS.SPEED_MIN;
+/** Where a speed sits along the slider, 0–100. */
+const speedPercent = (speed: number) => ((speed - PHYSICS_LIMITS.SPEED_MIN) / SPEED_SPAN) * 100;
+const ZERO_PCT = speedPercent(0);
+const ONE_PCT = speedPercent(1);
+/** Track zones — reverse | slow | fast — in the TIME_STATE_VISUALS colours. */
+const TRACK_ZONES = `linear-gradient(to right, rgba(167,139,250,0.35) 0%, rgba(167,139,250,0.35) ${ZERO_PCT}%, rgba(34,211,238,0.3) ${ZERO_PCT}%, rgba(34,211,238,0.3) ${ONE_PCT}%, rgba(249,212,35,0.35) ${ONE_PCT}%, rgba(251,146,60,0.45) 100%)`;
+
+/**
+ * The speed slider, drawn as a bipolar timeline around 0x.
+ *
+ * The coloured zones tell you where "backwards", "slow" and "fast" are before
+ * you touch it; the fill grows out of the 0x mark toward the thumb in the
+ * current state's colour; 0x and 1x are sticky detents with tick marks. The
+ * native range input stays underneath for keyboard and screen-reader access
+ * and supplies the thumb and the 44px hit area — the decoration is inset by
+ * half a thumb so the percentages line up with where the thumb actually sits.
+ */
+const TimeScrubber: React.FC<{ speed: number; state: TimeState }> = ({ speed, state }) => {
+  const setSpeed = useStore((s) => s.setSpeed);
+  const color = TIME_STATE_VISUALS[state].color;
+  const at = speedPercent(speed);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { speed: prev, paused } = useStore.getState();
+    const next = snapSpeed(parseFloat(e.target.value));
+    if (next === prev) return;
+    setSpeed(next);
+    // A zone change gets its own, stronger pattern from ControlBar's effect;
+    // this is the light detent tick at each whole multiple in between.
+    if (timeStateFor(next, paused) === timeStateFor(prev, paused)
+      && speedDetentIndex(next) !== speedDetentIndex(prev)) {
+      hapticSelectionTick();
+    }
+  };
+
+  const endInteraction = () => {
+    useStore.getState().setInteractingWithUI(false);
+    hapticSelectionEnd();
+  };
+
+  return (
+    <div
+      className="relative flex-1 min-w-0 md:flex-none md:w-32 lg:w-44 h-11 flex items-center"
+      style={{ '--thumb': color } as React.CSSProperties}
+    >
+      <div className="absolute inset-y-0 left-[9px] right-[9px] pointer-events-none" aria-hidden>
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full" style={{ background: TRACK_ZONES }} />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full transition-colors duration-200"
+          style={{ left: `${Math.min(ZERO_PCT, at)}%`, width: `${Math.abs(at - ZERO_PCT)}%`, backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
+        />
+        <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-4 rounded-full bg-white/70" style={{ left: `${ZERO_PCT}%` }} />
+        <span className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-3 rounded-full bg-nova-gold/80" style={{ left: `${ONE_PCT}%` }} />
+      </div>
+      <input
+        type="range"
+        min={PHYSICS_LIMITS.SPEED_MIN}
+        max={PHYSICS_LIMITS.SPEED_MAX}
+        step="0.1"
+        value={speed}
+        data-testid="control-speed"
+        aria-label="Simulation speed"
+        aria-valuetext={state === 'stopped'
+          ? TIME_STATE_VISUALS[state].label
+          : `${TIME_STATE_VISUALS[state].label}, ${formatSpeedReadout(speed, state)}`}
+        onPointerDown={() => {
+          useStore.getState().setInteractingWithUI(true);
+          hapticSelectionStart();
+        }}
+        onPointerUp={endInteraction}
+        onPointerCancel={endInteraction}
+        onChange={handleChange}
+        className="speed-slider relative w-full h-11 cursor-pointer"
+      />
+    </div>
+  );
+};
+
 export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMenu: () => void, onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean }> = ({ creationMode, onReturnToMenu, onUndo, onRedo, canUndo, canRedo }) => {
   const paused = useStore((s) => s.paused);
   const speed = useStore((s) => s.speed);
@@ -117,8 +221,11 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
   const settingsOpen = useStore((s) => s.settingsOpen);
   const showGrid = useStore((s) => s.showGrid);
   const toggleGrid = useStore((s) => s.toggleGrid);
+  const showOrbitPaths = useStore((s) => s.showOrbitPaths);
+  const toggleOrbitPaths = useStore((s) => s.toggleOrbitPaths);
+  const showHabitable = useStore((s) => s.showHabitable);
+  const toggleHabitable = useStore((s) => s.toggleHabitable);
   const setPaused = useStore((s) => s.setPaused);
-  const setSpeed = useStore((s) => s.setSpeed);
   const setCameraLock = useStore((s) => s.setCameraLock);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const moonParentId = useMoonDraft((s) => s.parentId);
@@ -145,70 +252,145 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
     return () => clearTimeout(timer);
   }, [lockWarning]);
 
-  return (
-    <div className="fixed z-40 control-bar-anchor bottom-auto left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 w-[min(95vw,44rem)] md:w-auto max-w-full">
-      <div className="sim-toolbar bg-[rgba(45,51,64,0.6)] backdrop-blur-md border border-white/10 shadow-2xl rounded-[2rem] p-1.5 px-3 md:px-6 py-2 flex items-center justify-between md:justify-start gap-2 md:gap-6 ring-1 ring-white/5 w-full md:w-auto overflow-x-auto touch-pan-x scrollbar-hide" data-testid="control-bar">
+  // One classification drives the slider colour, the readout, the transient
+  // pill, the reverse-time edge glow and the haptic, so they always agree.
+  const timeState = timeStateFor(speed, paused);
+  const timeVisual = TIME_STATE_VISUALS[timeState];
+  const TimeIcon = TIME_STATE_ICONS[timeState];
+  const lastTimeState = useRef(timeState);
+  // Nonce for the transient state pill; 0 hides it. Bumping it (rather than a
+  // boolean) restarts both the fade-in and the hide timer on rapid changes.
+  const [timeFlash, setTimeFlash] = useState(0);
 
-        {/* Undo/Redo & Playback Group */}
-        <div className="flex items-center gap-2 md:gap-4 shrink-0">
-          <div className="flex items-center gap-0.5 md:gap-1">
-            <button onClick={onUndo} disabled={!canUndo} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 ${canUndo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
-            <button onClick={onRedo} disabled={!canRedo} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors rotate-180 active:scale-90 ${canRedo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          </div>
-          <div className="h-4 md:h-6 w-px bg-white/10"></div>
-          <div className="flex items-center gap-2 md:gap-3">
-            <button onClick={() => setPaused(!paused)} data-testid="control-pause" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 ${paused ? 'bg-orange-500/20 text-orange-400' : 'hover:bg-white/10 text-slate-200'}`}>
-              {paused ? <Play size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" /> : <Pause size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" />}
-            </button>
-            <div className="flex items-center gap-1.5 md:gap-2">
-              <input type="range" min="-2" max="4" step="0.1" value={speed} data-testid="control-speed"
-                onPointerDown={() => useStore.getState().setInteractingWithUI(true)}
-                onPointerUp={() => useStore.getState().setInteractingWithUI(false)}
-                onPointerCancel={() => useStore.getState().setInteractingWithUI(false)}
-                onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                className="speed-slider w-12 md:w-20 rounded-lg appearance-none cursor-pointer accent-nova-gold" />
-              <span className="text-[11px] md:text-sm font-mono text-nova-gold w-7 md:w-9 text-right shrink-0 tabular-nums">{speed.toFixed(1)}x</span>
-            </div>
-          </div>
+  useEffect(() => {
+    if (lastTimeState.current === timeState) return;
+    lastTimeState.current = timeState;
+    hapticTimeState(timeState);
+    setTimeFlash((n) => n + 1);
+  }, [timeState]);
+
+  useEffect(() => {
+    if (!timeFlash) return;
+    const timer = window.setTimeout(() => setTimeFlash(0), 1400);
+    return () => clearTimeout(timer);
+  }, [timeFlash]);
+
+  const iconButton = 'touch-target p-1.5 md:p-2 rounded-full transition-colors flex items-center justify-center';
+  const toggleButton = (on: boolean) => `${iconButton} ${on ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/30 hover:text-white hover:bg-white/10'}`;
+  const divider = 'hidden md:block h-6 w-px bg-white/10 shrink-0';
+
+  return (
+    <>
+    {/* Outside the anchor: its -translate-x-1/2 would otherwise become the
+        containing block for this fixed overlay. */}
+    {timeState === 'reverse' && <div className="reverse-time-glow" data-testid="reverse-time-glow" aria-hidden />}
+    <div className="fixed z-40 control-bar-anchor bottom-auto left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 w-[calc(100vw-1rem)] md:w-auto max-w-full">
+      {/* Phone (<768px): two rows. The time group is ordered first and spans
+          the full width so the slider gets most of the screen; history, view
+          and session share the second row. DOM order stays history-first, so
+          keyboard order and `button.nth(0)` = undo are unchanged. Desktop is a
+          single row in DOM order. */}
+      <div className="sim-toolbar bg-[rgba(45,51,64,0.6)] backdrop-blur-md border border-white/10 shadow-2xl rounded-[2rem] px-2 md:px-5 py-2 flex flex-wrap md:flex-nowrap items-center justify-between md:justify-start gap-x-0 gap-y-1 md:gap-3 ring-1 ring-white/5 w-full md:w-auto overflow-visible md:overflow-x-auto md:touch-pan-x scrollbar-hide" data-testid="control-bar">
+
+        {/* History */}
+        <div className="flex items-center gap-0 md:gap-1 shrink-0">
+          <button onClick={onUndo} disabled={!canUndo} data-testid="control-undo" title="Undo" aria-label="Undo" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 ${canUndo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          <button onClick={onRedo} disabled={!canRedo} data-testid="control-redo" title="Redo" aria-label="Redo" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors rotate-180 active:scale-90 ${canRedo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
         </div>
 
-        <div className="h-4 md:h-6 w-px bg-white/10 shrink-0"></div>
+        <div className={divider}></div>
 
-        {/* View & session group.
-            The display toggles (dust / habitable zone / orbit paths /
-            stability) used to sit here. They are preferences a user sets a few
-            times a session, so they moved into the settings sheet behind the
-            gear below. The spacetime grid came back: it is the one people flip
-            constantly to see what is under it, and burying it behind the gear
-            made that a three-tap round trip. It stays mirrored in the settings
-            sheet — both drive the same `toggleGrid`. */}
-        <div className="flex items-center gap-0.5 md:gap-2 shrink-0">
+        {/* Time */}
+        <div className="order-first md:order-none basis-full md:basis-auto flex items-center gap-2 md:gap-3 min-w-0">
+          <button onClick={() => setPaused(!paused)} data-testid="control-pause" aria-label={paused ? 'Resume' : 'Pause'} title={paused ? 'Resume' : 'Pause'} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 shrink-0 ${paused ? 'bg-orange-500/20 text-orange-400' : 'hover:bg-white/10 text-slate-200'}`}>
+            {paused ? <Play size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" /> : <Pause size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" />}
+          </button>
+          <TimeScrubber speed={speed} state={timeState} />
+          <span
+            data-testid="control-speed-readout"
+            className="flex items-center justify-end gap-1 shrink-0 min-w-[3.75rem] text-[11px] md:text-sm font-mono font-bold tabular-nums transition-colors duration-200"
+            style={{ color: timeVisual.color }}
+          >
+            <TimeIcon size={12} className="shrink-0" fill="currentColor" aria-hidden />
+            {formatSpeedReadout(speed, timeState)}
+          </span>
+        </div>
+
+        <div className={divider}></div>
+
+        {/* View group.
+            Set-once preferences (dust, stability) live in the settings sheet
+            behind the gear. The grid, orbit estimates and habitable zone are
+            the ones people flip constantly to see what is under them, so they
+            sit here and stay mirrored in the sheet — both drive the same store
+            toggles. Below 390px there is no room for all eight row-two
+            buttons at 44px, so the habitable zone drops back to the sheet only. */}
+        <div className="flex items-center gap-0 md:gap-1 shrink-0">
           <button
             onClick={toggleGrid}
             data-testid="control-toggle-grid"
             title="Toggle spacetime grid"
             aria-label="Toggle spacetime grid"
             aria-pressed={showGrid}
-            className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${showGrid ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/30 hover:text-white hover:bg-white/10'}`}
+            className={toggleButton(showGrid)}
           >
             <Hexagon size={16} className="md:w-[18px] md:h-[18px]" />
           </button>
-          <button onClick={handleCameraLock} title="Lock camera to selection" aria-label="Lock camera to selection" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${cameraLockedId ? 'text-nebula-rust bg-nebula-rust/10' : 'text-pulsar-white/30'}`}><Focus size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          <button
+            onClick={toggleOrbitPaths}
+            data-testid="control-toggle-orbits"
+            title="Toggle orbit estimates"
+            aria-label="Toggle orbit estimates"
+            aria-pressed={showOrbitPaths}
+            className={toggleButton(showOrbitPaths)}
+          >
+            <Orbit size={16} className="md:w-[18px] md:h-[18px]" />
+          </button>
+          <button
+            onClick={toggleHabitable}
+            data-testid="control-toggle-habitable"
+            title="Toggle habitable zone"
+            aria-label="Toggle habitable zone"
+            aria-pressed={showHabitable}
+            className={`${toggleButton(showHabitable)} max-[389px]:hidden`}
+          >
+            <Globe size={16} className="md:w-[18px] md:h-[18px]" />
+          </button>
+          <button onClick={handleCameraLock} title="Lock camera to selection" aria-label="Lock camera to selection" className={`${iconButton} ${cameraLockedId ? 'text-nebula-rust bg-nebula-rust/10' : 'text-pulsar-white/30'}`}><Focus size={16} className="md:w-[18px] md:h-[18px]" /></button>
           <button
             onClick={() => setSettingsOpen(true)}
             data-testid="open-settings"
             title="Settings"
             aria-label="Open settings"
-            className={`touch-target p-1.5 md:p-2 rounded-full transition-colors ${settingsOpen ? 'text-nova-gold bg-nova-gold/10' : 'text-pulsar-white/30 hover:text-white hover:bg-white/10'}`}
+            className={toggleButton(settingsOpen)}
           >
             <Settings size={16} className="md:w-[18px] md:h-[18px]" />
           </button>
-          <div className="h-4 md:h-6 w-px bg-white/10 mx-1"></div>
-          {onReturnToMenu && (
-            <button onClick={onReturnToMenu} title="Return to Menu" aria-label="Return to Menu" className="touch-target p-1.5 md:p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors active:scale-90"><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          )}
         </div>
+
+        {onReturnToMenu && (
+          <>
+            <div className={divider}></div>
+            {/* Session */}
+            <button onClick={onReturnToMenu} title="Return to Menu" aria-label="Return to Menu" className={`${iconButton} shrink-0 text-slate-400 hover:text-white hover:bg-white/10 active:scale-90`}><Home size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          </>
+        )}
       </div>
+      {timeFlash > 0 && (
+        <div
+          key={timeFlash}
+          role="status"
+          data-testid="time-state-pill"
+          className="control-bar-hint bg-[rgba(45,51,64,0.6)] backdrop-blur-md border px-3 py-1.5 rounded-xl shadow-2xl ring-1 ring-white/5 flex items-center gap-2 ag-fade-in pointer-events-none"
+          style={{ borderColor: `${timeVisual.color}66`, color: timeVisual.color }}
+        >
+          <TimeIcon size={12} fill="currentColor" aria-hidden />
+          <span className="font-bold text-[10px] md:text-xs uppercase tracking-wide whitespace-nowrap">
+            {timeVisual.label}
+            {timeState !== 'stopped' && <span className="font-mono tabular-nums opacity-80"> · {formatSpeedReadout(speed, timeState)}</span>}
+          </span>
+        </div>
+      )}
       {creationMode && (
         <div
           className="control-bar-hint bg-[rgba(45,51,64,0.6)] backdrop-blur-md border border-white/10 text-pulsar-white px-3 py-1.5 rounded-xl shadow-2xl ring-1 ring-white/5 flex items-center gap-2 ag-fade-in pointer-events-auto"
@@ -230,6 +412,7 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
         </p>
       )}
     </div>
+    </>
   );
 };
 

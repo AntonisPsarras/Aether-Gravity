@@ -13,11 +13,12 @@ import {
 /**
  * Device capability tiering.
  *
- * `low`  → outdated / memory-constrained mobile GPUs. Bloom is reduced
- *          and brightness is recovered via tone-mapping exposure instead, so we
- *          retain a small mipmap bloom budget on weak hardware.
- * `high` → desktop *and* capable phones. Gets the bloom-driven look so the
- *          cosmos and gravity grid read identically across devices.
+ * Tiers change *cost*, never *look*. `low` (outdated / memory-constrained
+ * mobile GPUs) renders bloom at quarter resolution with fewer mip levels and
+ * trims geometry/particle budgets; `high` (desktop and capable phones) renders
+ * everything at full budget. Exposure, bloom threshold/intensity and grid
+ * brightness are identical on every tier so the scene reads the same on a
+ * phone as on desktop.
  */
 export type { DeviceTier } from '../utils/deviceCapabilities';
 
@@ -216,41 +217,52 @@ export function RendererConfig({
 }
 
 /**
- * Tone-mapping exposure per tier / input mode.
- * Desktop bloom carries most grid luminance; touch and `low` tiers need extra
- * exposure because bloom is reduced or disabled on mobile GPUs.
+ * Tone-mapping exposure. Identical on every tier and input mode.
+ *
+ * This used to lift touch (1.14) and `low` (1.68) devices on the assumption
+ * that their bloom was weaker — but those paths actually ran a *stronger*,
+ * lower-threshold bloom than desktop. Stacked with the grid boost below, that
+ * blew phones out to a white haze toward the horizon. Kept as a function so
+ * callers (SpaceCanvas, MenuSpaceBackground) have one place to ask.
  */
-export function exposureForTier(tier: DeviceTier, isTouch = false): number {
-  if (tier === 'low') return isTouch ? 1.68 : 1.58;
-  if (isTouch) return 1.14;
-  return 1.0;
-}
-
-/** Scales spacetime-grid line color/alpha when bloom is reduced (touch / low tier). */
-export function gridVisualBoostForDevice(
-  tier: DeviceTier,
-  isTouch: boolean,
-  postFxEnabled: boolean,
-): number {
-  if (!postFxEnabled) return 2.35;
-  if (tier === 'low') return 2.1;
-  if (isTouch) return 1.85;
+export function exposureForTier(_tier: DeviceTier, _isTouch = false): number {
   return 1.0;
 }
 
 /**
- * Adaptive post-processing.
+ * Spacetime-grid line color/alpha multiplier. 1 whenever bloom is running —
+ * bloom is identical on every tier, so the grid is too. Only the no-post-FX
+ * fallback (GPU effects disabled after a context loss) needs a lift, because
+ * bloom is then genuinely absent.
+ */
+export function gridVisualBoostForDevice(
+  _tier: DeviceTier,
+  _isTouch: boolean,
+  postFxEnabled: boolean,
+): number {
+  return postFxEnabled ? 1.0 : 2.35;
+}
+
+/** Shared bloom response. Changing these changes every device together. */
+const BLOOM_THRESHOLD = 0.5;
+const BLOOM_INTENSITY = 1.2;
+
+/**
+ * Adaptive post-processing. Every tier gets the same bloom response and
+ * vignette, so the scene looks the same everywhere; only the cost differs.
+ * All effects in one composer merge into a single EffectPass, so the vignette
+ * and grain are a few ALU ops per pixel rather than extra passes.
  *
- *  - Desktop (`high`, non-touch): full stack — bloom + film grain + vignette.
- *  - Capable mobile (`high`, touch): a single lightweight mipmap bloom so the
- *    grid/cosmos glow matches desktop without the cost of grain/vignette.
- *  - Weak mobile (`low`): quarter-resolution, three-level bloom plus exposure.
+ *  - Desktop (`high`, non-touch): full-resolution bloom + grain + vignette.
+ *  - Capable mobile (`high`, touch): half-resolution bloom + grain + vignette.
+ *  - Weak mobile (`low`): quarter-resolution, three-level bloom + vignette.
  */
 export function AdaptivePostFX({ tier, isTouch }: { tier: DeviceTier; isTouch: boolean }): React.ReactElement | null {
   if (tier === 'low') {
     return (
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom luminanceThreshold={0.28} mipmapBlur intensity={1.35} radius={0.72} resolutionScale={0.25} levels={3} />
+        <Bloom luminanceThreshold={BLOOM_THRESHOLD} mipmapBlur intensity={BLOOM_INTENSITY} resolutionScale={0.25} levels={3} />
+        <Vignette darkness={0.3} />
       </EffectComposer>
     );
   }
@@ -258,19 +270,16 @@ export function AdaptivePostFX({ tier, isTouch }: { tier: DeviceTier; isTouch: b
   if (isTouch) {
     return (
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom
-          luminanceThreshold={0.28}
-          mipmapBlur
-          intensity={1.48}
-          radius={0.78}
-        />
+        <Bloom luminanceThreshold={BLOOM_THRESHOLD} mipmapBlur intensity={BLOOM_INTENSITY} resolutionScale={0.5} />
+        <Noise opacity={0.03} />
+        <Vignette darkness={0.3} />
       </EffectComposer>
     );
   }
 
   return (
     <EffectComposer multisampling={0}>
-      <Bloom luminanceThreshold={0.5} mipmapBlur intensity={1.2} />
+      <Bloom luminanceThreshold={BLOOM_THRESHOLD} mipmapBlur intensity={BLOOM_INTENSITY} />
       <Noise opacity={0.03} />
       <Vignette darkness={0.3} />
     </EffectComposer>
