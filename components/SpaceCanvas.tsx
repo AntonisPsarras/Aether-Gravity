@@ -14,7 +14,7 @@ import { createSandboxBody, sampleMassForType } from '../utils/bodyFactory';
 import { pickMoonParent } from '../utils/moonDraft';
 import { isOrbitControlsLike, setOrbitControlsEnabled, type OrbitControlsLike } from '../utils/orbitControls';
 import MoonCreator from './MoonCreator';
-import { TEXTURE_IDS, G_CONSTANT, LUMINOUS_TYPES } from '../constants';
+import { TEXTURE_IDS, G_CONSTANT } from '../constants';
 import {
   PHYSICS_LIMITS,
   clampLaunchVelocity,
@@ -24,10 +24,11 @@ import type { DeviceTier } from './CanvasSetup';
 import './Planet/PlanetShaders';
 import { PlanetSurfaceMaterial } from './Planet/PlanetShaders';
 import { useStore } from '../utils/store';
-import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
+import { CURVATURE_DISPLAY_GLSL, CURVATURE_WELL_GLSL } from '../utils/curvatureDisplay';
+import { createGridWellUniforms, fillGridWellUniforms } from '../utils/gridWells';
 import {
-  CURVATURE_KNEE, CURVATURE_MAX_DEPTH, GRID_RENDER_SAFETY_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
-  curvatureAmountFor, curvatureKneeFor, curvatureMaxFor, tidalKneeFor, tidalMaxFor,
+  DEPTH_TINT_BEGINNER, DEPTH_TINT_SCALE, GRID_RENDER_SAFETY_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
+  depthTintFor, tidalKneeFor, tidalMaxFor,
   visualScaleFor,
 } from '../utils/displayMode';
 import { simElapsedForFrame } from '../utils/simRate';
@@ -142,22 +143,21 @@ const GravityGridMaterial = shaderMaterial(
     uVisualBoost: 1.0,
     uBodiesPos: new Float32Array(50 * 3),
     uBodiesMass: new Float32Array(50),
-    uBodiesRadius: new Float32Array(50),
-    uBodiesType: new Float32Array(50),
+    // Per-body peak depth and core radius, L* — computed on the CPU from the
+    // active UI mode by utils/gridWells.ts and re-uploaded every frame.
+    uBodiesPeak: new Float32Array(50),
+    uBodiesCore: new Float32Array(50),
     uBodyCount: 0,
-    uShowHabitable: 0.0,
-    // Presentation-only well-depth compression, applied per body. These four
-    // are Beginner-Mode defaults only — all of them are re-uploaded from the
-    // active UI mode every frame (see the uniform block in useFrame).
-    uCurvatureAmount: 1.0,
-    uCurvatureKnee: CURVATURE_KNEE,
-    uCurvatureMax: CURVATURE_MAX_DEPTH,
     uTidalKnee: TIDAL_KNEE,
     uTidalMax: TIDAL_MAX,
+    // Depth colour tint (Beginner default; re-uploaded per frame).
+    uDepthTint: DEPTH_TINT_BEGINNER,
+    uDepthTintScale: DEPTH_TINT_SCALE,
     // Half-extent of the plane geometry before the infinite-reach remap below
     // (planeGeometry args are 5000×5000). Static — never updated per frame.
     uGridHalfSize: 2500.0,
-    // Render-safety ceiling on well depth, independent of uCurvatureMax — see
+    // Render-safety ceiling on total well depth, independent of the per-body
+    // peak ceiling — see
     // GRID_RENDER_SAFETY_MAX_DEPTH doc comment in utils/displayMode.ts.
     uGridRenderSafetyMaxDepth: GRID_RENDER_SAFETY_MAX_DEPTH,
   },
@@ -168,19 +168,16 @@ const GravityGridMaterial = shaderMaterial(
 uniform float uTime;
 uniform vec3 uBodiesPos[50];
 uniform float uBodiesMass[50];
-uniform float uBodiesRadius[50];
-uniform float uBodiesType[50];
+uniform float uBodiesPeak[50];
+uniform float uBodiesCore[50];
 uniform int uBodyCount;
-uniform float uShowHabitable;
-uniform float uCurvatureAmount;
-uniform float uCurvatureKnee;
-uniform float uCurvatureMax;
 uniform float uTidalKnee;
 uniform float uTidalMax;
 uniform float uGridHalfSize;
 uniform float uGridRenderSafetyMaxDepth;
 
 ${CURVATURE_DISPLAY_GLSL}
+${CURVATURE_WELL_GLSL}
 
 // Stretches an in-plane axis so the plane's true edge (±halfSize) lands at a
 // world distance of tens of millions of units instead of halfSize itself.
@@ -196,8 +193,6 @@ float remapGridAxis(float x, float halfSize) {
 
 varying float vDisplacement;
 varying float vTidalMagnitude;
-varying float vHabitableZone;
-varying float vHabitableDist;
 varying vec2 vUv;
 varying vec3 vWorldPos;
 
@@ -207,34 +202,25 @@ void main() {
   vec4 worldPosition = modelMatrix * vec4(remappedXY.x, remappedXY.y, position.z, 1.0);
   float displacement = 0.0;
   float maxTidal = 0.0;
-  float habFactor = 0.0;
-  float habDist = 0.0;
+  // The flat, undisturbed sheet is the orbital plane (y = 0). Distances are
+  // measured from that slice to each body in 3D, so a body far above or below
+  // the plane digs a correspondingly shallower dip, as the true potential does.
+  vec3 slicePos = vec3(worldPosition.x, 0.0, worldPosition.z);
 
   for(int i = 0; i < 50; i++) {
     if (i >= uBodyCount) break;
     vec3 bPos = uBodiesPos[i];
     float m = uBodiesMass[i];
-    float d = distance(worldPosition.xz, bPos.xz);
-    float softeningSq = 1200.0;
-    float potential = (m / sqrt(d * d + softeningSq)) * 3.0;
-    // Compressed HERE, per body, before it joins the sum — compressing the
-    // total instead lets one massive body flatten every other body's well.
+    float d = distance(slicePos, bPos);
+    // True 1/r well outside the body's display core; only the amplitude was
+    // compressed (on the CPU). Summed, so superposition holds.
     // See utils/curvatureDisplay.ts.
-    displacement -= curvatureDisplayScale(potential, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
+    displacement -= wellDepthAt(d, uBodiesPeak[i], uBodiesCore[i]);
     float tidal = m / (d*d*d + 100.0);
     maxTidal = max(maxTidal, tidal * 1000.0);
-    if (uBodiesType[i] > 1.9 && uShowHabitable > 0.5) {
-        float relLum = pow(m / 1000.0, 3.0);
-        float rInner = sqrt(relLum) * 40.0;
-        float rOuter = sqrt(relLum) * 80.0;
-        if (d > rInner * 0.8 && d < rOuter * 1.2) {
-            habDist = (d - rInner) / (rOuter - rInner);
-            habFactor = max(habFactor, smoothstep(rInner * 0.8, rInner, d) * (1.0 - smoothstep(rOuter, rOuter * 1.2, d)));
-        }
-    }
   }
   // Render-safety floor on the total. Each body's own contribution is already
-  // capped at uCurvatureMax; this only backstops many heavy bodies piling up on
+  // soft-capped (WellParams.maxDepth); this only backstops many heavy bodies piling up on
   // the same vertex.
   displacement = max(displacement, -uGridRenderSafetyMaxDepth);
 
@@ -245,9 +231,7 @@ void main() {
   // Same compressor, own knee: the high-tidal vertices near a primary would
   // otherwise saturate the whole plane cyan. Already a per-body max, so it was
   // never subject to the summation bug above.
-  vTidalMagnitude = curvatureDisplayScale(maxTidal, uTidalKnee, uCurvatureAmount, uTidalMax);
-  vHabitableZone = habFactor;
-  vHabitableDist = habDist;
+  vTidalMagnitude = curvatureDisplayScale(maxTidal, uTidalKnee, 1.0, uTidalMax);
   gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(newPos, 1.0);
   #include <logdepthbuf_vertex>
 }`,
@@ -258,10 +242,10 @@ void main() {
 uniform vec3 uColor;
 uniform float uLineGain;
 uniform float uVisualBoost;
+uniform float uDepthTint;
+uniform float uDepthTintScale;
 varying float vDisplacement;
 varying float vTidalMagnitude;
-varying float vHabitableZone;
-varying float vHabitableDist;
 varying vec2 vUv;
 varying vec3 vWorldPos;
 
@@ -276,20 +260,14 @@ void main() {
   vec3 tidalColor = vec3(0.0, 0.35, 0.65) * vTidalMagnitude * 0.2 * uVisualBoost;
   vec3 finalColor = baseColor + tidalColor;
   
-  float habAlpha = 0.0;
-  if (vHabitableZone > 0.01) {
-      vec3 chzHot = vec3(0.8, 0.2, 0.0);
-      vec3 chzOpt = vec3(0.1, 0.8, 0.3);
-      vec3 chzCold = vec3(0.0, 0.4, 0.8);
-      vec3 zoneColor = mix(chzHot, chzOpt, smoothstep(0.0, 0.4, vHabitableDist));
-      zoneColor = mix(zoneColor, chzCold, smoothstep(0.6, 1.0, vHabitableDist));
-      finalColor = mix(finalColor, zoneColor, vHabitableZone * 0.5);
-      habAlpha = vHabitableZone * 0.15;
-  }
+  // Depth tint: lines brighten toward cyan as the well deepens, so wells read
+  // even from straight above, where vertical displacement is invisible.
+  float wellT = uDepthTint * (1.0 - exp(-max(-vDisplacement, 0.0) / uDepthTintScale));
+  finalColor = mix(finalColor, vec3(0.30, 0.72, 1.0) * min(uVisualBoost, 1.3), wellT * 0.75);
   
   float dist = length(vWorldPos.xz - cameraPosition.xz);
   float fade = 1.0 - smoothstep(2500.0, 7000.0, dist);
-  float totalAlpha = max(lineAlpha * 0.4 * uLineGain * uVisualBoost, habAlpha) * fade;
+  float totalAlpha = lineAlpha * 0.4 * uLineGain * uVisualBoost * (1.0 + wellT * 0.9) * fade;
   if (totalAlpha < 0.01) discard;
   gl_FragColor = vec4(finalColor, totalAlpha);
   #include <logdepthbuf_fragment>
@@ -935,14 +913,13 @@ const PhysicsEngine = ({
   const lastBodyCountRef = useRef(0);
   const lastBodyArrayRef = useRef<CelestialBody[] | null>(null);
   const { camera, controls } = useThree();
-  const shaderData = useMemo(() => ({ positions: new Float32Array(50 * 3), masses: new Float32Array(50), radii: new Float32Array(50), types: new Float32Array(50) }), []);
+  const gridWells = useMemo(createGridWellUniforms, []);
 
   const syncBodiesFromPhysics = useStore((s) => s.syncBodiesFromPhysics);
   const paused = useStore((s) => s.paused);
   const speed = useStore((s) => s.speed);
   const cameraLockedId = useStore((s) => s.cameraLockedId);
   const showGrid = useStore((s) => s.showGrid);
-  const showHabitable = useStore((s) => s.showHabitable);
   const uiMode = useStore((s) => s.uiMode);
   const eventBufferRef = useRef<PhysicsEvent[]>([]);
   const waveEventBufferRef = useRef<WaveEvent[]>([]);
@@ -1229,39 +1206,24 @@ const PhysicsEngine = ({
     }
 
     if (gridMeshRef.current) {
-      gridMeshRef.current.position.set(camera.position.x, -20, camera.position.z);
+      // The flat far field sits at y = 0 — the orbital plane the bodies and
+      // orbit paths live in — and wells dip below it.
+      gridMeshRef.current.position.set(camera.position.x, 0, camera.position.z);
     }
 
     if (showGrid && gridMatRef.current && physicsBodies) {
-      let count = 0;
-      const gridLimit = Math.min(50, physicsBodies.length);
-      for (let i = 0; i < gridLimit; i++) {
-        const b = physicsBodies[i];
-        toRenderSpace(scratchV0, b.position, floatingOffset.current);
-        const i3 = i * 3;
-        shaderData.positions[i3] = scratchV0.x;
-        shaderData.positions[i3 + 1] = scratchV0.y;
-        shaderData.positions[i3 + 2] = scratchV0.z;
-        shaderData.masses[i] = b.mass;
-        shaderData.radii[i] = b.radius;
-        shaderData.types[i] = b.type === 'Black Hole' ? 1.0 : (LUMINOUS_TYPES.includes(b.type) ? 2.0 : 0.0);
-        count++;
-      }
-      gridMatRef.current.uBodiesPos = shaderData.positions;
-      gridMatRef.current.uBodiesMass = shaderData.masses;
-      gridMatRef.current.uBodiesRadius = shaderData.radii;
-      gridMatRef.current.uBodiesType = shaderData.types;
-      gridMatRef.current.uBodyCount = count;
-      gridMatRef.current.uTime = currentTime;
-      gridMatRef.current.uShowHabitable = showHabitable ? 1.0 : 0.0;
-      // Both modes compress; Advanced differs by a wider knee and ceiling, not
-      // by skipping the compressor. HabitableZoneVisual must read the same
-      // values from the same helpers or its disc detaches from this surface.
-      gridMatRef.current.uCurvatureAmount = curvatureAmountFor(uiMode);
-      gridMatRef.current.uCurvatureKnee = curvatureKneeFor(uiMode);
-      gridMatRef.current.uCurvatureMax = curvatureMaxFor(uiMode);
-      gridMatRef.current.uTidalKnee = tidalKneeFor(uiMode);
-      gridMatRef.current.uTidalMax = tidalMaxFor(uiMode);
+      // Same helper as HabitableZoneVisual, or its disc detaches from this surface.
+      const count = fillGridWellUniforms(gridWells, physicsBodies, floatingOffset.current, uiMode);
+      const mat = gridMatRef.current;
+      mat.uBodiesPos = gridWells.positions;
+      mat.uBodiesMass = gridWells.masses;
+      mat.uBodiesPeak = gridWells.peaks;
+      mat.uBodiesCore = gridWells.cores;
+      mat.uBodyCount = count;
+      mat.uTime = currentTime;
+      mat.uDepthTint = depthTintFor(uiMode);
+      mat.uTidalKnee = tidalKneeFor(uiMode);
+      mat.uTidalMax = tidalMaxFor(uiMode);
     }
   });
 
@@ -1270,7 +1232,7 @@ const PhysicsEngine = ({
       {/* Low-tier devices get a 150×150 grid (22 k verts vs 160 k) — same visual
           result at any zoom level since the gravity wells are screen-space smooth. */}
       {showGrid && (
-        <mesh ref={gridMeshRef} raycast={NO_RAYCAST} rotation={[-Math.PI / 2, 0, 0]} position={[0, -20, 0]}>
+        <mesh ref={gridMeshRef} raycast={NO_RAYCAST} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
           <planeGeometry args={[5000, 5000, deviceTier === 'low' ? 150 : 400, deviceTier === 'low' ? 150 : 400]} />
           <gravityGridMaterial
             ref={gridMatRef}

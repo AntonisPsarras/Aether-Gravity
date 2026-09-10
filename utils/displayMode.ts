@@ -65,43 +65,60 @@ export const bodyVisualRadius = (body: CelestialBody, mode: UiMode): number => {
 
 // ---- Curvature grid presentation parameters ----
 //
-// Both modes compress; they differ only in how hard. Advanced Mode used to pass
-// amount 0 (raw physical depth), and that is exactly what broke the grid the
-// moment a black hole existed: the minimum black hole is 3 M☉ ≈ 1.0e6 M⊕, whose
-// raw well is ~8.7e4 L* at the softening floor and still ~3e3 L* a thousand
-// units away, so every vertex in view was dragged below the camera and the mesh
-// appeared to vanish. Advanced now gets a knee and a ceiling several times
-// Beginner's instead — near-identity for anything of ordinary mass, bending
-// only where the raw formula was unrenderable anyway.
+// Every well has the true Newtonian 1/r shape outside a display core; only its
+// amplitude (peak depth vs. mass) is compressed. See utils/curvatureDisplay.ts.
+// The grid's flat far field sits at y = 0, the orbital plane.
+//
+// Beginner: bigger planet wells (gentler mass exponent, larger amplitude) and
+// wider cores, so a 1 M⊕ dip spans a couple of 20-unit grid cells and is
+// visible beside the Sun's funnel. Advanced: a truer mass ratio (p = 1/3),
+// narrower cores and a much higher ceiling.
+
+export interface WellParams {
+  /** Peak depth of a 1 M⊕ well before the ceiling, L*. */
+  amplitude: number;
+  /** Mass compression power: peak ∝ m^exponent. */
+  exponent: number;
+  /** Asymptotic ceiling on any single body's peak depth, L*. */
+  maxDepth: number;
+  /** Core radius as a multiple of the body's drawn radius. */
+  coreFactor: number;
+  /** Minimum core radius, L*. Keeps small wells wider than a vertex cell. */
+  coreFloor: number;
+}
+
+/** Earth ≈ 8, Jupiter ≈ 32, Sun ≈ 136, 3 M☉ hole ≈ 162 L*. */
+export const WELL_PARAMS_BEGINNER: WellParams = {
+  amplitude: 8, exponent: 0.25, maxDepth: 260, coreFactor: 1.5, coreFloor: 18,
+};
+
+/** Earth ≈ 4, Jupiter ≈ 27, Sun ≈ 239, 3 M☉ hole ≈ 323 L*. */
+export const WELL_PARAMS_ADVANCED: WellParams = {
+  amplitude: 4, exponent: 1 / 3, maxDepth: 900, coreFactor: 1.5, coreFloor: 10,
+};
+
+export const wellParamsFor = (mode: UiMode): WellParams =>
+  mode === 'beginner' ? WELL_PARAMS_BEGINNER : WELL_PARAMS_ADVANCED;
 
 /**
- * Soft-knee depth, in L*. Wells shallower than this keep their true shape;
- * deeper ones roll off logarithmically. 25 L* ≈ 0.6 AU of dip, which is about
- * the deepest the 5000 L* grid plane can show without reading as a spike.
+ * Depth colour tint strength (0 = off). Grid lines shift toward cyan as the
+ * well deepens, so wells stay legible from a top-down camera where vertical
+ * displacement is invisible. Strong in Beginner, a hint in Advanced.
  */
-export const CURVATURE_KNEE = 25;
+export const DEPTH_TINT_BEGINNER = 1.0;
+export const DEPTH_TINT_ADVANCED = 0.35;
 
-/** Asymptotic ceiling on the drawn dip, in L*. Approached, never reached. */
-export const CURVATURE_MAX_DEPTH = 220;
+/** Depth, L*, at which the tint reaches ~63% of full strength. */
+export const DEPTH_TINT_SCALE = 45;
 
-/**
- * Advanced Mode's knee and ceiling. Chosen so the raw shape survives wherever
- * it was ever visible and only the pathological end bends: an ordinary planet
- * is drawn within a few percent of its true depth, a star's well sits well
- * inside the plane, and a black hole reads as a deep funnel that is still in
- * frame instead of a mesh that is simply gone. Several times Beginner's
- * values, so Advanced keeps visibly more depth and more dynamic range, which
- * is the point of the mode.
- */
-export const CURVATURE_KNEE_ADVANCED = 120;
-export const CURVATURE_MAX_DEPTH_ADVANCED = 900;
+export const depthTintFor = (mode: UiMode): number =>
+  mode === 'beginner' ? DEPTH_TINT_BEGINNER : DEPTH_TINT_ADVANCED;
 
 /**
  * Absolute render-safety floor on total well depth, L*, applied in EVERY mode.
- * The compressor now runs per body and clamps each body's own contribution, so
- * the sum is bounded by `bodyCount × maxDepth` — this backstops the pile-up
- * case where many heavy bodies overlap, and nothing else. It is deliberately
- * far above any single body's ceiling so it never shapes a normal scene.
+ * Each body's own peak is already soft-capped at `maxDepth`, so the sum is
+ * bounded by `bodyCount × maxDepth` — this backstops the pile-up case where
+ * many heavy bodies overlap, and nothing else.
  */
 export const GRID_RENDER_SAFETY_MAX_DEPTH = 20000;
 
@@ -115,23 +132,6 @@ export const TIDAL_KNEE = 0.5;
 export const TIDAL_MAX = 2.0;
 export const TIDAL_KNEE_ADVANCED = 2.0;
 export const TIDAL_MAX_ADVANCED = 8.0;
-
-/**
- * Compression strength. 1 in both modes — the raw (0) path is unrenderable in
- * the presence of a black hole. Mode is expressed through the knee and ceiling
- * below, not through this. Kept as a function so the shaders can carry on
- * setting the uniform unconditionally, and so `curvatureDisplayScale` keeps its
- * identity-at-0 contract for callers that genuinely want the raw number.
- */
-export const curvatureAmountFor = (_mode: UiMode): number => 1;
-
-/** Soft-knee depth for the active mode, L*. */
-export const curvatureKneeFor = (mode: UiMode): number =>
-  mode === 'beginner' ? CURVATURE_KNEE : CURVATURE_KNEE_ADVANCED;
-
-/** Per-body ceiling on drawn well depth for the active mode, L*. */
-export const curvatureMaxFor = (mode: UiMode): number =>
-  mode === 'beginner' ? CURVATURE_MAX_DEPTH : CURVATURE_MAX_DEPTH_ADVANCED;
 
 /** Soft-knee for the tidal tint in the active mode. */
 export const tidalKneeFor = (mode: UiMode): number =>

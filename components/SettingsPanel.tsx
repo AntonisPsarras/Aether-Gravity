@@ -31,7 +31,7 @@ import { CONSERVATIVE_LOCAL_STORAGE_BYTES, getAetherStorageUsage } from '../util
 const MODE_COPY: Record<UiMode, { title: string; blurb: string }> = {
   beginner: {
     title: 'Beginner',
-    blurb: 'Gentler curvature, larger bodies, slower clock, and a reduced set of fields and body types.',
+    blurb: 'Exaggerated planet wells with depth shading, larger bodies, slower clock, and a reduced set of fields and body types.',
   },
   advanced: {
     title: 'Advanced',

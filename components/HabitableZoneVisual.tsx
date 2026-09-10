@@ -12,16 +12,15 @@ import { getHabitableZoneInGameUnits } from '../utils/HabitabilityService';
 
 import { CelestialBody } from '../types';
 
-import { scratchV0, scratchV1, toRenderSpace } from '../utils/scratchVectors';
+import { scratchV0, toRenderSpace } from '../utils/scratchVectors';
 
 import { getPhysicsBodiesSnapshot } from '../utils/physicsBridge';
 
-import { CURVATURE_DISPLAY_GLSL } from '../utils/curvatureDisplay';
+import { CURVATURE_WELL_GLSL } from '../utils/curvatureDisplay';
 
-import {
-  CURVATURE_KNEE, CURVATURE_MAX_DEPTH, GRID_RENDER_SAFETY_MAX_DEPTH,
-  curvatureAmountFor, curvatureKneeFor, curvatureMaxFor,
-} from '../utils/displayMode';
+import { createGridWellUniforms, fillGridWellUniforms } from '../utils/gridWells';
+
+import { GRID_RENDER_SAFETY_MAX_DEPTH } from '../utils/displayMode';
 
 
 
@@ -49,14 +48,13 @@ const HabitableZoneMaterial = shaderMaterial(
 
     uColorOptimal: new THREE.Color(0.1, 0.8, 0.3), // Optimal
 
-    // Must track the grid's own curvature uniforms exactly, or this disc
-    // detaches from the surface it is supposed to lie on.
+    // Must track the grid's own well uniforms exactly, or this disc detaches
+    // from the surface it is supposed to lie on — both fill them through
+    // utils/gridWells.ts.
 
-    uCurvatureAmount: 1.0,
+    uBodiesPeak: new Float32Array(50),
 
-    uCurvatureKnee: CURVATURE_KNEE,
-
-    uCurvatureMax: CURVATURE_MAX_DEPTH,
+    uBodiesCore: new Float32Array(50),
 
   },
 
@@ -82,13 +80,11 @@ const HabitableZoneMaterial = shaderMaterial(
 
     uniform int uBodyCount;
 
-    uniform float uCurvatureAmount;
+    uniform float uBodiesPeak[50];
 
-    uniform float uCurvatureKnee;
+    uniform float uBodiesCore[50];
 
-    uniform float uCurvatureMax;
-
-    ${CURVATURE_DISPLAY_GLSL}
+    ${CURVATURE_WELL_GLSL}
 
     void main() {
 
@@ -110,19 +106,11 @@ const HabitableZoneMaterial = shaderMaterial(
 
         vec3 bPos = uBodiesPos[i];
 
-        float m = uBodiesMass[i];
+        // 3D distance from the orbital-plane slice, exactly as the grid does it.
 
-        // Distance in XZ plane
+        float d = distance(vec3(worldPosition.x, 0.0, worldPosition.z), bPos);
 
-        float d = distance(worldPosition.xz, bPos.xz);
-
-        float softeningSq = 1200.0;
-
-        float potential = (m / sqrt(d * d + softeningSq)) * 3.0; // Same scale as grid
-
-        // Compressed per body before summing, exactly as the grid does it.
-
-        displacement -= curvatureDisplayScale(potential, uCurvatureKnee, uCurvatureAmount, uCurvatureMax);
+        displacement -= wellDepthAt(d, uBodiesPeak[i], uBodiesCore[i]);
 
       }
 
@@ -242,13 +230,7 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
 
 
-  const shaderData = useMemo(() => ({
-
-    positions: new Float32Array(50 * 3),
-
-    masses: new Float32Array(50)
-
-  }), []);
+  const wells = useMemo(createGridWellUniforms, []);
 
 
 
@@ -264,12 +246,6 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
     materialRef.current.uOuterRadius = zones.outer;
 
-    materialRef.current.uCurvatureAmount = curvatureAmountFor(uiMode);
-
-    materialRef.current.uCurvatureKnee = curvatureKneeFor(uiMode);
-
-    materialRef.current.uCurvatureMax = curvatureMaxFor(uiMode);
-
 
 
     const liveStar = getPhysicsBodiesSnapshot().find(b => b.id === star.id);
@@ -279,37 +255,20 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
     materialRef.current.uCenter.copy(scratchV0);
 
-    meshRef.current.position.copy(scratchV0).setY(-20);
+    // The grid's flat level is the orbital plane, y = 0.
+    meshRef.current.position.copy(scratchV0).setY(0);
 
 
 
-    const list = getPhysicsBodiesSnapshot();
+    const count = fillGridWellUniforms(wells, getPhysicsBodiesSnapshot(), floatingOffset.current, uiMode);
 
-    const limit = Math.min(list.length, 50);
+    materialRef.current.uBodiesPos = wells.positions;
 
-    let count = 0;
+    materialRef.current.uBodiesMass = wells.masses;
 
-    for (let i = 0; i < limit; i++) {
+    materialRef.current.uBodiesPeak = wells.peaks;
 
-      const b = list[i];
-
-      toRenderSpace(scratchV1, b.position, floatingOffset.current);
-
-      shaderData.positions[i * 3] = scratchV1.x;
-
-      shaderData.positions[i * 3 + 1] = scratchV1.y;
-
-      shaderData.positions[i * 3 + 2] = scratchV1.z;
-
-      shaderData.masses[i] = b.mass;
-
-      count++;
-
-    }
-
-    materialRef.current.uBodiesPos = shaderData.positions;
-
-    materialRef.current.uBodiesMass = shaderData.masses;
+    materialRef.current.uBodiesCore = wells.cores;
 
     materialRef.current.uBodyCount = count;
 

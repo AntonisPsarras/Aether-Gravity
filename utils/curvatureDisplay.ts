@@ -1,31 +1,35 @@
 /**
- * Presentation-only remap of the spacetime grid's well depth.
+ * Presentation-only shaping of the spacetime grid.
  *
- * The grid's vertex shader sums a Plummer-softened potential,
- * `Σ mᵢ / sqrt(dᵢ² + soft)`, with masses in M⊕. That is physically faithful and
- * visually unusable: a Sun-mass primary (3.3 × 10⁵ M⊕) digs a well of order
- * 10⁴ L* into a 5000 L* plane, so the star's dip clips off-screen while a
- * planet's dip is sub-pixel. The dynamic range is the problem, not the formula.
+ * WHAT THE DEPTH MEANS. The grid is an embedding diagram of the Newtonian
+ * potential, Φ = −Σ G mᵢ / rᵢ. In the weak-field limit that is the time-
+ * curvature term of the metric (g_tt ≈ −(1 + 2Φ/c²)), which is what actually
+ * bends trajectories into orbits — so depth ∝ −Φ is the right quantity to draw.
  *
- * `curvatureDisplayScale` compresses that range with a soft-knee log curve —
- * near-identity below the knee (small wells keep their true shape and relative
- * size), logarithmic above it, then eased onto a soft asymptotic ceiling. It is
- * strictly increasing, so deeper is always drawn deeper and ordering is never
- * inverted — and because the ceiling is asymptotic rather than a clamp, no
- * region of the grid is ever flattened into a plateau.
+ * WHAT HAS TO BE COMPRESSED, AND WHAT MUST NOT BE. The true Sun : Earth depth
+ * ratio is 3.3 × 10⁵ : 1; no plane can show both. The earlier version therefore
+ * log-compressed the *field* value at every grid vertex. That also compressed
+ * the *shape*: a 1/r well became ~log(1/r), which barely decays, so a single
+ * star sank the entire visible plane into a pedestal (depth 121 at the Sun, 73
+ * at Neptune, still 45 six thousand units out) and its funnel read as flat.
  *
- * APPLY IT PER BODY, INSIDE THE LOOP, BEFORE SUMMING. Compressing the summed
- * potential instead looks equivalent and is not: log's derivative is `k/depth`,
- * so once one dominant body has built a deep pedestal, every other body's well
- * is scaled by a near-zero slope and vanishes. A black hole (≥ 3 M☉ ≈ 1.0e6 M⊕)
- * digs a pedestal of ~8.7e4 L* and flattened the entire plane this way. Summing
- * already-compressed per-body wells keeps each body's own dip at its own scale,
- * and superposition still holds.
+ * Now only the AMPLITUDE is compressed, per body, and the shape is left alone:
  *
- * NEVER feed the result of this back into a physical calculation. The GLSL twin
- * below is the same function, shared verbatim by the grid shader
- * (`components/SpaceCanvas.tsx`) and the habitable-zone surface
- * (`components/HabitableZoneVisual.tsx`) so the two can never drift apart.
+ *     depthᵢ(d) = Pᵢ · sᵢ / √(d² + sᵢ²)        (`wellDepthAt`)
+ *     Pᵢ        = softCeil(A · mᵢ^p)            (`wellPeakDepth`)
+ *
+ * Outside the core radius sᵢ this is exactly ∝ 1/d — the true Newtonian
+ * falloff — so the grid is flat far from any mass. Inside it is a smooth finite
+ * core, as a real extended body has. The power law keeps mass ordering and is
+ * scale-free (every 10× in mass is 10^p× deeper); the soft ceiling bounds black
+ * holes without a plateau. Superposition holds because wells are summed.
+ *
+ * `curvatureDisplayScale` (soft-knee log) is still used for the tidal tint.
+ *
+ * NEVER feed any of this back into a physical calculation. The GLSL twins
+ * below are shared verbatim by the grid shader (`components/SpaceCanvas.tsx`)
+ * and the habitable-zone surface (`components/HabitableZoneVisual.tsx`) so the
+ * two can never drift apart.
  */
 
 /**
@@ -72,5 +76,50 @@ float curvatureDisplayScale(float depth, float knee, float amount, float maxDept
   float mixed = mix(depth, compressed, clamp(amount, 0.0, 1.0));
   if (maxDepth <= 0.0) return mixed;
   return maxDepth * (1.0 - exp(-mixed / maxDepth));
+}
+`;
+
+/**
+ * Peak (central) well depth for a body, L*. Power-law compression of mass onto
+ * a soft asymptotic ceiling — strictly increasing, unit slope at 0, never
+ * reaches `maxDepth`. Computed on the CPU once per body per frame.
+ *
+ * @param massEarth Body mass, M⊕.
+ * @param amplitude Depth of a 1 M⊕ well before the ceiling, L*.
+ * @param exponent  Mass compression power, 0 < p ≤ 1.
+ * @param maxDepth  Asymptotic ceiling, L*. ≤ 0 disables it.
+ */
+export const wellPeakDepth = (
+  massEarth: number,
+  amplitude: number,
+  exponent: number,
+  maxDepth: number,
+): number => {
+  if (!isFinite(massEarth) || massEarth <= 0 || !(amplitude > 0)) return 0;
+  const raw = amplitude * Math.pow(massEarth, exponent);
+  if (maxDepth <= 0) return raw;
+  return maxDepth * (1 - Math.exp(-raw / maxDepth));
+};
+
+/** Display core radius, L*: a multiple of the drawn radius, never below `floor`. */
+export const wellCoreRadius = (drawnRadius: number, factor: number, floor: number): number =>
+  Math.max(isFinite(drawnRadius) ? drawnRadius * factor : 0, floor, 1);
+
+/**
+ * Depth of one body's well at distance `d`, L*. Equals `peak` at d = 0 and is
+ * exactly `peak · core / d` (true 1/r) for d ≫ core.
+ */
+export const wellDepthAt = (d: number, peak: number, core: number): number => {
+  if (!(peak > 0)) return 0;
+  const s = core > 1 ? core : 1;
+  return (peak * s) / Math.sqrt(d * d + s * s);
+};
+
+/** GLSL twin of `wellDepthAt`. Keep the bodies of the two versions in step. */
+export const CURVATURE_WELL_GLSL = /* glsl */ `
+float wellDepthAt(float d, float peak, float core) {
+  if (peak <= 0.0) return 0.0;
+  float s = max(core, 1.0);
+  return peak * s / sqrt(d * d + s * s);
 }
 `;
