@@ -25,7 +25,7 @@ import { clampBodiesInPlace } from './physicsBounds';
 import { pairSofteningSq } from './physicsUtils';
 import { isSatellite } from './moonSystem';
 import type { DeviceTier } from './deviceCapabilities';
-import { scientificStepLimit } from './scientificStep';
+import { currentScientificStepLimit, advanceScientificStepPolicy, invalidateScientificSteps } from './scientificStep';
 
 /**
  * Bodies the integrator owns. Satellites on Kepler rails are excluded: they are
@@ -195,6 +195,7 @@ export const verletStepInPlace = (bodies: CelestialBody[], dt: number): Celestia
 /** Reset persistent acceleration cache (call on world load / generate). */
 export const resetVerletCache = () => {
   accelById.clear();
+  invalidateScientificSteps();
 };
 
 // ---- Fixed-timestep accumulator ----
@@ -242,6 +243,7 @@ export const physicsStepPolicy = (tier: DeviceTier): Readonly<{ fixedDt: number;
 const clockState = new Float64Array(2);
 const ACCUMULATOR_INDEX = 0;
 const SIM_TIME_INDEX = 1;
+let lastDirection = 0;
 
 /**
  * Total simulated time in years. Kepler-propagated satellites need an absolute
@@ -266,16 +268,19 @@ export const runFixedSteps = (
     return 0;
   }
   const basePolicy = physicsStepPolicy(tier);
-  const policy = { ...basePolicy, fixedDt: Math.min(basePolicy.fixedDt, scientificStepLimit(bodiesRef.current)) };
+  let fixedDt = Math.min(basePolicy.fixedDt, currentScientificStepLimit(bodiesRef.current));
   // Velocity-Verlet is time-symmetric, so running it with a negative dt
   // integrates backwards. The pre-2.0 loop returned early on elapsed <= 0, so
   // the reverse half of the speed slider silently did nothing.
   const reverse = elapsed < 0;
-  const dt = reverse ? -policy.fixedDt : policy.fixedDt;
+  if (lastDirection !== 0 && lastDirection !== (reverse ? -1 : 1)) clockState[ACCUMULATOR_INDEX] = 0;
+  lastDirection = reverse ? -1 : 1;
   clockState[ACCUMULATOR_INDEX] += Math.min(Math.abs(elapsed), 0.2); // hard cap to avoid death spiral
   let steps = 0;
   let bodies = bodiesRef.current;
-  while (clockState[ACCUMULATOR_INDEX] >= policy.fixedDt && steps < policy.maxCatchupSteps) {
+  while (clockState[ACCUMULATOR_INDEX] >= fixedDt && steps < basePolicy.maxCatchupSteps) {
+    const stepSize = fixedDt;
+    const dt = reverse ? -stepSize : stepSize;
     bodies = verletStepInPlace(bodies, dt);
     clockState[SIM_TIME_INDEX] += dt;
     clampBodiesInPlace(bodies);
@@ -292,16 +297,19 @@ export const runFixedSteps = (
       if (bodies.length !== countBefore) resetVerletCache();
     }
     clampBodiesInPlace(bodies);
-    clockState[ACCUMULATOR_INDEX] -= policy.fixedDt;
+    clockState[ACCUMULATOR_INDEX] -= stepSize;
+    advanceScientificStepPolicy(bodies);
+    fixedDt = Math.min(basePolicy.fixedDt, currentScientificStepLimit(bodies));
     steps++;
   }
-  // If we hit the catchup cap, drop residual time to avoid lag accumulation.
-  if (steps >= policy.maxCatchupSteps) clockState[ACCUMULATOR_INDEX] = 0;
+  // Cap backlog at one step to prevent lag accumulation while retaining phase.
+  if (steps >= basePolicy.maxCatchupSteps) clockState[ACCUMULATOR_INDEX] = Math.min(clockState[ACCUMULATOR_INDEX], fixedDt);
   bodiesRef.current = bodies;
   return steps;
 };
 
 export const resetAccumulator = () => {
+  lastDirection = 0;
   clockState[ACCUMULATOR_INDEX] = 0;
   clockState[SIM_TIME_INDEX] = 0;
 };

@@ -1,3 +1,5 @@
+import { captureSimulationSnapshot } from '../utils/simulationSnapshot';
+import { getPhysicsBodiesSnapshot } from '../utils/physicsBridge';
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -74,6 +76,8 @@ export default function TestMetricsCollector(): null {
     // otherwise create a second store after Vite HMR). Never installed outside E2E.
     const fixtureControls = {
       getStore: useStore.getState,
+      getLiveBodies: getPhysicsBodiesSnapshot,
+      captureSimulation: () => captureSimulationSnapshot(useStore.getState().bodies),
       shiftCamera: () => {
         useStore.getState().setCameraLock(null);
         camera.position.x += 60000;

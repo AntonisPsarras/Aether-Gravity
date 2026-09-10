@@ -170,7 +170,8 @@ test.describe('Performance soak', () => {
     const sampledBytes: Record<string, number> = {};
     const visit = (node: any) => {
       const name = node.callFrame?.functionName;
-      if (hotFunctions.has(name)) sampledBytes[name] = (sampledBytes[name] ?? 0) + (node.selfSize ?? 0);
+      // Stack ancestors may appear with zero self allocation.
+      if (hotFunctions.has(name) && node.selfSize > 0) sampledBytes[name] = (sampledBytes[name] ?? 0) + node.selfSize;
       for (const child of node.children ?? []) visit(child);
     };
     visit(profile.head);

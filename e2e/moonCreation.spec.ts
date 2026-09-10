@@ -66,6 +66,11 @@ test.describe('Orbit-first moon creation', () => {
     });
     const { moon, parentId } = await createMoon(page);
 
+    // Physics is installed synchronously; React mounts the new mesh afterward.
+    await expect.poll(() => page.evaluate(id =>
+      window.__AETHER_TEST__!.getRenderSnapshot().bodies.some(b => b.id === id), moon!.id),
+    ).toBe(true);
+
     const sample = () => page.evaluate(() => ({
       physics: window.__AETHER_TEST__!.getPhysicsSnapshot(),
       render: window.__AETHER_TEST__!.getRenderSnapshot(),

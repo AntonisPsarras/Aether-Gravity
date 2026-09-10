@@ -241,7 +241,7 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
     // Y-UP coordinate system adjustments:
     // Reference plane is XZ (Ecliptic). Normal is Y (0,1,0).
     // Inclination i = angle between hVec and Y-axis
-    const i = Math.acos(hVec.y / h); // 0 to PI
+    const i = Math.acos(Math.max(-1, Math.min(1, hVec.y / h))); // 0 to PI
     
     // Node Vector n = Y x h = (0,1,0) x (hx, hy, hz) = (hz, 0, -hx)
     const nVec = new THREE.Vector3(hVec.z, 0, -hVec.x);
@@ -251,8 +251,8 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
     // cos Omega = nx / n
     let Omega = 0;
     if (n > 0.00001) {
-        Omega = Math.acos(nVec.x / n);
-        if (nVec.z < 0) Omega = 2 * Math.PI - Omega; // Quadrant check
+        Omega = Math.acos(Math.max(-1, Math.min(1, nVec.x / n)));
+        if (nVec.z > 0) Omega = 2 * Math.PI - Omega; // Quadrant check
     }
     
     // Argument of Periapsis omega (angle between n and e)
@@ -264,6 +264,11 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
         if (eVec.y < 0) omega = 2 * Math.PI - omega; // eVec points below plane?
     }
     
+    if (n <= 0.00001 && e > 0.00001) {
+        omega = Math.atan2(-eVec.z * Math.sign(hVec.y), eVec.x);
+        if (omega < 0) omega += 2 * Math.PI;
+    }
+
     // True anomaly nu (angle between e and r).
     //
     // For a near-circular orbit the eccentricity vector is numerically
@@ -285,7 +290,7 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
         // Circular and equatorial: true longitude, measured from +X in the
         // reference plane. Z is negated because the ecliptic is the XZ plane
         // with +Y as the orbit normal.
-        nu = Math.atan2(-rVec.z, rVec.x);
+        nu = Math.atan2(-rVec.z * Math.sign(hVec.y), rVec.x);
         if (nu < 0) nu += 2 * Math.PI;
     }
     

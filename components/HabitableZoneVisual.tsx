@@ -238,7 +238,7 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
 
 
-  const zones = useMemo(() => getHabitableZoneInGameUnits(star), [star.mass, star.temperature]);
+  const zones = useMemo(() => getHabitableZoneInGameUnits(star), [star]);
 
 
 
@@ -272,7 +272,10 @@ const HabitableZoneVisual: React.FC<HabitableZoneVisualProps> = ({ star, floatin
 
 
 
-    toRenderSpace(scratchV0, star.position, floatingOffset.current);
+    const liveStar = getPhysicsBodiesSnapshot().find(b => b.id === star.id);
+    meshRef.current.visible = !!liveStar;
+    if (!liveStar) return;
+    toRenderSpace(scratchV0, liveStar.position, floatingOffset.current);
 
     materialRef.current.uCenter.copy(scratchV0);
 

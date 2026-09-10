@@ -13,9 +13,9 @@ import {
 /**
  * Device capability tiering.
  *
- * `low`  → outdated / memory-constrained mobile GPUs. Post-processing is dropped
+ * `low`  → outdated / memory-constrained mobile GPUs. Bloom is reduced
  *          and brightness is recovered via tone-mapping exposure instead, so we
- *          never pay for a full-screen bloom pass on weak hardware.
+ *          retain a small mipmap bloom budget on weak hardware.
  * `high` → desktop *and* capable phones. Gets the bloom-driven look so the
  *          cosmos and gravity grid read identically across devices.
  */
@@ -63,7 +63,7 @@ export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
     jetEnabled: !low,
     /** Supernova / accretion shell tessellation. 512 vs 2048 triangles. */
     compactShellSegments: low ? 16 : 32,
-    /** Global multiplier on effect brightness; low tier has no bloom to lift it. */
+    /** Global multiplier on effect brightness; low tier has reduced bloom. */
     effectIntensity: low ? 0.7 : 1,
     /**
      * Debris BODIES (not particles) a single destructive impact may create.
@@ -148,7 +148,7 @@ export function DeviceCapabilityProbe({
  *  - Color space: some embedded WebViews do not default to sRGB output, which
  *    crushes every colour toward black. We pin `SRGBColorSpace` explicitly.
  *  - Tone mapping: kept identical across devices; exposure is the *only* knob we
- *    vary, and only to compensate for bloom being disabled on the `low` tier.
+ *    vary, and only to compensate for reduced bloom on the `low` tier.
  *  - Pixel ratio: clamped to 2 so 3x/4x phones don't render the emissive grid
  *    lines into sub-pixel oblivion (and don't melt the fill-rate budget).
  */
@@ -244,7 +244,7 @@ export function gridVisualBoostForDevice(
  *  - Desktop (`high`, non-touch): full stack — bloom + film grain + vignette.
  *  - Capable mobile (`high`, touch): a single lightweight mipmap bloom so the
  *    grid/cosmos glow matches desktop without the cost of grain/vignette.
- *  - Weak mobile (`low`): nothing — brightness is handled by exposure instead.
+ *  - Weak mobile (`low`): quarter-resolution, three-level bloom plus exposure.
  */
 export function AdaptivePostFX({ tier, isTouch }: { tier: DeviceTier; isTouch: boolean }): React.ReactElement | null {
   if (tier === 'low') {

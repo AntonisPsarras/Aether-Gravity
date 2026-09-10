@@ -1,3 +1,4 @@
+import { captureSimulationSnapshot, type SimulationSnapshot } from './utils/simulationSnapshot';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { CelestialBody, BodyType } from './types';
 import SpaceCanvas from './components/SpaceCanvas';
@@ -60,7 +61,6 @@ const StorageNotice: React.FC = () => {
 
 const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu }) => {
   const bodies = useStore((s) => s.bodies);
-  const setBodies = useStore((s) => s.setBodies);
   const selectedId = useStore((s) => s.selectedId);
   const inspectorBodyId = useStore((s) => s.inspectorBodyId);
   const generateNewSystem = useStore((s) => s.generateNewSystem);
@@ -77,8 +77,8 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 
   const [creationMode, setCreationMode] = useState<BodyType | null>(null);
   const [showConfirmGenerate, setShowConfirmGenerate] = useState(false);
-  const [history, setHistory] = useState<CelestialBody[][]>([]);
-  const [redoStack, setRedoStack] = useState<CelestialBody[][]>([]);
+  const [history, setHistory] = useState<SimulationSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<SimulationSnapshot[]>([]);
   const seenHelpersRef = useRef(new Set<HelperId>(getOnboardingProgress().seenHelperIds));
   const [helperQueue, setHelperQueue] = useState<QueuedHelper[]>([]);
 
@@ -151,13 +151,12 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
     };
   }, [moonMode]);
 
-  const pushToHistory = (currentBodies: CelestialBody[]) => {
-    setHistory(prev => [...prev.slice(-19), currentBodies.map(b => ({ ...b, position: b.position.clone(), velocity: b.velocity.clone() }))]);
+  const pushToHistory = (snapshot: SimulationSnapshot) => {
+    setHistory(prev => [...prev.slice(-19), snapshot]);
     setRedoStack([]);
   };
 
-  /** Shared by the slingshot and the moon creator. */
-  const handleBodyCreate = (snapshot: CelestialBody[], createdBody: CelestialBody) => {
+  const handleBodyCreate = (snapshot: SimulationSnapshot, createdBody: CelestialBody) => {
     pushToHistory(snapshot);
     enqueueHelperTrigger({ kind: 'body-created', body: createdBody });
   };
@@ -170,11 +169,11 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   const saveCurrentWorld = useCallback((): SaveWorldResult => {
     const state = useStore.getState();
     if (!state.worldId) return 'ok';
-    const physicsBodies = getPhysicsBodiesSnapshot();
+    const physicsBodies = getPhysicsBodiesSnapshot(state.bodies);
     const result = saveWorld({
       id: state.worldId,
       version: CURRENT_WORLD_VERSION,
-      bodies: serializeBodies(physicsBodies.length ? physicsBodies : state.bodies),
+      bodies: serializeBodies([...physicsBodies]),
       settings: {
         simTime: getSimTime(),
         speed: state.speed,
@@ -233,18 +232,23 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
     }
   }, [bodies, selectedId, inspectorBodyId, selectBody, closeInspector]);
 
-  const handleUndo = () => { if (history.length === 0) return; const prev = history[history.length - 1]; setRedoStack(p => [...p, bodies.map(b => ({ ...b, position: b.position.clone(), velocity: b.velocity.clone() }))]); setBodies(prev); setHistory(p => p.slice(0, -1)); useStore.setState(s => ({ historyVersion: s.historyVersion + 1 })); };
-  const handleRedo = () => { if (redoStack.length === 0) return; const next = redoStack[redoStack.length - 1]; setHistory(p => [...p, bodies.map(b => ({ ...b, position: b.position.clone(), velocity: b.velocity.clone() }))]); setBodies(next); setRedoStack(p => p.slice(0, -1)); useStore.setState(s => ({ historyVersion: s.historyVersion + 1 })); };
-
+  const handleUndo = () => {
+    if (!history.length) return;
+    setRedoStack(prev => [...prev, captureSimulationSnapshot(useStore.getState().bodies)]);
+    useStore.getState().restoreSimulation(history[history.length - 1]);
+    setHistory(prev => prev.slice(0, -1));
+  };
+  const handleRedo = () => {
+    if (!redoStack.length) return;
+    setHistory(prev => [...prev.slice(-19), captureSimulationSnapshot(useStore.getState().bodies)]);
+    useStore.getState().restoreSimulation(redoStack[redoStack.length - 1]);
+    setRedoStack(prev => prev.slice(0, -1));
+  };
   const handleGenerate = () => {
-    const snapshot = useStore.getState().bodies.map((b) => ({
-      ...b,
-      position: b.position.clone(),
-      velocity: b.velocity.clone(),
-    }));
-    pushToHistory(snapshot);
-    // Defer one frame so confirmation modal unmount does not race camera snap.
-    deferDoubleFrame(() => generateNewSystem());
+    deferDoubleFrame(() => {
+      pushToHistory(captureSimulationSnapshot(useStore.getState().bodies));
+      generateNewSystem();
+    });
   };
   const handleReturnToMenu = useCallback(() => {
     if (worldId) {

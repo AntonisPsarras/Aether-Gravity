@@ -1,14 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../../utils/store';
 
-/**
- * Numeric primary editor.
- *
- * The `setInteractingWithUI` calls and the `onEditStart` / `onEditEnd` pair are
- * load-bearing and must never be dropped: the first keeps OrbitControls from
- * dragging the camera while the field has focus, the second holds an inspector
- * lock so `syncBodiesFromPhysics` cannot overwrite the value mid-edit.
- */
+/** Keep the draft as text so partial decimals/exponents survive telemetry refreshes. */
 export const NumberInput = ({
   value, onChange, className, onCommit, onEditStart, onEditEnd, min, max, testId,
 }: {
@@ -22,35 +15,50 @@ export const NumberInput = ({
   max?: number;
   testId?: string;
 }) => {
-  const setInteractingWithUI = useStore((s) => s.setInteractingWithUI);
-  const handleEditEnd = () => {
-    onCommit?.();
+  const [draft, setDraft] = useState(String(value));
+  const editing = useRef(false);
+  const dirty = useRef(false);
+  const endRef = useRef(onEditEnd);
+  endRef.current = onEditEnd;
+  const setInteractingWithUI = useStore(s => s.setInteractingWithUI);
+  useEffect(() => { if (!editing.current) setDraft(String(value)); }, [value]);
+  useEffect(() => () => {
+    if (editing.current) {
+      endRef.current?.();
+      useStore.getState().setInteractingWithUI(false);
+    }
+  }, []);
+  const finish = () => {
+    if (!editing.current) return;
+    editing.current = false;
+    const raw = draft.trim() === '' ? NaN : Number(draft);
+    if (dirty.current && Number.isFinite(raw)) {
+      const next = Math.max(min ?? -Infinity, Math.min(max ?? Infinity, raw));
+      onChange(next);
+      setDraft(String(next));
+      onCommit?.();
+    } else setDraft(String(value));
+    dirty.current = false;
     onEditEnd?.();
     setInteractingWithUI(false);
   };
-  return (
-    <input
-      type="number"
-      data-testid={testId}
-      data-no-drag
-      value={Math.round(value * 100) / 100}
-      onPointerDown={() => setInteractingWithUI(true)}
-      onPointerUp={() => setInteractingWithUI(false)}
-      onPointerCancel={() => setInteractingWithUI(false)}
-      onFocus={() => { setInteractingWithUI(true); onEditStart?.(); }}
-      onChange={(e) => {
-        const raw = parseFloat(e.target.value);
-        if (!isFinite(raw)) return;
-        const clamped = min !== undefined ? Math.max(min, max !== undefined ? Math.min(max, raw) : raw)
-                      : max !== undefined ? Math.min(max, raw) : raw;
-        onChange(clamped);
-      }}
-      onBlur={handleEditEnd}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') handleEditEnd();
-      }}
-      className={className}
-    />
-  );
+  return <input
+    type="text"
+    inputMode="decimal"
+    data-testid={testId}
+    data-no-drag
+    value={draft}
+    onPointerDown={() => setInteractingWithUI(true)}
+    onPointerUp={() => setInteractingWithUI(false)}
+    onPointerCancel={() => setInteractingWithUI(false)}
+    onFocus={() => { editing.current = true; dirty.current = false; setInteractingWithUI(true); onEditStart?.(); }}
+    onChange={e => { dirty.current = true; setDraft(e.target.value); }}
+    onBlur={finish}
+    onKeyDown={e => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { dirty.current = false; e.currentTarget.blur(); }
+      if (e.key === 'Enter') e.currentTarget.blur();
+    }}
+    className={className}
+  />;
 };

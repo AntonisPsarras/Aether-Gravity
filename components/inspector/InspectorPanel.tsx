@@ -28,7 +28,7 @@ import { RelativisticSection } from './sections/RelativisticSection';
 import { OrbitSection } from './sections/OrbitSection';
 import { AnalysisSection } from './sections/AnalysisSection';
 import type { CelestialBody } from '../../types';
-import { getPhysicsBodiesSnapshot } from '../../utils/physicsBridge';
+import { clonePhysicsBody, getPhysicsBodiesSnapshot } from '../../utils/physicsBridge';
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   settings: Settings, thermometer: Thermometer, layers: Layers, wind: Wind,
@@ -76,8 +76,8 @@ export const InspectorPanel: React.FC<{
   const reducedMotion = useReducedMotion();
 
   const storeBody = useStore((s) => s.bodies.find((b) => b.id === s.inspectorBodyId));
-  const [liveBody, setLiveBody] = useState<CelestialBody | undefined>(storeBody);
-  const body = liveBody?.id === storeBody?.id ? liveBody : storeBody;
+  const [sample, setSample] = useState<{ body?: CelestialBody; parent: CelestialBody | null }>({ body: storeBody, parent: null });
+  const body = sample.body?.id === storeBody?.id ? sample.body : storeBody;
   const bodies = useStore((s) => s.bodies);
   const updateBody = useStore((s) => s.updateBody);
   const removeBody = useStore((s) => s.removeBody);
@@ -95,23 +95,20 @@ export const InspectorPanel: React.FC<{
   // its selected live body, at 2 Hz, so telemetry never reconciles the canvas.
   useEffect(() => {
     if (!storeBody) {
-      setLiveBody(undefined);
+      setSample({ body: undefined, parent: null });
       return;
     }
     const refresh = () => {
-      const live = getPhysicsBodiesSnapshot().find((candidate) => candidate.id === storeBody.id);
+      const snapshot = getPhysicsBodiesSnapshot(useStore.getState().bodies);
+      const live = snapshot.find(candidate => candidate.id === storeBody.id);
       if (!live) return;
-      setLiveBody({
-        ...live,
-        position: live.position.clone(),
-        velocity: live.velocity.clone(),
-        properties: live.properties ? { ...live.properties } : live.properties,
-      });
+      const parent = findDominantParent(live, [...snapshot]);
+      setSample({ body: clonePhysicsBody(live), parent: parent ? clonePhysicsBody(parent) : null });
     };
     refresh();
     const timer = window.setInterval(refresh, 500);
     return () => window.clearInterval(timer);
-  }, [storeBody]);
+  }, [storeBody, bodies]);
 
   const [activeTab, setActiveTab] = useState<InspectorTab>('props');
   const [tabDir, setTabDir] = useState<1 | -1>(1);
@@ -143,10 +140,7 @@ export const InspectorPanel: React.FC<{
     if (openedBody) onOpen?.(openedBody);
   }, [bodyId, onOpen]);
 
-  const parent = useMemo(
-    () => (body ? findDominantParent(body, bodies) : null),
-    [body, bodies],
-  );
+  const parent = sample.body?.id === body?.id ? sample.parent : null;
 
   // Beginner Mode hides advanced-audience sections and fields. Purely a display
   // filter — no body data is touched, so switching back restores everything,

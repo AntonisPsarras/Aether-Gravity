@@ -1,3 +1,4 @@
+import { captureSimulationSnapshot, type SimulationSnapshot } from '../utils/simulationSnapshot';
 
 import React, { useRef, useMemo, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree, extend, ThreeEvent } from '@react-three/fiber';
@@ -61,7 +62,7 @@ import RadiationEffects from './Environment/RadiationEffects';
 import OrbitPaths from './OrbitPaths';
 import DevPhysicsDiagnostics from './DevPhysicsDiagnostics';
 import TestMetricsCollector from './TestMetricsCollector';
-import { getPhysicsBodiesSnapshot, registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
+import { clonePhysicsBody, getPhysicsBodiesSnapshot, registerPhysicsBodiesRef, unregisterPhysicsBodiesRef } from '../utils/physicsBridge';
 import { registerRenderObjects, unregisterRenderObjects } from '../utils/renderBridge';
 import { getE2EConfig, isE2EMode } from '../utils/e2eConfig';
 import {
@@ -932,6 +933,7 @@ const PhysicsEngine = ({
   const lastTempUpdateRef = useRef(0);
   const lastParentMapUpdateRef = useRef(0);
   const lastBodyCountRef = useRef(0);
+  const lastBodyArrayRef = useRef<CelestialBody[] | null>(null);
   const { camera, controls } = useThree();
   const shaderData = useMemo(() => ({ positions: new Float32Array(50 * 3), masses: new Float32Array(50), radii: new Float32Array(50), types: new Float32Array(50) }), []);
 
@@ -967,8 +969,12 @@ const PhysicsEngine = ({
       dt,
       effectQuality.maxFragmentsPerImpact,
     )) {
+      resetVerletCache();
       stepStateRef.current.collisionOccurred = true;
     }
+    const beforeEvolution = eventBufferRef.current.length;
+    checkEvolutionInPlace(bodies, eventBufferRef.current);
+    if (eventBufferRef.current.length !== beforeEvolution) resetVerletCache();
     return bodies;
   }, [effectQuality.maxFragmentsPerImpact]);
 
@@ -1048,7 +1054,6 @@ const PhysicsEngine = ({
 
       if (bodiesRef.current && bodiesRef.current.length > 0) {
         const evolvedBodies = bodiesRef.current;
-        checkEvolutionInPlace(evolvedBodies, newEvents);
         bodiesRef.current = evolvedBodies;
 
         // Exhaustive over PhysicsEvent['type']. The previous drain only branched
@@ -1149,10 +1154,12 @@ const PhysicsEngine = ({
     // One O(N²) parent pass + id lookup map for the whole frame (BodyMesh, overlays).
     const physicsBodies = bodiesRef.current;
     const bodyCount = physicsBodies?.length ?? 0;
+    const bodyArrayChanged = physicsBodies !== lastBodyArrayRef.current;
+    lastBodyArrayRef.current = physicsBodies;
     const bodyCountChanged = bodyCount !== lastBodyCountRef.current;
     if (bodyCountChanged) lastBodyCountRef.current = bodyCount;
 
-    if (physicsBodies && physicsBodies.length > 0 && (bodyCountChanged || bodyByIdRef.current.size === 0 || currentTime - lastParentMapUpdateRef.current > 0.12 || collisionOccurred || newEvents.length > 0)) {
+    if (physicsBodies && physicsBodies.length > 0 && (bodyArrayChanged || bodyCountChanged || bodyByIdRef.current.size === 0 || currentTime - lastParentMapUpdateRef.current > 0.12 || collisionOccurred || newEvents.length > 0)) {
       fillParentMap(physicsBodies, parentMapRef.current);
       const byId = bodyByIdRef.current;
       byId.clear();
@@ -1360,7 +1367,7 @@ const SlingshotIndicator = ({
 const ObjectCreator: React.FC<{
   creationMode: BodyType | null;
   setCreationMode: (mode: BodyType | null) => void;
-  onBodyCreate: (snapshot: CelestialBody[], createdBody: CelestialBody) => void;
+  onBodyCreate: (snapshot: SimulationSnapshot, createdBody: CelestialBody) => void;
   floatingOffset: React.MutableRefObject<THREE.Vector3>;
   onDragActiveChange: (active: boolean) => void;
 }> = ({
@@ -1371,10 +1378,14 @@ const ObjectCreator: React.FC<{
   onDragActiveChange,
 }) => {
   const appendBody = useStore((s) => s.appendBody);
-  const { gl, controls } = useThree();
+  const { gl, controls, camera } = useThree();
+  const placementRay = useMemo(() => new THREE.Raycaster(), []);
+  const placementPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 21), []);
+  const pointerNdc = useMemo(() => new THREE.Vector2(), []);
   const rayHit = useRef(new THREE.Vector3());
   const originWorld = useRef(new THREE.Vector3());
   const isDraggingRef = useRef(false);
+  const activePointer = useRef<number | null>(null);
   const dragRef = useRef<SlingshotDragState>({
     active: false,
     originRender: new THREE.Vector3(),
@@ -1382,12 +1393,21 @@ const ObjectCreator: React.FC<{
   });
 
   const readPointerOnPlane = (e: ThreeEvent<PointerEvent>) => {
-    rayHit.current.set(e.point.x, 0, e.point.z);
+    // R3F captured intersections can belong to another pointer's last raycast.
+    // Project the owning pointer explicitly onto the placement plane instead.
+    const rect = gl.domElement.getBoundingClientRect();
+    pointerNdc.set((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1);
+    placementRay.setFromCamera(pointerNdc, camera);
+    placementRay.ray.intersectPlane(placementPlane, rayHit.current);
+    rayHit.current.y = 0;
     return rayHit.current;
   };
 
   const endDrag = () => {
+    const id = activePointer.current;
+    activePointer.current = null;
     isDraggingRef.current = false;
+    if (id !== null && gl.domElement.hasPointerCapture(id)) gl.domElement.releasePointerCapture(id);
     dragRef.current.active = false;
     onDragActiveChange(false);
     setOrbitControlsEnabled(controls, true);
@@ -1400,15 +1420,24 @@ const ObjectCreator: React.FC<{
   };
 
   useEffect(() => {
+    const abort = () => { if (isDraggingRef.current) endDrag(); };
+    const hidden = () => { if (document.hidden) abort(); };
+    window.addEventListener('blur', abort);
+    document.addEventListener('visibilitychange', hidden);
+    const lost = (event: PointerEvent) => { if (event.pointerId === activePointer.current) abort(); };
+    gl.domElement.addEventListener('lostpointercapture', lost);
     return () => {
-      if (isDraggingRef.current) {
-        endDrag();
-      }
+      window.removeEventListener('blur', abort);
+      document.removeEventListener('visibilitychange', hidden);
+      gl.domElement.removeEventListener('lostpointercapture', lost);
+      abort();
     };
-  }, []);
+  }, [gl]);
+  useEffect(() => { if (!creationMode && isDraggingRef.current) endDrag(); }, [creationMode]);
 
   const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
-    if (!creationMode) return;
+    if (!creationMode || activePointer.current !== null) return;
+    activePointer.current = event.pointerId;
     cancelAllBodyPointerGestures();
     event.stopPropagation();
     gl.domElement.setPointerCapture(event.pointerId);
@@ -1425,16 +1454,14 @@ const ObjectCreator: React.FC<{
   };
 
   const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
-    if (!creationMode || !isDraggingRef.current) return;
+    if (!creationMode || !isDraggingRef.current || activePointer.current !== event.pointerId) return;
     event.stopPropagation();
     dragRef.current.pointerRender.copy(readPointerOnPlane(event));
   };
 
   const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
-    if (!creationMode || !isDraggingRef.current) return;
+    if (!creationMode || !isDraggingRef.current || activePointer.current !== event.pointerId) return;
     event.stopPropagation();
-    releasePointerCapture(event);
-
     const originRender = dragRef.current.originRender;
     const releaseRender = readPointerOnPlane(event);
 
@@ -1461,11 +1488,7 @@ const ObjectCreator: React.FC<{
         .multiplyScalar(LAUNCH_VELOCITY_SCALE),
     );
 
-    const snapshot = useStore.getState().bodies.map((b) => ({
-      ...b,
-      position: b.position.clone(),
-      velocity: b.velocity.clone(),
-    }));
+    const snapshot = captureSimulationSnapshot(useStore.getState().bodies);
 
     const newBody = createSandboxBody({
       id: `created-${creationMode}-${Date.now()}`,
@@ -1489,7 +1512,7 @@ const ObjectCreator: React.FC<{
   };
 
   const handlePointerCancel = (event: ThreeEvent<PointerEvent>) => {
-    if (!creationMode || !isDraggingRef.current) return;
+    if (!creationMode || !isDraggingRef.current || activePointer.current !== event.pointerId) return;
     event.stopPropagation();
     releasePointerCapture(event);
     endDrag();
@@ -2484,7 +2507,7 @@ const AdaptiveOrbitControls = ({ enabled }: { enabled: boolean }) => {
 const SpaceCanvas: React.FC<{
   creationMode: BodyType | null;
   setCreationMode: (mode: BodyType | null) => void;
-  onBodyCreate: (snapshot: CelestialBody[], createdBody: CelestialBody) => void;
+  onBodyCreate: (snapshot: SimulationSnapshot, createdBody: CelestialBody) => void;
 }> = ({ creationMode, setCreationMode, onBodyCreate }) => {
   const isTouchDevice = detectIsTouch();
   const detectedTier = useDeviceTier();
@@ -2529,7 +2552,7 @@ const SpaceCanvas: React.FC<{
   const showDust = useStore((s) => s.showDust);
   const showStability = useStore((s) => s.showStability);
   const showOrbitPaths = useStore((s) => s.showOrbitPaths);
-  const historyVersion = useStore((s) => s.historyVersion);
+
   const isInteractingWithUI = useStore((s) => s.isInteractingWithUI);
 
   const handleCreationDragChange = React.useCallback((active: boolean) => {
@@ -2581,12 +2604,10 @@ const SpaceCanvas: React.FC<{
     [bodies]
   );
 
-  const bodiesSignature = useMemo(
-    () => (bodies || []).map((b) => b.id).join('|'),
-    [bodies],
-  );
-
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // Seed only on mount. Store actions update the registered live world synchronously.
+    bodiesRef.current = sanitizeCelestialBodies(useStore.getState().bodies.map(clonePhysicsBody));
+    resetVerletCache();
     registerPhysicsBodiesRef(bodiesRef);
     return () => unregisterPhysicsBodiesRef(bodiesRef);
   }, []);
@@ -2613,24 +2634,6 @@ const SpaceCanvas: React.FC<{
       document.removeEventListener('visibilitychange', clearUiInteractionLock);
     };
   }, []);
-
-  useEffect(() => {
-    // Sync physics whenever body identities change (generate, undo, load) — not only count.
-    // Reset the integrator's cached accelerations + timestep accumulator so a
-    // freshly loaded world doesn't get hit with a stale a(t) from the old one.
-    const currentBodies = useStore.getState().bodies;
-    bodiesRef.current = sanitizeCelestialBodies(
-      (currentBodies || []).map((b) => ({
-        ...b,
-        position: b.position.clone(),
-        velocity: b.velocity.clone(),
-      })),
-    );
-    resetVerletCache();
-    const retainedTime = getSimTime();
-    resetAccumulator();
-    setSimTime(retainedTime);
-  }, [bodiesSignature, historyVersion]);
 
   // BodyMesh's mount/unmount is the *only* writer of this registry. PhysicsEngine
   // reads it every frame to place the meshes, so anything else emptying it (a

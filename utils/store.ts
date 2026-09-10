@@ -7,10 +7,12 @@ import {
   findPrimaryStar,
   reconcileBodyDerivedState,
 } from './physicsUtils';
-import { patchPhysicsBody, replacePhysicsBodies, appendPhysicsBody } from './physicsBridge';
+import { replacePhysicsBodies, appendPhysicsBody, getPhysicsBodiesSnapshot, clonePhysicsBody } from './physicsBridge';
+import type { SimulationSnapshot } from './simulationSnapshot';
+import { meanMotion, normalizeAngle } from './keplerOrbit';
 import { G_CONSTANT } from '../constants';
 import { buildRealSystem, getRealSystem } from '../content/realSystems';
-import { resetAccumulator, resetVerletCache, setSimTime } from './physicsSoA';
+import { resetAccumulator, resetVerletCache, setSimTime, getSimTime } from './physicsSoA';
 import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
 import type { UiMode } from './displayMode';
 import { getUiMode, saveUiMode } from './displayPrefs';
@@ -100,6 +102,7 @@ interface AppState {
   appendBody: (body: CelestialBody) => void;
   updateBody: (id: string, updates: Partial<CelestialBody>) => void;
   removeBody: (id: string) => void;
+  restoreSimulation: (snapshot: SimulationSnapshot) => void;
   selectBody: (id: string | null) => void;
   openInspector: (id: string | null) => void;
   closeInspector: () => void;
@@ -274,7 +277,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setBodies: (bodiesOrFn) => {
     const state = get();
-    const raw = typeof bodiesOrFn === 'function' ? bodiesOrFn(state.bodies) : bodiesOrFn;
+    const raw = typeof bodiesOrFn === 'function' ? bodiesOrFn(getPhysicsBodiesSnapshot(state.bodies).map(clonePhysicsBody)) : bodiesOrFn;
     const newBodies = sanitizeCelestialBodies(raw);
     set({ bodies: newBodies });
     replacePhysicsBodies(newBodies);
@@ -286,7 +289,7 @@ export const useStore = create<AppState>((set, get) => ({
       position: body.position.clone(),
       velocity: body.velocity.clone(),
     });
-    const next = appendPhysicsBody(sanitized);
+    const next = appendPhysicsBody(sanitized, get().bodies);
     set({
       bodies: next.map((b) => ({
         ...b,
@@ -320,9 +323,8 @@ export const useStore = create<AppState>((set, get) => ({
         velocity: clampVelocityVector(updates.velocity.clone()),
       };
     }
-    const touchedPosVel = updates.position !== undefined || updates.velocity !== undefined;
     set((state) => {
-    const oldBodies = state.bodies;
+    const oldBodies = getPhysicsBodiesSnapshot(state.bodies).map(clonePhysicsBody);
     const bodyIndex = oldBodies.findIndex(b => b.id === id);
     if (bodyIndex === -1) return {};
 
@@ -364,13 +366,18 @@ export const useStore = create<AppState>((set, get) => ({
 
     // Cascading Updates Logic
     if (updates.mass !== undefined && updates.mass !== body.mass) {
-      // Maintain Orbital Stability of Children
-      // If we change this body's mass, its children (satellites) need their velocity adjusted 
-      // to maintain their current orbit shape, OR we accept they will spiral.
-      // The user prompt asked for "changes in one property (like mass) automatically cascade".
-      // Let's adjust children velocities to keep them in stable orbit at current distance.
-      // v = sqrt(GM/r). New v = v_old * sqrt(M_new / M_old)
-      const massRatio = Math.sqrt(updates.mass / body.mass);
+      // Preserve the current osculating orbit by scaling relative velocity
+      // with sqrt(mu_new / mu_old), rebasing analytic epochs at this phase.
+      if (newBody.parentId && newBody.orbit) {
+        const primary = oldBodies.find(b => b.id === newBody.parentId);
+        if (primary) {
+          const t = getSimTime();
+          newBody.orbit = { ...newBody.orbit,
+            m0: normalizeAngle(newBody.orbit.m0 + meanMotion(newBody.orbit.a, G_CONSTANT * (primary.mass + body.mass)) * (t - newBody.orbit.epoch)),
+            epoch: t,
+          };
+        }
+      }
 
       // We need to update OTHER bodies in the array
       newBody = sanitizeCelestialBody(newBody);
@@ -379,10 +386,17 @@ export const useStore = create<AppState>((set, get) => ({
 
       updatedBodies.forEach((other, idx) => {
         if (idx === bodyIndex) return;
-        const parent = findDominantParent(other, updatedBodies);
+        const parent = findDominantParent(other, oldBodies);
         if (parent && parent.id === body.id) {
+          if (other.parentId === body.id && other.orbit) {
+            const t = getSimTime();
+            other.orbit = { ...other.orbit,
+              m0: normalizeAngle(other.orbit.m0 + meanMotion(other.orbit.a, G_CONSTANT * (body.mass + other.mass)) * (t - other.orbit.epoch)),
+              epoch: t,
+            };
+          }
           const relVel = other.velocity.clone().sub(body.velocity);
-          relVel.multiplyScalar(massRatio);
+          relVel.multiplyScalar(Math.sqrt((newBody.mass + other.mass) / (body.mass + other.mass)));
           other.velocity.copy(body.velocity).add(relVel);
           clampVelocityVector(other.velocity);
         }
@@ -397,39 +411,26 @@ export const useStore = create<AppState>((set, get) => ({
     return { bodies: newBodies };
     });
 
-    const final = get().bodies.find((b) => b.id === id);
-    if (!final) return;
-    const patch: Partial<CelestialBody> = {
-      mass: final.mass,
-      radius: final.radius,
-      radiusKm: final.radiusKm,
-      type: final.type,
-      temperature: final.temperature,
-      color: final.color,
-      texture: final.texture,
-      properties: final.properties,
-    };
-    if (touchedPosVel) {
-      patch.position = final.position;
-      patch.velocity = final.velocity;
-    }
-    // The Orbit tab edits satellite elements directly; forward the prescribed
-    // orbit so the live moon and its read-only path agree even while paused.
-    if ('orbit' in updates) patch.orbit = final.orbit;
-    patchPhysicsBody(id, patch);
+    // The edited array was derived from one coherent live snapshot.
+    replacePhysicsBodies(get().bodies);
+  },
 
-    if (updates.mass !== undefined) {
-      get().bodies.forEach((other) => {
-        if (other.id === id) return;
-        const dom = findDominantParent(other, get().bodies);
-        if (dom?.id === id) patchPhysicsBody(other.id, { velocity: other.velocity });
-      });
-    }
+  restoreSimulation: (snapshot) => {
+    const bodies = sanitizeCelestialBodies(snapshot.bodies.map(clonePhysicsBody));
+    resetAccumulator();
+    setSimTime(snapshot.simTime);
+    replacePhysicsBodies(bodies);
+    set(state => ({
+      bodies, historyVersion: state.historyVersion + 1, inspectorLocks: {},
+      selectedId: bodies.some(b => b.id === state.selectedId) ? state.selectedId : null,
+      inspectorBodyId: bodies.some(b => b.id === state.inspectorBodyId) ? state.inspectorBodyId : null,
+      cameraLockedId: bodies.some(b => b.id === state.cameraLockedId) ? state.cameraLockedId : null,
+    }));
   },
 
   removeBody: (id) => {
     set((state) => ({
-      bodies: state.bodies.filter((b) => b.id !== id),
+      bodies: getPhysicsBodiesSnapshot(state.bodies).filter((b) => b.id !== id).map(clonePhysicsBody),
       selectedId: state.selectedId === id ? null : state.selectedId,
       inspectorBodyId: state.inspectorBodyId === id ? null : state.inspectorBodyId,
       cameraLockedId: state.cameraLockedId === id ? null : state.cameraLockedId,

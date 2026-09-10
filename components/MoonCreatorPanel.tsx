@@ -1,3 +1,4 @@
+import { captureSimulationSnapshot, type SimulationSnapshot } from '../utils/simulationSnapshot';
 /**
  * DOM half of the moon creator: parent picker, orbit controls, read-outs and
  * the Create action. A floating card on tablet/desktop and a fixed-height
@@ -53,7 +54,7 @@ const MAX_LABEL: Record<MoonMaxReason, string> = {
 };
 
 export const MoonCreatorPanel: React.FC<{
-  onCreated: (snapshot: CelestialBody[], body: CelestialBody) => void;
+  onCreated: (snapshot: SimulationSnapshot, body: CelestialBody) => void;
   onCancel: () => void;
   onSwitchMode: (mode: BodyType) => void;
 }> = ({ onCreated, onCancel, onSwitchMode }) => {
@@ -111,7 +112,7 @@ export const MoonCreatorPanel: React.FC<{
       return;
     }
     // Undo must restore the live system, not the store's last synced copy.
-    const snapshot = bodies.map((b) => ({ ...b, position: b.position.clone(), velocity: b.velocity.clone() }));
+    const snapshot = captureSimulationSnapshot(bodies);
     const epoch = getSimTime();
     const moon = buildMoonOnOrbit(res, `created-Moon-${Date.now()}`, `Moon ${store.getNextNumber('Moon')}`, epoch);
 

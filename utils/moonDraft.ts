@@ -60,8 +60,7 @@ export const useMoonDraft = create<MoonDraftState>((set) => ({
  * physics array. Falls back to the store before the canvas has registered.
  */
 export const getLiveBodies = (): readonly CelestialBody[] => {
-  const live = getPhysicsBodiesSnapshot();
-  return live.length > 0 ? live : useStore.getState().bodies;
+  return getPhysicsBodiesSnapshot(useStore.getState().bodies);
 };
 
 /**

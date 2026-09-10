@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     esbuild: {
-      drop: mode === 'production' ? ['debugger', 'console'] : [],
+      drop: mode === 'production' ? ['debugger'] : [],
     },
     plugins: [react()],
     resolve: {

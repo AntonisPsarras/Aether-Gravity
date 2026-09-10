@@ -192,13 +192,17 @@ export const elementsFromState = (
   let lan = 0;
   if (nLen > 1e-9) {
     lan = Math.acos(Math.max(-1, Math.min(1, n.x / nLen)));
-    if (n.z < 0) lan = 2 * Math.PI - lan;
+    if (n.z > 0) lan = 2 * Math.PI - lan;
   }
 
   let argp = 0;
   if (nLen > 1e-9 && ecc > 1e-9) {
     argp = Math.acos(Math.max(-1, Math.min(1, n.dot(eVec) / (nLen * ecc))));
     if (eVec.y < 0) argp = 2 * Math.PI - argp;
+  }
+
+  if (nLen <= 1e-9 && ecc > 1e-9) {
+    argp = normalizeAngle(Math.atan2(-eVec.z * Math.sign(h.y), eVec.x));
   }
 
   let nu: number;
@@ -209,7 +213,7 @@ export const elementsFromState = (
     nu = Math.acos(Math.max(-1, Math.min(1, n.dot(relPosition) / (nLen * r))));
     if (relPosition.y < 0) nu = 2 * Math.PI - nu;
   } else {
-    nu = normalizeAngle(Math.atan2(-relPosition.z, relPosition.x));
+    nu = normalizeAngle(Math.atan2(-relPosition.z * Math.sign(h.y), relPosition.x));
   }
 
   return {

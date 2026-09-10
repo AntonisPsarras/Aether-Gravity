@@ -1,3 +1,4 @@
+import { getPhysicsBodiesSnapshot } from '../../utils/physicsBridge';
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { ChevronDown, List } from 'lucide-react';
 import type { BodyCategory } from '../../constants';
@@ -40,7 +41,7 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
   /**
    * Subscribe to a *string* fingerprint rather than to `bodies`.
    *
-   * The store hands back a new array on every integrator step, so selecting the
+   * The store publishes arrays for edits and structural events, so selecting the
    * array itself would re-render (and rebuild) this panel at 60 Hz. The
    * signature only changes when a body is added, removed, or explicitly
    * reparented, so zustand's Object.is check absorbs the churn.
@@ -76,7 +77,7 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
   const model = useMemo(() => {
     // Read the array imperatively: the memo key above is what decides when this
     // is allowed to be stale, not the array's identity.
-    const bodies = useStore.getState().bodies;
+    const bodies = [...getPhysicsBodiesSnapshot(useStore.getState().bodies)];
     const primary = findPrimaryStar(bodies);
 
     // A Proxima planet must be evaluated against Proxima, not the first star
