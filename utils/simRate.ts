@@ -41,11 +41,31 @@ export const BASE_YEARS_PER_REAL_SECOND = 0.04;
  */
 export const BEGINNER_TIME_SCALE = 0.35;
 
+/** Slider and mode rate before scientific encounter pacing is applied. */
+export const requestedSimYearsPerRealSecond = (speed: number, mode: UiMode): number => {
+  if (!isFinite(speed)) return 0;
+  return speed * BASE_YEARS_PER_REAL_SECOND * (mode === 'beginner' ? BEGINNER_TIME_SCALE : 1);
+};
+
+/**
+ * How much of the requested slider rate can be consumed without exceeding the
+ * current scientific timestep budget. Kept separate from the rate itself so
+ * the live UI can explain a temporary close-encounter slowdown.
+ */
+export const simulationPacingScale = (
+  speed: number,
+  mode: UiMode,
+  bodies: readonly CelestialBody[] = [],
+  tier: DeviceTier = 'high',
+): number => {
+  const requested = requestedSimYearsPerRealSecond(speed, mode);
+  return scientificPacingScale(bodies, physicsStepPolicy(tier).maxCatchupSteps, requested);
+};
+
 /** Sim-years consumed per real second at the given slider position and mode. */
 export const simYearsPerRealSecond = (speed: number, mode: UiMode, bodies: readonly CelestialBody[] = [], tier: DeviceTier = 'high'): number => {
-  if (!isFinite(speed)) return 0;
-  const modeScale = mode === 'beginner' ? BEGINNER_TIME_SCALE : 1;
-  return speed * BASE_YEARS_PER_REAL_SECOND * modeScale * scientificPacingScale(bodies, physicsStepPolicy(tier).maxCatchupSteps);
+  const requested = requestedSimYearsPerRealSecond(speed, mode);
+  return requested * simulationPacingScale(speed, mode, bodies, tier);
 };
 
 /**

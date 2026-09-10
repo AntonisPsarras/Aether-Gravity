@@ -50,19 +50,33 @@ export function currentScientificStepLimit(bodies: readonly CelestialBody[]): nu
   }
   return state.limit;
 }
-/** Recheck only at step boundaries; retain the strictest limit until an edit.
+/** Recheck only at step boundaries.
  * Eight steps cover at most 1/8 of an encounter timescale. This leaves a wide
- * margin while avoiding a second pair scan on every force evaluation.
+ * margin while avoiding a second pair scan on every force evaluation. The
+ * fresh result deliberately replaces the previous one: a close fly-by must
+ * not leave the entire scene permanently paced at its pericentre timestep.
  */
 export function advanceScientificStepPolicy(bodies: readonly CelestialBody[]): void {
   currentScientificStepLimit(bodies);
   const state = states.get(bodies)!;
   if (++state.steps >= 8) {
-    state.limit = Math.min(state.limit, scientificStepLimit(bodies));
+    state.limit = scientificStepLimit(bodies);
     state.steps = 0;
   }
 }
-/** Reserve a 30 fps budget at the maximum 4x slider value. */
-export function scientificPacingScale(bodies: readonly CelestialBody[], maxSteps: number): number {
-  return Math.min(1, currentScientificStepLimit(bodies) * maxSteps * 30 * 0.8 / 0.16);
+/**
+ * Fraction of a requested simulation rate that the current scientific step
+ * can sustain. We reserve 20% of an intentionally conservative 30 fps budget
+ * for frame-time jitter; a lower slider setting keeps its full rate until it
+ * actually needs more than that budget.
+ */
+export function scientificPacingScale(
+  bodies: readonly CelestialBody[],
+  maxSteps: number,
+  requestedYearsPerRealSecond: number,
+): number {
+  const requested = Math.abs(requestedYearsPerRealSecond);
+  if (!(requested > 0) || !Number.isFinite(requested)) return 1;
+  const available = currentScientificStepLimit(bodies) * maxSteps * 30 * 0.8;
+  return Math.min(1, available / requested);
 }

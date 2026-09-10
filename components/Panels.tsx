@@ -152,7 +152,7 @@ const TRACK_ZONES = `linear-gradient(to right, rgba(167,139,250,0.35) 0%, rgba(1
  * and supplies the thumb and the 44px hit area — the decoration is inset by
  * half a thumb so the percentages line up with where the thumb actually sits.
  */
-const TimeScrubber: React.FC<{ speed: number; state: TimeState }> = ({ speed, state }) => {
+const TimeScrubber: React.FC<{ speed: number; state: TimeState; effectiveSpeed: number; resolvingEncounter: boolean }> = ({ speed, state, effectiveSpeed, resolvingEncounter }) => {
   const setSpeed = useStore((s) => s.setSpeed);
   const color = TIME_STATE_VISUALS[state].color;
   const at = speedPercent(speed);
@@ -199,7 +199,7 @@ const TimeScrubber: React.FC<{ speed: number; state: TimeState }> = ({ speed, st
         aria-label="Simulation speed"
         aria-valuetext={state === 'stopped'
           ? TIME_STATE_VISUALS[state].label
-          : `${TIME_STATE_VISUALS[state].label}, ${formatSpeedReadout(speed, state)}`}
+          : `${TIME_STATE_VISUALS[state].label}, ${formatSpeedReadout(speed, state)}${resolvingEncounter ? `, currently ${formatSpeedReadout(effectiveSpeed, timeStateFor(effectiveSpeed, false))} while resolving a close encounter` : ''}`}
         onPointerDown={() => {
           useStore.getState().setInteractingWithUI(true);
           hapticSelectionStart();
@@ -216,6 +216,7 @@ const TimeScrubber: React.FC<{ speed: number; state: TimeState }> = ({ speed, st
 export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMenu: () => void, onUndo: () => void, onRedo: () => void, canUndo: boolean, canRedo: boolean }> = ({ creationMode, onReturnToMenu, onUndo, onRedo, canUndo, canRedo }) => {
   const paused = useStore((s) => s.paused);
   const speed = useStore((s) => s.speed);
+  const scientificPacingScale = useStore((s) => s.scientificPacingScale);
   const cameraLockedId = useStore((s) => s.cameraLockedId);
   const selectedId = useStore((s) => s.selectedId);
   const settingsOpen = useStore((s) => s.settingsOpen);
@@ -257,6 +258,8 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
   const timeState = timeStateFor(speed, paused);
   const timeVisual = TIME_STATE_VISUALS[timeState];
   const TimeIcon = TIME_STATE_ICONS[timeState];
+  const effectiveSpeed = speed * scientificPacingScale;
+  const resolvingEncounter = !paused && Math.abs(speed) > 0.01 && scientificPacingScale < 0.995;
   const lastTimeState = useRef(timeState);
   // Nonce for the transient state pill; 0 hides it. Bumping it (rather than a
   // boolean) restarts both the fade-in and the hide timer on rapid changes.
@@ -305,14 +308,18 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
           <button onClick={() => setPaused(!paused)} data-testid="control-pause" aria-label={paused ? 'Resume' : 'Pause'} title={paused ? 'Resume' : 'Pause'} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 shrink-0 ${paused ? 'bg-orange-500/20 text-orange-400' : 'hover:bg-white/10 text-slate-200'}`}>
             {paused ? <Play size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" /> : <Pause size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" />}
           </button>
-          <TimeScrubber speed={speed} state={timeState} />
+          <TimeScrubber speed={speed} state={timeState} effectiveSpeed={effectiveSpeed} resolvingEncounter={resolvingEncounter} />
           <span
             data-testid="control-speed-readout"
-            className="flex items-center justify-end gap-1 shrink-0 min-w-[3.75rem] text-[11px] md:text-sm font-mono font-bold tabular-nums transition-colors duration-200"
+            className="flex flex-col items-end justify-center shrink-0 min-w-[3.75rem] text-[11px] md:text-sm font-mono font-bold tabular-nums transition-colors duration-200 leading-tight"
             style={{ color: timeVisual.color }}
           >
-            <TimeIcon size={12} className="shrink-0" fill="currentColor" aria-hidden />
-            {formatSpeedReadout(speed, timeState)}
+            <span className="flex items-center gap-1 whitespace-nowrap">
+              <TimeIcon size={12} className="shrink-0" fill="currentColor" aria-hidden />
+              {formatSpeedReadout(speed, timeState)}
+              {resolvingEncounter && <> → {formatSpeedReadout(effectiveSpeed, timeStateFor(effectiveSpeed, false))}</>}
+            </span>
+            {resolvingEncounter && <span className="text-[9px] font-medium opacity-80 whitespace-nowrap">resolving close encounter</span>}
           </span>
         </div>
 

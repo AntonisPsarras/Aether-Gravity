@@ -57,6 +57,8 @@ interface AppState {
   // Settings
   paused: boolean;
   speed: number;
+  /** Live, non-persisted fraction of the requested rate the physics budget can sustain. */
+  scientificPacingScale: number;
   showGrid: boolean;
   showDust: boolean;
   showHabitable: boolean;
@@ -111,6 +113,7 @@ interface AppState {
   // Simulation Controls
   setPaused: (paused: boolean) => void;
   setSpeed: (speed: number) => void;
+  setScientificPacingScale: (scale: number) => void;
   toggleGrid: () => void;
   toggleDust: () => void;
   toggleHabitable: () => void;
@@ -153,6 +156,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   paused: false,
   speed: 1.0,
+  scientificPacingScale: 1,
   showGrid: true,
   showDust: true,
   showHabitable: false,
@@ -279,7 +283,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     const raw = typeof bodiesOrFn === 'function' ? bodiesOrFn(getPhysicsBodiesSnapshot(state.bodies).map(clonePhysicsBody)) : bodiesOrFn;
     const newBodies = sanitizeCelestialBodies(raw);
-    set({ bodies: newBodies });
+    set({ bodies: newBodies, scientificPacingScale: 1 });
     replacePhysicsBodies(newBodies);
   },
 
@@ -296,6 +300,7 @@ export const useStore = create<AppState>((set, get) => ({
         position: b.position.clone(),
         velocity: b.velocity.clone(),
       })),
+      scientificPacingScale: 1,
     });
   },
 
@@ -421,7 +426,7 @@ export const useStore = create<AppState>((set, get) => ({
     setSimTime(snapshot.simTime);
     replacePhysicsBodies(bodies);
     set(state => ({
-      bodies, historyVersion: state.historyVersion + 1, inspectorLocks: {},
+      bodies, historyVersion: state.historyVersion + 1, inspectorLocks: {}, scientificPacingScale: 1,
       selectedId: bodies.some(b => b.id === state.selectedId) ? state.selectedId : null,
       inspectorBodyId: bodies.some(b => b.id === state.inspectorBodyId) ? state.inspectorBodyId : null,
       cameraLockedId: bodies.some(b => b.id === state.cameraLockedId) ? state.cameraLockedId : null,
@@ -492,6 +497,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   setPaused: (paused) => set({ paused }),
   setSpeed: (speed) => set({ speed: clampSpeed(speed) }),
+  setScientificPacingScale: (scale) => set((state) => {
+    const next = Number.isFinite(scale) ? Math.max(0, Math.min(1, scale)) : 1;
+    return Math.abs(state.scientificPacingScale - next) < 0.001 ? state : { scientificPacingScale: next };
+  }),
   toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
   toggleDust: () => set((state) => ({ showDust: !state.showDust })),
   toggleHabitable: () => set((state) => ({ showHabitable: !state.showHabitable })),
@@ -552,6 +561,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     set({
       bodies: sanitized,
+      scientificPacingScale: 1,
       guidedView: null,
       selectedId: null,
       inspectorBodyId: null,
@@ -594,6 +604,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     set({
       worldId: data.id,
+      scientificPacingScale: 1,
       guidedView: null,
       cameraRecenterNonce: state.cameraRecenterNonce + 1,
       bodies: loadedBodies,

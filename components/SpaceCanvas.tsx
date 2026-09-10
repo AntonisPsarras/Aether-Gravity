@@ -31,7 +31,7 @@ import {
   depthTintFor, tidalKneeFor, tidalMaxFor,
   visualScaleFor,
 } from '../utils/displayMode';
-import { simElapsedForFrame } from '../utils/simRate';
+import { simElapsedForFrame, simulationPacingScale } from '../utils/simRate';
 import { presetViewFrame } from '../utils/presetViews';
 import { bodyVisualRadius } from '../utils/displayMode';
 import HabitableZoneVisual from './HabitableZoneVisual';
@@ -1127,6 +1127,15 @@ const PhysicsEngine = ({
         }
       }
     }
+
+    // The scientific step cache may have refreshed while draining this frame.
+    // Publish the resulting rate fraction separately from persisted world data
+    // so the control bar can explain a temporary close-encounter slowdown.
+    useStore.getState().setScientificPacingScale(
+      paused || Math.abs(speed) <= 0.01
+        ? 1
+        : simulationPacingScale(speed, uiMode, bodiesRef.current, deviceTier),
+    );
 
     // One O(N²) parent pass + id lookup map for the whole frame (BodyMesh, overlays).
     const physicsBodies = bodiesRef.current;
