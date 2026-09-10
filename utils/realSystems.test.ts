@@ -312,38 +312,6 @@ describe('TRAPPIST-1 preset', () => {
   });
 });
 
-describe('Alpha Centauri preset', () => {
-  it('reproduces the 79.9-year binary period', () => {
-    const bodies = buildRealSystem(getRealSystem('alpha-centauri')!);
-    const a = bodies.find((b) => b.name === 'Alpha Centauri A')!;
-    const b = bodies.find((b) => b.name === 'Alpha Centauri B')!;
-    const el = getOrbitalElements(b, a);
-    within(orbitalPeriodYears(el.a, a.mass + b.mass), 79.91, 2, 'binary period');
-  });
-
-  it('has a strongly eccentric binary orbit', () => {
-    const bodies = buildRealSystem(getRealSystem('alpha-centauri')!);
-    const a = bodies.find((x) => x.name === 'Alpha Centauri A')!;
-    const b = bodies.find((x) => x.name === 'Alpha Centauri B')!;
-    const el = getOrbitalElements(b, a);
-    expect(el.e).toBeGreaterThan(0.50);
-    expect(el.e).toBeLessThan(0.54);
-    // Separation swings between about 11.2 and 35.6 AU.
-    within(distToAU(el.a * (1 - el.e)), 11.2, 6, 'periapsis');
-    within(distToAU(el.a * (1 + el.e)), 35.6, 6, 'apoapsis');
-  });
-
-  it('gives both stars sensible masses and luminosities', () => {
-    const bodies = buildRealSystem(getRealSystem('alpha-centauri')!);
-    const a = bodies.find((x) => x.name === 'Alpha Centauri A')!;
-    const b = bodies.find((x) => x.name === 'Alpha Centauri B')!;
-    within(a.mass / M_SUN_IN_EARTH, 1.1055, 0.5, 'A mass');
-    within(b.mass / M_SUN_IN_EARTH, 0.9373, 0.5, 'B mass');
-    expect(a.properties?.luminositySolarDerived).toBeGreaterThan(1.0);
-    expect(b.properties?.luminositySolarDerived).toBeLessThan(1.0);
-  });
-});
-
 describe('all presets', () => {
   it('produce finite, in-bounds bodies with unique ids', () => {
     for (const system of REAL_SYSTEMS) {

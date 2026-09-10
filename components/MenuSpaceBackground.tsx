@@ -36,7 +36,6 @@ type Theme = {
 const THEMES: Record<string, Theme> = {
   'solar-system': { accent: '#f9d423', secondary: '#77b8ff', disk: { diskTemperature: 7000, diskTint: '#ff8a3d', tintMix: 0.45, gridFar: '#3d5bd6' } },
   'trappist-1': { accent: '#ff765d', secondary: '#c86cff', disk: { diskTemperature: 5200, diskTint: '#ff3d6e', tintMix: 0.55, gridFar: '#7a3fd1' } },
-  'alpha-centauri': { accent: '#ffe3a3', secondary: '#86b8ff', disk: { diskTemperature: 8600, diskTint: '#ffd27a', tintMix: 0.3, gridFar: '#4468d8' } },
   // The Play Store feature graphic: white-hot core, ember rim, violet bands.
   procedural: { accent: '#92d7ff', secondary: '#b777ff', disk: { diskTemperature: 8000, diskTint: '#9a5cff', tintMix: 0.85, gridFar: '#4b3fc4' } },
 };

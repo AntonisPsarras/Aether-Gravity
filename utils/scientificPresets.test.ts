@@ -4,9 +4,9 @@ import { buildRealSystem, getRealSystem, REAL_SYSTEMS } from '../content/realSys
 import { scientificStepLimit } from './scientificStep';
 import { resetVerletCache, verletStepInPlace, resetAccumulator, runFixedSteps, getSimTime } from './physicsSoA';
 import { bodyLuminositySolar, checkCollisions, getOrbitalElements, pairSofteningSq, reconcileBodyDerivedState } from './physicsUtils';
-import { isSatellite, propagateSatellites, satellitePeriodYears } from './moonSystem';
+import { isSatellite, propagateSatellites } from './moonSystem';
 import { serializeBodies, deserializeBodies, parseWorldData } from './worldStorage';
-import { G_AETHER, distToAU } from './units';
+import { G_AETHER } from './units';
 import { bodyVisualRadius } from './displayMode';
 import { presetViewFrame, presetViews } from './presetViews';
 import { simElapsedForFrame } from './simRate';
@@ -41,7 +41,7 @@ describe('scientific presets', () => {
   });
 
   it('keeps measured luminosity after derivation and save/load', () => {
-    for (const id of ['solar-system', 'trappist-1', 'alpha-centauri']) {
+    for (const id of ['solar-system', 'trappist-1']) {
       const bodies = deserializeBodies(serializeBodies(build(id)));
       for (const b of bodies.filter(b => b.type === 'Star')) {
         const measured = b.properties!.luminositySolar!;
@@ -74,20 +74,6 @@ describe('scientific presets', () => {
     }
   });
 
-  it('initializes the Centauri hierarchy at real separation and includes b and d', () => {
-    const bodies = build('alpha-centauri');
-    const [a, b, p] = bodies;
-    const centre = a.position.clone().multiplyScalar(a.mass).addScaledVector(b.position, b.mass).divideScalar(a.mass + b.mass);
-    const separation = distToAU(p.position.distanceTo(centre));
-    expect(separation).toBeGreaterThan(12500);
-    expect(separation).toBeLessThan(13500);
-    expect(bodies.length).toBe(5);
-    expect(satellitePeriodYears(bodies[3], p) * 365.25).toBeCloseTo(11.186, 1);
-    expect(satellitePeriodYears(bodies[4], p) * 365.25).toBeCloseTo(5.122, 1);
-    const roundTrip = deserializeBodies(serializeBodies(bodies));
-    expect(roundTrip[2].position.distanceTo(p.position)).toBe(0);
-  });
-
   it('uses the same scientific step on low and high tiers, with bounded playback', () => {
     for (const tier of ['low', 'high'] as const) {
       for (const mode of ['beginner', 'advanced'] as const) {
@@ -114,17 +100,6 @@ describe('scientific presets', () => {
     const raw = { id: 'science', version: 2, bodies: serializeBodies(build('trappist-1')), settings: { simTime: 12.5 } };
     expect(parseWorldData(raw)?.settings.simTime).toBe(12.5);
     expect(parseWorldData({ ...raw, settings: {} })?.settings.simTime).toBe(0);
-  });
-
-  it('keeps the Centauri binary bound over a full 80-year revolution', () => {
-    resetVerletCache();
-    const bodies = build('alpha-centauri').filter(b => !isSatellite(b));
-    const initial = getOrbitalElements(bodies[1], bodies[0]);
-    for (let i = 0; i < 80 * 1024; i++) verletStepInPlace(bodies, 1 / 1024);
-    const final = getOrbitalElements(bodies[1], bodies[0]);
-    expect(Math.abs(final.a / initial.a - 1)).toBeLessThan(1e-5);
-    expect(Math.abs(final.e - initial.e)).toBeLessThan(1e-5);
-    expect(checkCollisions(bodies, 0).active.length).toBe(3);
   });
 
   it('uses synchronous orbital periods and preserves retrograde obliquities', () => {

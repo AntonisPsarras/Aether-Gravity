@@ -37,7 +37,7 @@ Everything runs locally. The app makes **no network requests at all**: no accoun
 | **A real unit system** | Masses in Earth masses, lengths in 0.025 AU, time in Julian years — with `G` derived from SI rather than tuned by hand. Physical radius and drawn radius are separate values, so nothing has to lie to stay visible. |
 | **Relativistic black holes** | Kerr horizons, oblate ergospheres, ISCO and photon-sphere geometry, Novikov–Thorne disk efficiency, and gravitational redshift, with level-of-detail shaders and a lensing render target. |
 | **Stellar evolution** | Mass-threshold reclassification against the real limits (deuterium burning, hydrogen burning, Chandrasekhar, TOV) and core-collapse supernovae above 8 M☉ leaving neutron-star or black-hole remnants. |
-| **Measured presets** | The Solar System, TRAPPIST-1, and Alpha Centauri, built from published masses, radii, and orbital elements — plus a procedural generator when you want an unfamiliar sky. |
+| **Measured presets** | The Solar System and TRAPPIST-1, built from published masses, radii, and orbital elements — plus a procedural generator when you want an unfamiliar sky. |
 | **Universe sandbox** | 14 body classes, a nine-section Inspector, a searchable outliner, time control with reverse, undo/redo, and a local archive of saved worlds organised into folders. |
 
 ### Technical stack
@@ -121,12 +121,11 @@ The Inspector separates **primaries** (the degrees of freedom you set) from **de
 |---|---|---|
 | **The Solar System** | Sun, 8 planets, Pluto, 11 major moons | NASA/JPL planetary fact sheets, J2000 elements |
 | **TRAPPIST-1** | Ultracool dwarf plus seven terrestrial planets | Agol et al. 2021 |
-| **Alpha Centauri** | α Cen A and B, Proxima, Proxima b | Kervella et al. 2017; Anglada-Escudé et al. 2016 |
 | **Procedural frontier** | A generated star and planetary family | — |
 
-Orbital periods are reproduced by the physics, not scripted: load the Solar System, select Saturn, and the Inspector reads 29.45 years because that is what the integrator produces. Where a compromise was necessary it is stated in the data — Proxima's real 8,700 AU separation is replaced with a representative 430 AU orbit so it stays on screen.
+Orbital periods are reproduced by the physics, not scripted: load the Solar System, select Saturn, and the Inspector reads 29.45 years because that is what the integrator produces.
 
-![The universe creator with all four origins](docs/screenshots/universe-creator.png)
+![The universe creator with all three origins](docs/screenshots/universe-creator.png)
 
 ---
 

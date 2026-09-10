@@ -294,7 +294,6 @@ export const InspectorPanel: React.FC<{
             {body.properties?.presetId && body.properties.presetId !== 'solar-system' && body.type !== 'Star' && (
               <p className="text-[11px] leading-relaxed text-pulsar-white/60 py-3" data-testid="exoplanet-assumptions">
                 Illustrative surface. Atmosphere, water and habitability are unknown; temperature is a model estimate.
-                {body.properties.presetId === 'alpha-centauri' && ' Mass is a radial-velocity minimum; radius and orbital orientation are assumed.'}
               </p>
             )}
             <InspectorProvider value={ctx}>

@@ -206,8 +206,8 @@ export const getOrbitalElements = (body: CelestialBody, parent: CelestialBody) =
     // Standard gravitational parameter of the RELATIVE two-body orbit,
     // μ = G(M_parent + M_body). Using the parent's mass alone is a good
     // approximation for a planet around a star (Earth contributes 3 parts per
-    // million) but badly wrong for a comparable-mass pair: for Alpha Centauri
-    // A-B it understates μ by 46%, which makes a bound binary look hyperbolic.
+    // million) but badly wrong for a comparable-mass pair, where it understates
+    // μ enough to make a bound binary look hyperbolic.
     const mu = G_CONSTANT * (parent.mass + body.mass);
     const rVec = body.position.clone().sub(parent.position);
     const vVec = body.velocity.clone().sub(parent.velocity);

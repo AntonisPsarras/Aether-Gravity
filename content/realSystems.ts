@@ -348,69 +348,7 @@ function trappistPlanet(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Alpha Centauri
-// ---------------------------------------------------------------------------
-
-const ALPHA_CENTAURI: RealSystem = {
-  id: 'alpha-centauri',
-  epochJD: 2451545,
-  referencePlane: 'Sky plane of the visual binary; Proxima orbit in the same observer frame',
-  sources: ['https://arxiv.org/abs/1610.06079', 'https://arxiv.org/abs/1611.03495', 'https://www.eso.org/public/news/eso2202/', 'https://www.aanda.org/articles/aa/pdf/2025/08/aa53728-25.pdf'],
-  notes: 'Kervella 2017 wide-orbit central estimate; very uncertain over hundreds of thousands of years. Proxima b/d use radial-velocity minimum masses, assumed edge-on orbits and estimated rocky radii. Their orientations, surface conditions and phases here are illustrative; circular analytical orbits and synchronous spins are assumptions. Planet perturbations are omitted.',
-  name: 'Alpha Centauri',
-  subtitle: 'Three stars · Proxima b and d · true separation',
-  description:
-    'A G2 and a K1 star on a wide, strongly eccentric 80-year orbit, closing ' +
-    'from 35.6 AU to 11.2 AU and back. Proxima and its planet orbit far outside.',
-  source: 'Kervella et al. (2016, 2017) binary and wide orbit; Proxima b/d radial velocities (2020, 2022), d confirmed in 2025',
-  bodies: [
-    {
-      name: 'Alpha Centauri A', type: 'Star', mass: 1.1055 * M_SUN_IN_EARTH, radiusKm: 1.2234 * R_SUN_KM,
-      color: '#fff6e8', texture: 'plasma', temperatureK: 5790,
-      rotationHours: 22 * 24,
-      properties: { luminositySolar: 1.519, metallicity: 0.7, convectionScale: 5 },
-    },
-    {
-      name: 'Alpha Centauri B', type: 'Star', mass: 0.9373 * M_SUN_IN_EARTH, radiusKm: 0.8632 * R_SUN_KM,
-      color: '#ffd9a0', texture: 'plasma', temperatureK: 5260,
-      parent: 'Alpha Centauri A',
-      orbit: { aAU: 17.592 / 0.74717, e: 0.5208, iDeg: 79.320, lanDeg: 205.064, argpDeg: 232.006, mDeg: 360 * (2000 - 1955.604) / 79.929 },
-      rotationHours: 36 * 24,
-      properties: { luminositySolar: 0.5, metallicity: 0.7, convectionScale: 6 },
-    },
-    {
-      name: 'Proxima Centauri', type: 'Star', mass: 0.1221 * M_SUN_IN_EARTH, radiusKm: 0.1542 * R_SUN_KM,
-      color: '#ff5722', texture: 'plasma', temperatureK: 3042,
-      barycentreOf: ['Alpha Centauri A', 'Alpha Centauri B'],
-      // 8700 AU is the semi-major axis; current separation is about 13000 AU.
-      // The published periastron epoch is relative to 2017 (rounded to 1000 yr).
-      orbit: { aAU: 8700, e: 0.5, iDeg: 107.6, lanDeg: 126, argpDeg: 72.3, mDeg: -360 * 283017 / 547000 },
-      rotationHours: 83 * 24,
-      properties: { luminositySolar: 0.00155, metallicity: 0.3, convectionScale: 9, flareActivity: 0.9 },
-    },
-    {
-      name: 'Proxima b', type: 'Planet', mass: 1.07, radiusKm: 1.03 * 6371,
-      color: '#7a8b99', texture: 'rock', temperatureK: 0,
-      parent: 'Proxima Centauri', onRails: true,
-      rotationHours: 11.186 * 24,
-      orbit: { aAU: 0.04856, e: 0, iDeg: 0, lanDeg: 0, argpDeg: 0, mDeg: 0 },
-      properties: {
-        compositionIron: 0.3, compositionSilicates: 0.7, compositionWater: 0,
-        atmosphere: 0, albedo: 0.3, isTidallyLocked: true,
-      },
-    },
-    {
-      name: 'Proxima d', type: 'Planet', mass: 0.26, radiusKm: 0.7 * 6371,
-      color: '#a18b7d', texture: 'rock', parent: 'Proxima Centauri', onRails: true,
-      rotationHours: 5.122 * 24,
-      orbit: { aAU: 0.02885, e: 0, iDeg: 0, lanDeg: 0, argpDeg: 0, mDeg: 180 },
-      properties: { atmosphere: 0, albedo: 0.3, compositionIron: 0.3, compositionSilicates: 0.7, compositionWater: 0, isTidallyLocked: true },
-    },
-  ],
-};
-
-export const REAL_SYSTEMS: RealSystem[] = [SOLAR_SYSTEM, TRAPPIST_1, ALPHA_CENTAURI];
+export const REAL_SYSTEMS: RealSystem[] = [SOLAR_SYSTEM, TRAPPIST_1];
 
 // Horizons already expresses each satellite in the common ecliptic frame;
 // using these snapshots avoids treating a planet-equatorial inclination as ecliptic.

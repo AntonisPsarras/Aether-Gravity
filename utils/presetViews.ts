@@ -7,7 +7,6 @@ import { getOrbitalElements } from './physicsUtils';
 export const presetViews: Record<string, readonly string[]> = {
   'solar-system': ['Inner planets', 'Full system'],
   'trappist-1': ['Overview'],
-  'alpha-centauri': ['Binary stars', 'Proxima planets', 'Full system'],
 };
 
 /** Camera-only fitting. Bounds include the enlarged satellite display. */
@@ -17,8 +16,7 @@ export function presetViewFrame(bodies: CelestialBody[], view: string | null, mo
   const choice = view && presetViews[id].includes(view) ? view : presetViews[id][0];
   const selected = bodies.filter(b => choice === 'Inner planets'
     ? ['Sun', 'Mercury', 'Venus', 'Earth', 'Mars'].includes(b.name)
-    : choice === 'Binary stars' ? b.name.startsWith('Alpha Centauri')
-    : choice === 'Proxima planets' ? b.name.startsWith('Proxima') : true);
+    : true);
   if (!selected.length) return null;
   const box = new THREE.Box3(), pos = new THREE.Vector3(), origin = new THREE.Vector3();
   for (const b of selected) {
@@ -29,7 +27,7 @@ export function presetViewFrame(bodies: CelestialBody[], view: string | null, mo
   }
   const centre = box.getCenter(new THREE.Vector3());
   let radius = Math.max(0.2, box.getSize(new THREE.Vector3()).length() / 2);
-  if (['Overview', 'Proxima planets', 'Inner planets'].includes(choice)) {
+  if (['Overview', 'Inner planets'].includes(choice)) {
     const star = selected.find(b => b.type === 'Star');
     if (star) {
       // Fit complete orbits, not just this frame's body positions. Otherwise

@@ -100,7 +100,6 @@ test.describe('premium main menu', () => {
     await expect(page.getByTestId('menu-preset-procedural')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('menu-preset-procedural')).toContainText('Random system');
     await expect(page.getByTestId('menu-preset-trappist-1')).toBeVisible();
-    await expect(page.getByTestId('menu-preset-alpha-centauri')).toBeVisible();
     await expect(page.getByTestId('menu-preset-procedural')).toBeVisible();
     await expect(page.getByText('Black Hole', { exact: true })).toBeVisible();
     const creatorGeometry = await page.getByTestId('menu-composer').evaluate((element) => {
@@ -112,7 +111,7 @@ test.describe('premium main menu', () => {
     expect(Math.abs(creatorGeometry.center - creatorGeometry.viewportCenter)).toBeLessThanOrEqual(40);
     await page.screenshot({ path: testInfo.outputPath('universe-creator.png'), fullPage: false });
 
-    for (const id of ['trappist-1', 'alpha-centauri', 'procedural']) {
+    for (const id of ['trappist-1', 'procedural']) {
       const card = page.getByTestId(`menu-preset-${id}`);
       await card.click();
       await expect(card).toHaveAttribute('aria-checked', 'true');

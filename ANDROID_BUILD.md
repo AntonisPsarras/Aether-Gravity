@@ -154,7 +154,7 @@ The signed AAB will be created in: `android/app/release/app-release.aab`
   only:
   - N-body physics (Velocity-Verlet, fixed timestep, conserved energy)
   - 14 celestial classes, built and launched by hand
-  - Measured presets: the Solar System, TRAPPIST-1, Alpha Centauri
+  - Measured presets: the Solar System, TRAPPIST-1
   - Relativistic black holes — Kerr horizons, ergospheres, accretion disks
   - Beginner and Advanced presentation modes
   - Time control, including reverse

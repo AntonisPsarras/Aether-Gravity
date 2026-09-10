@@ -5,7 +5,6 @@ for (const width of [1280, 390]) {
   for (const [id, count, views] of [
     ['solar-system', 21, ['Inner planets', 'Full system']],
     ['trappist-1', 8, ['Overview']],
-    ['alpha-centauri', 5, ['Binary stars', 'Proxima planets', 'Full system']],
   ] as const) {
     test(`${id} guided views and both modes at ${width}px`, async ({ page }, info) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });

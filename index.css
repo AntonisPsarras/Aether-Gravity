@@ -802,7 +802,7 @@ canvas {
 .menu-composer-heading > div { display: flex; align-items: baseline; gap: 0.85rem; }
 .menu-composer h2, .menu-launch-copy h2 { margin: 0; font-size: clamp(1.25rem, 2vw, 1.65rem); font-weight: 600; letter-spacing: -0.025em; }
 .menu-step-copy { margin: 0.6rem 0 1.35rem 2.35rem; color: rgba(220, 229, 243, 0.54); font-size: 0.84rem; }
-.menu-preset-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
+.menu-preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 
 .menu-preset-card {
   position: relative;
