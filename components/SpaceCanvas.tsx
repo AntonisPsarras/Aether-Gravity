@@ -518,13 +518,14 @@ const snapCameraToBody = (
   controls: OrbitControlsLike,
   target: CelestialBody,
   floatingOffset: THREE.Vector3,
+  distScale = 1,
 ) => {
   floatingOffset.set(0, 0, 0);
 
   toRenderSpace(scratchV1, target.position, floatingOffset);
   const { uiMode } = useStore.getState();
   bodyRenderPosition(scratchV1, target, target.parentId ? liveBodyById(target.parentId) : undefined, floatingOffset, uiMode);
-  const dist = target.properties?.presetId ? Math.max(0.2, bodyVisualRadius(target, uiMode) * 6) : framingDistanceFor(target.radius);
+  const dist = (target.properties?.presetId ? Math.max(0.2, bodyVisualRadius(target, uiMode) * 6) : framingDistanceFor(target.radius)) * distScale;
   controls.target.set(scratchV1.x, scratchV1.y, scratchV1.z);
   camera.position.set(
     scratchV1.x + dist * 0.22,
@@ -574,11 +575,19 @@ const CameraFlyTo = ({
     const body = liveBodyById(selectedId);
     if (!body || !isOrbitControlsLike(controls)) return;
 
+    // Touch screens sit much closer to their whole viewport than a desktop
+    // monitor, so the same framing distance reads as uncomfortably tight —
+    // back off so the tapped body leaves room for its label and surroundings.
+    const distScale = detectIsTouch() ? 3.4 : 1;
+
     if (reducedMotion) {
-      snapCameraToBody(camera, controls, body, floatingOffset.current);
+      snapCameraToBody(camera, controls, body, floatingOffset.current, distScale);
       return;
     }
-    flying.current = { id: selectedId, distance: body.properties?.presetId ? Math.max(0.2, bodyVisualRadius(body, useStore.getState().uiMode) * 6) : framingDistanceFor(body.radius) };
+    flying.current = {
+      id: selectedId,
+      distance: (body.properties?.presetId ? Math.max(0.2, bodyVisualRadius(body, useStore.getState().uiMode) * 6) : framingDistanceFor(body.radius)) * distScale,
+    };
   }, [selectedId, recenterNonce, reducedMotion, controls, camera, floatingOffset]);
 
   // Any deliberate camera input wins over the tween.
