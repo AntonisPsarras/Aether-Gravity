@@ -121,6 +121,16 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
     if (creationMode) enqueueHelperTrigger({ kind: 'creation-mode', mode: creationMode });
   }, [creationMode, enqueueHelperTrigger]);
 
+  // The grid explainer: on the grid's first switch-on. The grid starts on, so
+  // body creation below also queues it (after the body's lesson) while the
+  // grid is visible.
+  const showGrid = useStore((s) => s.showGrid);
+  const previousShowGrid = useRef(showGrid);
+  useEffect(() => {
+    if (showGrid && !previousShowGrid.current) enqueueHelperTrigger({ kind: 'grid-visible' });
+    previousShowGrid.current = showGrid;
+  }, [showGrid, enqueueHelperTrigger]);
+
   const moonMode = creationMode === 'Moon';
 
   /**
@@ -161,7 +171,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 
   const handleBodyCreate = (snapshot: SimulationSnapshot, createdBody: CelestialBody) => {
     pushToHistory(snapshot);
-    enqueueHelperTrigger({ kind: 'body-created', body: createdBody });
+    enqueueHelperTrigger({ kind: 'body-created', body: createdBody, gridVisible: useStore.getState().showGrid });
   };
 
   const storageNotice = useStore((s) => s.storageNotice);

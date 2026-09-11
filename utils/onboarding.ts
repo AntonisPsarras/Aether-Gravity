@@ -101,7 +101,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: 'overlays', icon: 'overlays', title: 'Use overlays as measuring aids',
     summary: 'Visual tools reveal relationships that are difficult to see in the raw scene, while contextual lessons continue as you experiment.',
     bullets: [
-      'The gravity grid is a qualitative curvature visualization, not a literal fabric or numerical graph of general relativity.',
+      'The gravity grid draws the Newtonian gravitational potential — the time-curvature part of spacetime that shapes orbits. Advanced Mode uses true mass ratios; Beginner Mode exaggerates planet dents.',
       'Habitable zones, orbit paths, trails, Hill spheres, and Roche limits each answer a different question.',
       'Dismissible tips will explain a panel or object type on its first meaningful use and will stay dismissed afterward.',
     ],
@@ -110,7 +110,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
 
 export type PanelHelperId =
   | 'panel:creation' | 'panel:moon' | 'panel:outliner' | 'panel:inspector'
-  | 'panel:orbit' | 'panel:analysis';
+  | 'panel:orbit' | 'panel:analysis' | 'panel:grid';
 export type BodyHelperId = `body:${BodyType}`;
 export type HelperId = PanelHelperId | BodyHelperId;
 
@@ -119,7 +119,10 @@ export type HelperTrigger =
   | { kind: 'outliner-interaction' }
   | { kind: 'inspector-open'; body: CelestialBody }
   | { kind: 'inspector-tab'; tab: 'orbit' | 'analysis' }
-  | { kind: 'body-created'; body: CelestialBody };
+  /** The grid was switched on. */
+  | { kind: 'grid-visible' }
+  /** `gridVisible`: the new body just dented a visible grid — the grid explainer follows its lesson. */
+  | { kind: 'body-created'; body: CelestialBody; gridVisible?: boolean };
 
 export interface HelperDefinition {
   id: HelperId;
@@ -144,6 +147,7 @@ export const ONBOARDING_STORAGE_KEY = 'aether:onboarding:v1';
 
 const PANEL_IDS: PanelHelperId[] = [
   'panel:creation', 'panel:moon', 'panel:outliner', 'panel:inspector', 'panel:orbit', 'panel:analysis',
+  'panel:grid',
 ];
 const BODY_TYPES = Object.keys(BODY_CONFIGS) as BodyType[];
 const KNOWN_HELPER_IDS = new Set<HelperId>([
@@ -223,7 +227,13 @@ export function helpersForTrigger(trigger: HelperTrigger): QueuedHelper[] {
     case 'creation-mode': return [{ id: trigger.mode === 'Moon' ? 'panel:moon' : 'panel:creation' }];
     case 'outliner-interaction': return [{ id: 'panel:outliner' }];
     case 'inspector-tab': return [{ id: `panel:${trigger.tab}` }];
-    case 'body-created': return [{ id: `body:${trigger.body.type}`, bodyId: trigger.body.id }];
+    case 'grid-visible': return [{ id: 'panel:grid' }];
+    // The object lesson first; the grid explainer follows it, so it never
+    // splits the creation → object-lesson sequence.
+    case 'body-created': return [
+      { id: `body:${trigger.body.type}`, bodyId: trigger.body.id },
+      ...(trigger.gridVisible ? [{ id: 'panel:grid' as const }] : []),
+    ];
     case 'inspector-open': return [
       { id: 'panel:inspector' },
       { id: `body:${trigger.body.type}`, bodyId: trigger.body.id },
@@ -271,6 +281,11 @@ const PANEL_HELPERS: Record<PanelHelperId, Omit<HelperDefinition, 'id'>> = {
     eyebrow: 'Analysis', title: 'Interpret habitability cautiously',
     content: 'Equilibrium temperature, tidal locking, and similarity scores summarize selected physics; none is a direct measurement of life.',
     detail: 'ESI means Earth-like under its inputs, while a habitable zone only describes possible liquid-water conditions.',
+  },
+  'panel:grid': {
+    eyebrow: 'Spacetime grid', title: 'Depth is gravity’s potential',
+    content: 'Every mass sinks the sheet by its gravitational potential — the part of spacetime curvature that bends paths into orbits. The slope is the pull: steep near a star, nearly flat far away, and orbits circle the slope.',
+    detail: 'Beginner Mode exaggerates planet dents so you can see them. Advanced Mode draws true ratios: beside the Sun a planet barely dents the sheet, and only stars and compact objects dig deep wells. The glow marks tidal curvature.',
   },
 };
 

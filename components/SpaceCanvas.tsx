@@ -24,12 +24,16 @@ import type { DeviceTier } from './CanvasSetup';
 import './Planet/PlanetShaders';
 import { PlanetSurfaceMaterial } from './Planet/PlanetShaders';
 import { useStore } from '../utils/store';
-import { CURVATURE_DISPLAY_GLSL, CURVATURE_WELL_GLSL } from '../utils/curvatureDisplay';
-import { createGridWellUniforms, fillGridWellUniforms } from '../utils/gridWells';
+import { CURVATURE_WELL_GLSL, DISPLAY_DEPTH_GLSL } from '../utils/curvatureDisplay';
 import {
-  DEPTH_TINT_BEGINNER, DEPTH_TINT_SCALE, GRID_RENDER_SAFETY_MAX_DEPTH, TIDAL_KNEE, TIDAL_MAX,
-  depthTintFor, tidalKneeFor, tidalMaxFor,
+  GRID_MAX_BODIES, GRID_MAX_DISCS, GridFrameBuilder, publishGridFrame, type GridWellFrame,
+} from '../utils/gridWells';
+import { buildDiscLatticeGeometry, buildPrimaryLatticeGeometry } from '../utils/gridLattice';
+import {
+  DEPTH_TINT_BEGINNER, DEPTH_TINT_SCALE, TIDAL_LOG_MAX, TIDAL_LOG_MIN, TIDAL_TINT_BEGINNER,
+  depthTintFor, tidalTintFor,
   visualScaleFor,
+  type UiMode,
 } from '../utils/displayMode';
 import { simElapsedForFrame, simulationPacingScale } from '../utils/simRate';
 import { presetViewFrame } from '../utils/presetViews';
@@ -135,104 +139,135 @@ const _NEUTRON_COLOR = new THREE.Color(0.2, 0.5, 1.0);
 
 // --- BASIC SHADERS (Lightweight) ---
 
+/** Base grid-line spacing, L* — the spacing drawn at the default Solar System framing. */
+const GRID_LINE_BASE = 20;
+/**
+ * Lines closer than this on screen (device pixels) hand over to the next
+ * coarser level (×4); lines further apart bring in the next finer one.
+ */
+const GRID_LINE_TARGET_PX = 12;
+/** Finest and coarsest line levels: 20·4⁻⁴ ≈ 0.08 L* (TRAPPIST-1 scale) to 20·4⁶ ≈ 82 000 L*. */
+const GRID_LINE_LOD_MIN = -4;
+const GRID_LINE_LOD_MAX = 6;
+
+/**
+ * The spacetime grid. One shader program draws both kinds of lattice from
+ * utils/gridLattice.ts:
+ *
+ *  - the PRIMARY lattice (uIsDisc = 0): a polar mesh in world units, centred
+ *    by its mesh position on the strongest well. Its vertices that fall under
+ *    a secondary disc are pushed onto that disc's carve circle and its
+ *    fragments inside the disc are discarded, so the two never overlap;
+ *  - up to GRID_MAX_DISCS SECONDARY lattices (uIsDisc = 1): unit discs whose
+ *    ring parameter t (position.y) becomes r = c·sinh(t·U) here, so one static
+ *    geometry serves a disc whose radius changes every frame.
+ *
+ * Both evaluate the same displacement — the summed wells through
+ * `displayDepth` — so they meet at the seam. No uniform or vertex position
+ * depends on the camera: the surface is a function of the bodies alone. The
+ * camera only drives the horizon fade and the fwidth-based line width and
+ * line level, neither of which moves the surface.
+ */
 const GravityGridMaterial = shaderMaterial(
   {
-    uTime: 0,
     uColor: new THREE.Color(0.14, 0.16, 0.22),
     uLineGain: 1.0,
     uVisualBoost: 1.0,
-    uBodiesPos: new Float32Array(50 * 3),
-    uBodiesMass: new Float32Array(50),
-    // Per-body peak depth and core radius, L* — computed on the CPU from the
-    // active UI mode by utils/gridWells.ts and re-uploaded every frame.
-    uBodiesPeak: new Float32Array(50),
-    uBodiesCore: new Float32Array(50),
+    uBodiesPos: new Float32Array(GRID_MAX_BODIES * 3),
+    uBodiesMass: new Float32Array(GRID_MAX_BODIES),
+    // Per-body peak depth and core radius after lattice LOD, L* — built once
+    // per frame by utils/gridWells.ts and shared with the habitable zone.
+    uBodiesPeak: new Float32Array(GRID_MAX_BODIES),
+    uBodiesCore: new Float32Array(GRID_MAX_BODIES),
     uBodyCount: 0,
-    uTidalKnee: TIDAL_KNEE,
-    uTidalMax: TIDAL_MAX,
+    uDisplayKnee: 300,
+    uTidalGain: TIDAL_TINT_BEGINNER,
     // Depth colour tint (Beginner default; re-uploaded per frame).
     uDepthTint: DEPTH_TINT_BEGINNER,
     uDepthTintScale: DEPTH_TINT_SCALE,
-    // Half-extent of the plane geometry before the infinite-reach remap below
-    // (planeGeometry args are 5000×5000). Static — never updated per frame.
-    uGridHalfSize: 2500.0,
-    // Render-safety ceiling on total well depth, independent of the per-body
-    // peak ceiling — see
-    // GRID_RENDER_SAFETY_MAX_DEPTH doc comment in utils/displayMode.ts.
-    uGridRenderSafetyMaxDepth: GRID_RENDER_SAFETY_MAX_DEPTH,
+    uLineLevels: 2,
+    // Lattice role. A disc carries its ring profile and the circle it owns;
+    // the primary carries the discs it must carve out.
+    uIsDisc: 0,
+    uDiscU: 1,
+    uDiscCoreScale: 1,
+    uDiscCenter: new THREE.Vector2(),
+    uDiscRadius: 0,
+    uCarveCount: 0,
+    uCarveCenter: new Float32Array(GRID_MAX_DISCS * 2),
+    uCarveRadius: new Float32Array(GRID_MAX_DISCS),
+    uClipRadius: new Float32Array(GRID_MAX_DISCS),
   },
   `precision highp float;
 #include <common>
 #include <logdepthbuf_pars_vertex>
 
-uniform float uTime;
-uniform vec3 uBodiesPos[50];
-uniform float uBodiesMass[50];
-uniform float uBodiesPeak[50];
-uniform float uBodiesCore[50];
+uniform vec3 uBodiesPos[${GRID_MAX_BODIES}];
+uniform float uBodiesMass[${GRID_MAX_BODIES}];
+uniform float uBodiesPeak[${GRID_MAX_BODIES}];
+uniform float uBodiesCore[${GRID_MAX_BODIES}];
 uniform int uBodyCount;
-uniform float uTidalKnee;
-uniform float uTidalMax;
-uniform float uGridHalfSize;
-uniform float uGridRenderSafetyMaxDepth;
+uniform float uDisplayKnee;
+uniform float uIsDisc;
+uniform float uDiscU;
+uniform float uDiscCoreScale;
+uniform int uCarveCount;
+uniform vec2 uCarveCenter[${GRID_MAX_DISCS}];
+uniform float uCarveRadius[${GRID_MAX_DISCS}];
 
-${CURVATURE_DISPLAY_GLSL}
 ${CURVATURE_WELL_GLSL}
-
-// Stretches an in-plane axis so the plane's true edge (±halfSize) lands at a
-// world distance of tens of millions of units instead of halfSize itself.
-// Identity (derivative 1) at x = 0 — the camera, since the grid mesh
-// re-centers there every frame — so vertex density and curvature fidelity
-// near anything the user is actually looking at are unchanged. Density falls
-// off smoothly with distance, which is why the finite plane never shows a
-// hard edge inside the fragment shader's fade range.
-float remapGridAxis(float x, float halfSize) {
-  float L = halfSize * 1.0002;
-  return x / (1.0 - abs(x) / L);
-}
+${DISPLAY_DEPTH_GLSL}
 
 varying float vDisplacement;
-varying float vTidalMagnitude;
-varying vec2 vUv;
+varying float vTidal;
 varying vec3 vWorldPos;
 
 void main() {
-  vUv = uv;
-  vec2 remappedXY = vec2(remapGridAxis(position.x, uGridHalfSize), remapGridAxis(position.y, uGridHalfSize));
-  vec4 worldPosition = modelMatrix * vec4(remappedXY.x, remappedXY.y, position.z, 1.0);
-  float displacement = 0.0;
-  float maxTidal = 0.0;
-  // The flat, undisturbed sheet is the orbital plane (y = 0). Distances are
-  // measured from that slice to each body in 3D, so a body far above or below
-  // the plane digs a correspondingly shallower dip, as the true potential does.
-  vec3 slicePos = vec3(worldPosition.x, 0.0, worldPosition.z);
-
-  for(int i = 0; i < 50; i++) {
-    if (i >= uBodyCount) break;
-    vec3 bPos = uBodiesPos[i];
-    float m = uBodiesMass[i];
-    float d = distance(slicePos, bPos);
-    // True 1/r well outside the body's display core; only the amplitude was
-    // compressed (on the CPU). Summed, so superposition holds.
-    // See utils/curvatureDisplay.ts.
-    displacement -= wellDepthAt(d, uBodiesPeak[i], uBodiesCore[i]);
-    float tidal = m / (d*d*d + 100.0);
-    maxTidal = max(maxTidal, tidal * 1000.0);
+  vec3 local = position;
+  if (uIsDisc > 0.5) {
+    float u = position.y * uDiscU;
+    float r = uDiscCoreScale * 0.5 * (exp(u) - exp(-u));
+    local = vec3(position.x * r, 0.0, position.z * r);
   }
-  // Render-safety floor on the total. Each body's own contribution is already
-  // soft-capped (WellParams.maxDepth); this only backstops many heavy bodies piling up on
-  // the same vertex.
-  displacement = max(displacement, -uGridRenderSafetyMaxDepth);
+  // The mesh only translates, so this is the lattice point on the orbital
+  // plane (y = 0) in render space.
+  vec3 w = (modelMatrix * vec4(local, 1.0)).xyz;
+  w.y = 0.0;
+  if (uIsDisc < 0.5) {
+    // Carve: primary vertices under a disc collapse onto its carve circle, so
+    // the covered triangles have no area and the disc alone shades there.
+    for (int j = 0; j < ${GRID_MAX_DISCS}; j++) {
+      if (j >= uCarveCount) break;
+      vec2 rel = w.xz - uCarveCenter[j];
+      float d = length(rel);
+      if (d < uCarveRadius[j]) {
+        w.xz = uCarveCenter[j] + (d > 1e-6 ? rel / d : vec2(1.0, 0.0)) * uCarveRadius[j];
+      }
+    }
+  }
 
-  vec3 newPos = vec3(remappedXY.x, remappedXY.y, position.z);
-  newPos.z += displacement;
-  vWorldPos = (modelMatrix * vec4(newPos, 1.0)).xyz;
+  // Distances are measured in 3D from the orbital-plane point to each body,
+  // so a body above or below the plane digs a correspondingly shallower dip,
+  // as the true potential does. Summed, so superposition holds.
+  float depth = 0.0;
+  float tidal = 0.0;
+  for (int i = 0; i < ${GRID_MAX_BODIES}; i++) {
+    if (i >= uBodyCount) break;
+    vec3 dv = w - uBodiesPos[i];
+    float d2 = dot(dv, dv);
+    float s = uBodiesCore[i];
+    depth += wellDepthAt(sqrt(d2), uBodiesPeak[i], s);
+    // Tidal field of the strongest body: the Newtonian limit of curvature.
+    float q = d2 + s * s;
+    tidal = max(tidal, uBodiesMass[i] / (q * sqrt(q)));
+  }
+  float displacement = -displayDepth(depth, uDisplayKnee);
+  vec3 p = vec3(w.x, displacement, w.z);
+  vWorldPos = p;
   vDisplacement = displacement;
-  // Same compressor, own knee: the high-tidal vertices near a primary would
-  // otherwise saturate the whole plane cyan. Already a per-body max, so it was
-  // never subject to the summation bug above.
-  vTidalMagnitude = curvatureDisplayScale(maxTidal, uTidalKnee, 1.0, uTidalMax);
-  gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(newPos, 1.0);
+  // log10 of the tidal field, mapped onto [0, 1] between the tint decades.
+  vTidal = clamp((log2(max(tidal, 1e-30)) * 0.30103 - (${TIDAL_LOG_MIN.toFixed(1)})) / ${(TIDAL_LOG_MAX - TIDAL_LOG_MIN).toFixed(1)}, 0.0, 1.0);
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
   #include <logdepthbuf_vertex>
 }`,
   `precision highp float;
@@ -244,27 +279,65 @@ uniform float uLineGain;
 uniform float uVisualBoost;
 uniform float uDepthTint;
 uniform float uDepthTintScale;
+uniform float uTidalGain;
+uniform float uLineLevels;
+uniform float uIsDisc;
+uniform vec2 uDiscCenter;
+uniform float uDiscRadius;
+uniform int uCarveCount;
+uniform vec2 uCarveCenter[${GRID_MAX_DISCS}];
+uniform float uClipRadius[${GRID_MAX_DISCS}];
 varying float vDisplacement;
-varying float vTidalMagnitude;
-varying vec2 vUv;
+varying float vTidal;
 varying vec3 vWorldPos;
 
+// Anti-aliased lines every 'spacing' L* in world x and z.
+float gridLines(vec2 xz, vec2 fw, float spacing) {
+  vec2 g = abs(fract(xz / spacing - 0.5) - 0.5) * spacing / max(fw, vec2(1e-6));
+  return 1.0 - min(min(g.x, g.y), 1.0);
+}
+
 void main() {
-  float gridScale = 20.0;
-  vec2 coord = vWorldPos.xz / gridScale;
-  vec2 derivative = fwidth(coord);
-  vec2 grid = abs(fract(coord - 0.5) - 0.5) / max(derivative, vec2(0.001));
-  float line = min(grid.x, grid.y);
-  float lineAlpha = 1.0 - min(line, 1.0);
+  vec2 xz = vWorldPos.xz;
+  // Derivatives first: they need the whole pixel quad, before any discard.
+  vec2 fw = fwidth(xz);
+
+  // Seam ownership: exactly one lattice shades each point of the sheet.
+  if (uIsDisc > 0.5) {
+    if (distance(xz, uDiscCenter) > uDiscRadius) discard;
+  } else {
+    for (int j = 0; j < ${GRID_MAX_DISCS}; j++) {
+      if (j >= uCarveCount) break;
+      if (distance(xz, uCarveCenter[j]) < uClipRadius[j]) discard;
+    }
+  }
+
+  // Zoom-adaptive, world-anchored lines. Spacing is ${GRID_LINE_BASE}·4^k L*,
+  // chosen so lines stay about ${GRID_LINE_TARGET_PX} px apart. The finer
+  // level fades out as it crowds, and every coarse line is also a fine line,
+  // so the hand-over is continuous. Levels choose which lines are drawn; they
+  // never move a line.
+  float px = max(max(fw.x, fw.y), 1e-6);
+  float lod = clamp(0.5 * log2(px * ${GRID_LINE_TARGET_PX.toFixed(1)} / ${GRID_LINE_BASE.toFixed(1)}), ${GRID_LINE_LOD_MIN.toFixed(1)}, ${GRID_LINE_LOD_MAX.toFixed(1)});
+  float lineAlpha;
+  if (uLineLevels > 1.5) {
+    float k = floor(lod);
+    float s0 = ${GRID_LINE_BASE.toFixed(1)} * exp2(2.0 * k);
+    lineAlpha = max(gridLines(xz, fw, 4.0 * s0), gridLines(xz, fw, s0) * (1.0 - (lod - k)));
+  } else {
+    lineAlpha = gridLines(xz, fw, ${GRID_LINE_BASE.toFixed(1)} * exp2(2.0 * floor(lod + 0.5)));
+  }
+
   vec3 baseColor = uColor * uVisualBoost;
-  vec3 tidalColor = vec3(0.0, 0.35, 0.65) * vTidalMagnitude * 0.2 * uVisualBoost;
+  // Curvature tint: the log tidal field, strongest near compact masses.
+  vec3 tidalColor = vec3(0.0, 0.35, 0.65) * vTidal * uTidalGain * uVisualBoost;
   vec3 finalColor = baseColor + tidalColor;
-  
+
   // Depth tint: lines brighten toward cyan as the well deepens, so wells read
   // even from straight above, where vertical displacement is invisible.
   float wellT = uDepthTint * (1.0 - exp(-max(-vDisplacement, 0.0) / uDepthTintScale));
   finalColor = mix(finalColor, vec3(0.30, 0.72, 1.0) * min(uVisualBoost, 1.3), wellT * 0.75);
-  
+
   float dist = length(vWorldPos.xz - cameraPosition.xz);
   float fade = 1.0 - smoothstep(2500.0, 7000.0, dist);
   float totalAlpha = lineAlpha * 0.4 * uLineGain * uVisualBoost * (1.0 + wellT * 0.9) * fade;
@@ -273,6 +346,19 @@ void main() {
   #include <logdepthbuf_fragment>
 }`
 );
+
+/** Per-frame uniforms every grid lattice shares. */
+const setGridBodyUniforms = (mat: any, frame: GridWellFrame, mode: UiMode, lineLevels: number): void => {
+  mat.uBodiesPos = frame.positions;
+  mat.uBodiesMass = frame.masses;
+  mat.uBodiesPeak = frame.peaks;
+  mat.uBodiesCore = frame.cores;
+  mat.uBodyCount = frame.count;
+  mat.uDisplayKnee = frame.displayKnee;
+  mat.uDepthTint = depthTintFor(mode);
+  mat.uTidalGain = tidalTintFor(mode);
+  mat.uLineLevels = lineLevels;
+};
 
 /**
  * Expanding shockwave ring, drawn on a unit quad.
@@ -902,8 +988,10 @@ const PhysicsEngine = ({
   creationDragActiveRef: React.MutableRefObject<boolean>;
   gasRemnants: React.MutableRefObject<GasRemnant[]>;
 }) => {
-  const gridMatRef = useRef<any>(null);
-  const gridMeshRef = useRef<THREE.Mesh>(null);
+  const gridPrimaryMatRef = useRef<any>(null);
+  const gridPrimaryMeshRef = useRef<THREE.Mesh>(null);
+  const gridDiscMatRefs = useRef<any[]>([]);
+  const gridDiscMeshRefs = useRef<(THREE.Mesh | null)[]>([]);
   const visualEffectsRef = useRef<VisualEffect[]>([]);
   // The effect list lives in a ref so useFrame can mutate it without a render;
   // this counter is only a re-render trigger for when the set actually changes.
@@ -913,7 +1001,9 @@ const PhysicsEngine = ({
   const lastBodyCountRef = useRef(0);
   const lastBodyArrayRef = useRef<CelestialBody[] | null>(null);
   const { camera, controls } = useThree();
-  const gridWells = useMemo(createGridWellUniforms, []);
+  // One grid frame per render frame, built from body state only and shared
+  // with HabitableZoneVisual through utils/gridWells.ts.
+  const gridFrame = useMemo(() => new GridFrameBuilder(), []);
 
   const syncBodiesFromPhysics = useStore((s) => s.syncBodiesFromPhysics);
   const paused = useStore((s) => s.paused);
@@ -933,6 +1023,21 @@ const PhysicsEngine = ({
     [deviceTier],
   );
   const debrisGeometry = useDebrisGeometry(effectQuality.debrisParticles);
+
+  // Static lattice geometry for this tier's budget (utils/gridLattice.ts). The
+  // disc geometry is a unit disc shared by every secondary lattice.
+  const gridGeometry = useMemo(() => {
+    const table = gridFrame.setBudget(effectQuality);
+    return {
+      primary: buildPrimaryLatticeGeometry(table),
+      disc: buildDiscLatticeGeometry(effectQuality.gridDiscRings, effectQuality.gridDiscSpokes),
+    };
+  }, [gridFrame, effectQuality]);
+  useEffect(() => () => {
+    gridGeometry.primary.dispose();
+    gridGeometry.disc.dispose();
+  }, [gridGeometry]);
+  useEffect(() => () => publishGridFrame(null), []);
   const effectIdRef = useRef(0);
 
   const fixedStepCallback = useCallback((bodies: CelestialBody[], dt: number) => {
@@ -1214,45 +1319,85 @@ const PhysicsEngine = ({
       }
     }
 
-    if (gridMeshRef.current) {
-      // The flat far field sits at y = 0 — the orbital plane the bodies and
-      // orbit paths live in — and wells dip below it.
-      gridMeshRef.current.position.set(camera.position.x, 0, camera.position.z);
+    // Spacetime grid. One frame of wells, anchors and LOD cores, built from
+    // body state alone — never the camera, so the curvature cannot change with
+    // the viewing angle — and shared with the habitable-zone disc.
+    const { showGrid: gridOn, showHabitable } = useStore.getState();
+    if ((gridOn || showHabitable) && physicsBodies) {
+      const frame = gridFrame.update(physicsBodies, floatingOffset.current, uiMode, currentTime);
+      publishGridFrame(frame);
+      const primaryMat = gridPrimaryMatRef.current;
+      const primaryMesh = gridPrimaryMeshRef.current;
+      if (gridOn && primaryMat && primaryMesh) {
+        const L = frame.layout;
+        const lineLevels = effectQuality.gridLineLevels;
+        // The flat far field sits at y = 0, the orbital plane; wells dip below it.
+        primaryMesh.position.set(L.primaryX, 0, L.primaryZ);
+        setGridBodyUniforms(primaryMat, frame, uiMode, lineLevels);
+        primaryMat.uCarveCount = L.discCount;
+        primaryMat.uCarveCenter = frame.discCenters;
+        primaryMat.uCarveRadius = frame.carveRadii;
+        primaryMat.uClipRadius = frame.discRadii;
+        for (let j = 0; j < GRID_MAX_DISCS; j++) {
+          const mesh = gridDiscMeshRefs.current[j];
+          const mat = gridDiscMatRefs.current[j];
+          if (!mesh || !mat) continue;
+          mesh.visible = j < L.discCount;
+          if (!mesh.visible) continue;
+          mesh.position.set(L.discX[j], 0, L.discZ[j]);
+          setGridBodyUniforms(mat, frame, uiMode, lineLevels);
+          mat.uDiscU = L.discU[j];
+          mat.uDiscCoreScale = L.discCoreScale[j];
+          mat.uDiscCenter.set(L.discX[j], L.discZ[j]);
+          mat.uDiscRadius = L.discRadius[j];
+        }
+      }
+    } else {
+      publishGridFrame(null);
     }
 
-    if (showGrid && gridMatRef.current && physicsBodies) {
-      // Same helper as HabitableZoneVisual, or its disc detaches from this surface.
-      const count = fillGridWellUniforms(gridWells, physicsBodies, floatingOffset.current, uiMode);
-      const mat = gridMatRef.current;
-      mat.uBodiesPos = gridWells.positions;
-      mat.uBodiesMass = gridWells.masses;
-      mat.uBodiesPeak = gridWells.peaks;
-      mat.uBodiesCore = gridWells.cores;
-      mat.uBodyCount = count;
-      mat.uTime = currentTime;
-      mat.uDepthTint = depthTintFor(uiMode);
-      mat.uTidalKnee = tidalKneeFor(uiMode);
-      mat.uTidalMax = tidalMaxFor(uiMode);
-    }
   });
 
   return (
     <>
-      {/* Low-tier devices get a 150×150 grid (22 k verts vs 160 k) — same visual
-          result at any zoom level since the gravity wells are screen-space smooth. */}
+      {/* The spacetime grid: a primary polar lattice riding the strongest well,
+          plus up to GRID_MAX_DISCS disc lattices on other wells that need the
+          resolution (utils/gridLattice.ts). Per-tier budgets live in
+          environmentQualityForDevice. frustumCulled is off because the
+          displacement leaves the flat geometry's bounds. */}
       {showGrid && (
-        <mesh ref={gridMeshRef} raycast={NO_RAYCAST} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-          <planeGeometry args={[5000, 5000, deviceTier === 'low' ? 150 : 400, deviceTier === 'low' ? 150 : 400]} />
-          <gravityGridMaterial
-            ref={gridMatRef}
-            transparent
-            depthWrite={false}
-            side={THREE.DoubleSide}
-            logarithmicDepthBuffer={true}
-            uLineGain={Math.sqrt(gridVisualBoost)}
-            uVisualBoost={gridVisualBoost}
-          />
-        </mesh>
+        <>
+          <mesh ref={gridPrimaryMeshRef} raycast={NO_RAYCAST} geometry={gridGeometry.primary} frustumCulled={false}>
+            <gravityGridMaterial
+              ref={gridPrimaryMatRef}
+              transparent
+              depthWrite={false}
+              side={THREE.DoubleSide}
+              uLineGain={Math.sqrt(gridVisualBoost)}
+              uVisualBoost={gridVisualBoost}
+            />
+          </mesh>
+          {Array.from({ length: GRID_MAX_DISCS }, (_, j) => (
+            <mesh
+              key={j}
+              ref={(m: THREE.Mesh | null) => { gridDiscMeshRefs.current[j] = m; }}
+              raycast={NO_RAYCAST}
+              geometry={gridGeometry.disc}
+              frustumCulled={false}
+              visible={false}
+            >
+              <gravityGridMaterial
+                ref={(m: any) => { gridDiscMatRefs.current[j] = m; }}
+                transparent
+                depthWrite={false}
+                side={THREE.DoubleSide}
+                uIsDisc={1}
+                uLineGain={Math.sqrt(gridVisualBoost)}
+                uVisualBoost={gridVisualBoost}
+              />
+            </mesh>
+          ))}
+        </>
       )}
       {/* No key on this group: React reconciles the children by effect.id
           already, and keying the wrapper forced every live effect to unmount and

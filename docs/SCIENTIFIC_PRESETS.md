@@ -5,11 +5,18 @@ creating a new preset world uses the revised data. No runtime network access is 
 
 ## Data and reference frames
 
-- Solar System: JD 2451545 TDB, J2000 ecliptic. Most planets retain the JPL approximate
-  element set. Earth (not the Earth–Moon barycentre), Pluto and all eleven moons use
-  geometric Horizons osculating elements at that epoch. The checked-in
-  `content/solarSatelliteElements.json` includes the exact requests. Regenerate with
-  `powershell -NoProfile -File scripts/fetch-satellite-elements.ps1`.
+- Solar System: JD 2451545 TDB, J2000 ecliptic. Planets use the JPL approximate element
+  set (Table 1). Earth follows the Earth–Moon barycentre and Pluto the Pluto–Charon
+  barycentre: their moons are analytic and exert no force, so the bodies' own osculating
+  elements would freeze the moon-induced wobble into a wrong orbit (Earth's year would run
+  365.50 d instead of 365.256 d). The eleven moons take their J2000 orientation and phase
+  from geometric Horizons osculating elements, and their semi-major axes from the published
+  mean sidereal periods (Kepler's third law), so the unperturbed rails keep the real mean
+  motion. The checked-in `content/solarSatelliteElements.json` includes the exact
+  requests. Regenerate with `powershell -NoProfile -File scripts/fetch-satellite-elements.ps1`.
+- Physical constants: masses from JPL SSD mass parameters (GM / GM⊕) and mean radii from
+  the JPL SSD planetary and satellite physical-parameter tables. The Sun's and Earth's masses
+  are derived as GM / G (IAU 2015 nominal GM☉, CODATA 2018 G), so M☉/M⊕ = 332 946.
 - TRAPPIST-1: BJD TDB 2457257.93115525, Agol 2021 Table 2 posterior central parameters.
   Transit epochs and eccentricity vectors determine phase; mass-scaled periods determine
   semi-major axes in Jacobi coordinates. The common plane is rotated for viewing.
@@ -27,8 +34,8 @@ does not establish the presence of an atmosphere, liquid water or life.
 Integrated bodies start in their common centre-of-mass frame. The same translation
 is applied to analytical satellites, preserving their relative state immediately.
 Moons remain analytical: no moon gravity, mutual perturbations,
-precession, tides or relativistic corrections are modeled. Solar osculating satellite
-periods can differ from long-term mean sidereal periods.
+precession, tides or relativistic corrections are modeled. Moon periods equal the
+published mean sidereal periods.
 
 Scientific bodies use physical contact radii and near-point-mass Newtonian forces;
 legacy sandbox bodies retain their existing collision policy. Double-precision

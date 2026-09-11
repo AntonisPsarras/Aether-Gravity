@@ -4,7 +4,7 @@
  * The simulation integrates in a single, self-consistent unit triple. Every
  * other constant in the codebase is *derived* from it rather than tuned:
  *
- *   Mass    M* = 1 M⊕            = 5.9722 × 10²⁴ kg
+ *   Mass    M* = 1 M⊕            = 5.97217 × 10²⁴ kg
  *   Length  L* = 0.025 AU        = 3.7399 × 10⁹ m
  *   Time    T* = 1 Julian year   = 3.15576 × 10⁷ s
  *
@@ -42,10 +42,18 @@ export const STEFAN_BOLTZMANN = 5.670374419e-8;
 /** Speed of light in vacuum, km/s (exact by definition). */
 export const C_KM_S = 299792.458;
 
-export const M_EARTH_KG = 5.9722e24;
+/**
+ * Mass parameters GM are measured far more precisely than G itself, so the two
+ * reference masses are derived as GM / G. The simulation's G·M then reproduces
+ * the measured GM exactly, and M☉/M⊕ is the IAU ratio, 332 946.
+ */
+/** Earth mass parameter including the atmosphere (JPL), m³·s⁻². */
+export const GM_EARTH_SI = 3.986004418e14;
+/** IAU 2015 nominal solar mass parameter (GM)☉, m³·s⁻². */
+export const GM_SUN_SI = 1.3271244e20;
+export const M_EARTH_KG = GM_EARTH_SI / G_SI;     // 5.97217 × 10²⁴
 export const R_EARTH_KM = 6371.0;                 // volumetric mean radius
-/** IAU 2015 nominal solar mass parameter / G. */
-export const M_SUN_KG = 1.98847e30;
+export const M_SUN_KG = GM_SUN_SI / G_SI;         // 1.98841 × 10³⁰
 export const R_SUN_KM = 695700;                   // IAU 2015 nominal
 export const L_SUN_W = 3.828e26;                  // IAU 2015 nominal
 export const T_SUN_EFF_K = 5772;

@@ -8,6 +8,7 @@ import { parseWorldData, serializeBodies } from './worldStorage';
 import { getSimTime } from './physicsSoA';
 import { useStore } from './store';
 import type { UiMode } from './displayMode';
+import { getGridFrame } from './gridWells';
 
 export interface SerializedBody {
   id: string;
@@ -68,6 +69,17 @@ export interface TestMetricsSnapshot {
   bodyCount: number;
 }
 
+/** The spacetime grid as drawn this frame (utils/gridWells.ts). */
+export interface GridSnapshot {
+  mode: UiMode;
+  /** Render-space centre of the primary lattice and the body it rides. */
+  primary: { bodyId: string | null; x: number; z: number };
+  /** Secondary disc lattices. */
+  discs: Array<{ bodyId: string; x: number; z: number; radius: number }>;
+  /** Every well: render-space centre and peak/core after lattice LOD. */
+  wells: Array<{ bodyId: string; x: number; y: number; z: number; peak: number; core: number }>;
+}
+
 export interface AetherTestAPI {
   isE2E: boolean;
   getStore: () => StoreSnapshot;
@@ -75,6 +87,8 @@ export interface AetherTestAPI {
   getWorldSnapshot: () => WorldData;
   /** What is actually drawn: each body mesh's render-space position. */
   getRenderSnapshot: () => RenderSnapshot;
+  /** The grid surface's inputs this frame, or null when neither grid nor habitable zone is shown. */
+  getGridSnapshot: () => GridSnapshot | null;
   getEnergy: () => PhysicsEnergySample;
   loadFixture: (world: WorldData) => void;
   setPaused: (paused: boolean) => void;
@@ -213,6 +227,29 @@ function buildApi(): AetherTestAPI {
 
     getEnergy: () => computeEnergy(getPhysicsBodiesSnapshot()),
     getRenderSnapshot: () => getRenderSnapshot(),
+    getGridSnapshot: () => {
+      const f = getGridFrame();
+      if (!f) return null;
+      const L = f.layout;
+      const discs: GridSnapshot['discs'] = [];
+      for (let j = 0; j < L.discCount; j++) {
+        discs.push({ bodyId: f.ids[L.discIndex[j]], x: L.discX[j], z: L.discZ[j], radius: L.discRadius[j] });
+      }
+      const wells: GridSnapshot['wells'] = [];
+      for (let i = 0; i < f.count; i++) {
+        wells.push({
+          bodyId: f.ids[i],
+          x: f.positions[i * 3], y: f.positions[i * 3 + 1], z: f.positions[i * 3 + 2],
+          peak: f.peaks[i], core: f.cores[i],
+        });
+      }
+      return {
+        mode: f.mode,
+        primary: { bodyId: L.primary >= 0 ? f.ids[L.primary] : null, x: L.primaryX, z: L.primaryZ },
+        discs,
+        wells,
+      };
+    },
 
     loadFixture: (world) => {
       const parsed = parseWorldData(world);

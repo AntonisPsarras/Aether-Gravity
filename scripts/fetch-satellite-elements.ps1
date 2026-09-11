@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 # Reproducible, offline runtime fixture: geometric J2000 ecliptic elements.
-$targets = @(@('Moon',301,399), @('Io',501,599), @('Europa',502,599), @('Ganymede',503,599), @('Callisto',504,599), @('Titan',606,699), @('Enceladus',602,699), @('Titania',703,799), @('Triton',801,899), @('Charon',901,999), @('Phobos',401,499), @('Earth',399,10), @('Pluto',999,10))
+# Rails satellites only. Planets keep JPL mean elements of their system
+# barycentres (content/realSystems.ts): their rails moons exert no force.
+$targets = @(@('Moon',301,399), @('Io',501,599), @('Europa',502,599), @('Ganymede',503,599), @('Callisto',504,599), @('Titan',606,699), @('Enceladus',602,699), @('Titania',703,799), @('Triton',801,899), @('Charon',901,999), @('Phobos',401,499))
 $data = [ordered]@{}
 foreach ($target in $targets) {
   $uri = "https://ssd.jpl.nasa.gov/api/horizons.api?format=json&COMMAND='$($target[1])'&CENTER='500@$($target[2])'&MAKE_EPHEM='YES'&EPHEM_TYPE='ELEMENTS'&TLIST='2451545.0'&REF_PLANE='ECLIPTIC'&OUT_UNITS='AU-D'"

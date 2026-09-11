@@ -81,8 +81,9 @@ describe('unit system self-consistency', () => {
     expect(G_AETHER).toBeCloseTo(7.5883, 3);
   });
 
-  it('puts one solar mass at ~332954 Earth masses', () => {
-    // 1.98847e30 / 5.9722e24, the IAU 2015 nominal values.
+  it('puts one solar mass at the IAU 332 946 Earth masses', () => {
+    // (GM)☉ / GM⊕: IAU 2015 nominal solar mass parameter over JPL's Earth value.
+    expect(SOLAR).toBeCloseTo(1.3271244e20 / 3.986004418e14, 3);
     expect(SOLAR).toBeGreaterThan(332900);
     expect(SOLAR).toBeLessThan(333000);
   });

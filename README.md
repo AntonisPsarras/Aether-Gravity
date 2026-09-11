@@ -137,13 +137,13 @@ The mode switch changes **presentation and pacing only**. It never changes the p
 |---|---|---|
 | **Time** | 0.35× base rate (~36 s per Earth year) | Full base rate (~12.5 s per Earth year) |
 | **Body size** | Inflated for visibility — solids ×2.2, stars ×1.25, compact objects ×1.5 | True compressed scale |
-| **Spacetime grid** | Curvature compressed so a star's well stays readable | Uncompressed |
+| **Spacetime grid** | Exaggerated per-body wells so planets dent visibly, with depth shading | True summed Newtonian potential on one linear scale; only compact objects are log-compressed near their cores |
 | **Creation dock** | 7 of the 14 classes | All 14 |
 | **Inspector** | Advanced-audience fields hidden; Composition and Dynamics sections collapsed out | Every section |
 
 <table>
-<tr><td width="50%"><img src="docs/screenshots/beginner-mode.png" alt="Beginner mode"><br><em>Beginner: inflated bodies, compressed curvature</em></td>
-<td width="50%"><img src="docs/screenshots/advanced-mode.png" alt="Advanced mode"><br><em>Advanced: true scale, full curvature, extra outliner controls</em></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/beginner-mode.png" alt="Beginner mode"><br><em>Beginner: inflated bodies, exaggerated wells</em></td>
+<td width="50%"><img src="docs/screenshots/advanced-mode.png" alt="Advanced mode"><br><em>Advanced: true scale, true-ratio potential, extra outliner controls</em></td></tr>
 </table>
 
 Existing bodies are never removed by a mode change — a pulsar you made in Advanced mode keeps working, keeps its Inspector entry, and stays saveable in Beginner mode. The preference is stored globally and seeded from whether you have finished the tutorial.

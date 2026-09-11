@@ -100,6 +100,21 @@ describe('helper trigger resolution', () => {
     expect(second).toEqual([{ id: 'body:Star', bodyId: 'sun' }]);
   });
 
+  it('queues the grid explainer after a new body\'s lesson, only while the grid is visible', () => {
+    const planet = body({ id: 'p', type: 'Planet' });
+    expect(helpersForTrigger({ kind: 'body-created', body: planet, gridVisible: true })).toEqual([
+      { id: 'body:Planet', bodyId: 'p' },
+      { id: 'panel:grid' },
+    ]);
+    expect(helpersForTrigger({ kind: 'body-created', body: planet })).toEqual([
+      { id: 'body:Planet', bodyId: 'p' },
+    ]);
+    expect(helpersForTrigger({ kind: 'grid-visible' })).toEqual([{ id: 'panel:grid' }]);
+    expect(enqueueUnseenHelpers([], { kind: 'grid-visible' }, ['panel:grid'])).toEqual([]);
+    expect(parseOnboardingProgress({ seenHelperIds: ['panel:grid'] }).seenHelperIds).toEqual(['panel:grid']);
+    expect(helperDefinition({ id: 'panel:grid' }, []).content).toContain('potential');
+  });
+
   it('does not claim that a free Moon is already a satellite', () => {
     const moon = body({ id: 'moon', type: 'Moon', name: 'New Moon', mass: 0.01 });
     const definition = helperDefinition({ id: 'body:Moon', bodyId: moon.id }, [moon]);

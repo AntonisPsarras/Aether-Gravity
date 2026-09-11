@@ -4,85 +4,44 @@
  * WHAT THE DEPTH MEANS. The grid is an embedding diagram of the Newtonian
  * potential, Φ = −Σ G mᵢ / rᵢ. In the weak-field limit that is the time-
  * curvature term of the metric (g_tt ≈ −(1 + 2Φ/c²)), which is what actually
- * bends trajectories into orbits — so depth ∝ −Φ is the right quantity to draw.
+ * bends trajectories into orbits — so depth ∝ −Φ is the right quantity to draw,
+ * and the slope of the sheet is the local gravitational acceleration.
  *
- * WHAT HAS TO BE COMPRESSED, AND WHAT MUST NOT BE. The true Sun : Earth depth
- * ratio is 3.3 × 10⁵ : 1; no plane can show both. The earlier version therefore
- * log-compressed the *field* value at every grid vertex. That also compressed
- * the *shape*: a 1/r well became ~log(1/r), which barely decays, so a single
- * star sank the entire visible plane into a pedestal (depth 121 at the Sun, 73
- * at Neptune, still 45 six thousand units out) and its funnel read as flat.
+ * ONE WELL. Every body contributes
  *
- * Now only the AMPLITUDE is compressed, per body, and the shape is left alone:
+ *     depthᵢ(d) = Kᵢ / √(d² + sᵢ²) = Pᵢ · sᵢ / √(d² + sᵢ²)        (`wellDepthAt`)
  *
- *     depthᵢ(d) = Pᵢ · sᵢ / √(d² + sᵢ²)        (`wellDepthAt`)
- *     Pᵢ        = softCeil(A · mᵢ^p)            (`wellPeakDepth`)
+ * which is exactly the Newtonian Kᵢ/d outside a display core sᵢ — so the sheet
+ * is flat far from every mass — and finite inside it, as for a real extended
+ * body. Wells are summed, so superposition is exact. How K and s follow from
+ * mass is the mode's choice (utils/displayMode.ts): Advanced uses K = κ·m, the
+ * true potential; Beginner exaggerates planets.
  *
- * Outside the core radius sᵢ this is exactly ∝ 1/d — the true Newtonian
- * falloff — so the grid is flat far from any mass. Inside it is a smooth finite
- * core, as a real extended body has. The power law keeps mass ordering and is
- * scale-free (every 10× in mass is 10^p× deeper); the soft ceiling bounds black
- * holes without a plateau. Superposition holds because wells are summed.
+ * THE SUM, DRAWN. `displayDepth` is the identity below a knee and continues as
+ * knee·(1 + ln(D/knee)) above it: C¹, strictly increasing and never flat. A
+ * monotone map preserves the potential's level sets, so equipotentials and
+ * saddle points stay exact; only the depth axis is compressed, and only where
+ * the potential is deeper than the knee (compact objects). The logarithmic
+ * tail is what stops a very heavy hole from sinking the whole visible sheet
+ * into a flat plateau, which any saturating ceiling would do.
  *
- * `curvatureDisplayScale` (soft-knee log) is still used for the tidal tint.
+ * The lattice may widen a core it cannot resolve (utils/gridLattice.ts); it
+ * keeps K, so the far field is untouched.
  *
  * NEVER feed any of this back into a physical calculation. The GLSL twins
  * below are shared verbatim by the grid shader (`components/SpaceCanvas.tsx`)
  * and the habitable-zone surface (`components/HabitableZoneVisual.tsx`) so the
  * two can never drift apart.
  */
+import { GRID_RENDER_SAFETY_MAX_DEPTH, type WellParams } from './displayMode';
+
+/** Smallest display core, L*. Keeps a well finite; far below any lattice cell. */
+export const MIN_WELL_CORE = 1e-3;
 
 /**
- * @param depth    Raw well depth, L*, non-negative (i.e. `-displacement`).
- * @param knee     Depth below which the curve is ~identity, L*.
- * @param amount   0 = raw physical depth, 1 = fully compressed.
- * @param maxDepth Asymptotic ceiling on the returned depth, L*. Approached but
- *                 never reached, so the funnel never develops a flat bottom.
- */
-export const curvatureDisplayScale = (
-  depth: number,
-  knee: number,
-  amount: number,
-  maxDepth: number,
-): number => {
-  if (!isFinite(depth) || depth <= 0) return 0;
-  if (amount <= 0) return depth;
-  const k = knee > 0 ? knee : 1;
-  const compressed = k * Math.log(1 + depth / k);
-  const a = amount >= 1 ? 1 : amount;
-  const mixed = depth * (1 - a) + compressed * a;
-  if (maxDepth <= 0) return mixed;
-  // Soft ceiling, not `min(mixed, maxDepth)`. A hard clamp flattens every
-  // vertex whose well is past the ceiling into one plateau — for a 100 M☉ hole
-  // that is a disc ~500 L* across with a hard crease at its rim, which is the
-  // same "the grid went flat" failure in miniature. `M(1 - e^(-x/M))` is
-  // strictly increasing, has unit slope at 0 (so small wells are still drawn at
-  // their true depth), and tends to `maxDepth` without ever touching it.
-  return maxDepth * (1 - Math.exp(-mixed / maxDepth));
-};
-
-/**
- * The same function in GLSL, injected into both curvature shaders.
- *
- * `log` is GLSL's natural log, matching `Math.log`, so the two implementations
- * agree to float precision. Keep the bodies of the two versions in step.
- */
-export const CURVATURE_DISPLAY_GLSL = /* glsl */ `
-float curvatureDisplayScale(float depth, float knee, float amount, float maxDepth) {
-  if (depth <= 0.0) return 0.0;
-  if (amount <= 0.0) return depth;
-  float k = max(knee, 1.0);
-  float compressed = k * log(1.0 + depth / k);
-  float mixed = mix(depth, compressed, clamp(amount, 0.0, 1.0));
-  if (maxDepth <= 0.0) return mixed;
-  return maxDepth * (1.0 - exp(-mixed / maxDepth));
-}
-`;
-
-/**
- * Peak (central) well depth for a body, L*. Power-law compression of mass onto
- * a soft asymptotic ceiling — strictly increasing, unit slope at 0, never
- * reaches `maxDepth`. Computed on the CPU once per body per frame.
+ * Peak (central) well depth for a body in Beginner Mode, L*. Power-law
+ * compression of mass onto a soft asymptotic ceiling — strictly increasing,
+ * unit slope at 0, never reaches `maxDepth`.
  *
  * @param massEarth Body mass, M⊕.
  * @param amplitude Depth of a 1 M⊕ well before the ceiling, L*.
@@ -105,13 +64,35 @@ export const wellPeakDepth = (
 export const wellCoreRadius = (drawnRadius: number, factor: number, floor: number): number =>
   Math.max(isFinite(drawnRadius) ? drawnRadius * factor : 0, floor, 1);
 
+/** Display core for a body of the given drawn radius in the active mode, L*. */
+export const wellCore = (drawnRadius: number, params: WellParams): number => {
+  if (params.model === 'exaggerated') {
+    return wellCoreRadius(drawnRadius, params.coreFactor, params.coreFloor);
+  }
+  const r = Number.isFinite(drawnRadius) && drawnRadius > 0 ? drawnRadius * params.coreFactor : 0;
+  return Math.max(r, params.coreFloor, MIN_WELL_CORE);
+};
+
+/**
+ * Peak (central) depth of a body's well with the given core, L*. In the
+ * 'potential' model this is K/s with K = κ·m, so the far field K/d is in true
+ * proportion to mass for every body.
+ */
+export const wellPeak = (massEarth: number, core: number, params: WellParams): number => {
+  if (params.model === 'exaggerated') {
+    return wellPeakDepth(massEarth, params.amplitude, params.exponent, params.maxDepth);
+  }
+  if (!Number.isFinite(massEarth) || massEarth <= 0 || !(core > 0) || !(params.kappa > 0)) return 0;
+  return (params.kappa * massEarth) / core;
+};
+
 /**
  * Depth of one body's well at distance `d`, L*. Equals `peak` at d = 0 and is
  * exactly `peak · core / d` (true 1/r) for d ≫ core.
  */
 export const wellDepthAt = (d: number, peak: number, core: number): number => {
   if (!(peak > 0)) return 0;
-  const s = core > 1 ? core : 1;
+  const s = core > MIN_WELL_CORE ? core : MIN_WELL_CORE;
   return (peak * s) / Math.sqrt(d * d + s * s);
 };
 
@@ -119,7 +100,32 @@ export const wellDepthAt = (d: number, peak: number, core: number): number => {
 export const CURVATURE_WELL_GLSL = /* glsl */ `
 float wellDepthAt(float d, float peak, float core) {
   if (peak <= 0.0) return 0.0;
-  float s = max(core, 1.0);
+  float s = max(core, ${MIN_WELL_CORE.toExponential()});
   return peak * s / sqrt(d * d + s * s);
+}
+`;
+
+/**
+ * Drawn depth for a summed raw depth `depth`, L*: identity up to `knee`, then
+ * knee·(1 + ln(depth/knee)), clamped only at the render-safety limit.
+ */
+export const displayDepth = (depth: number, knee: number): number => {
+  if (!(depth > 0)) return 0;
+  if (!Number.isFinite(depth)) return GRID_RENDER_SAFETY_MAX_DEPTH;
+  const k = knee >= 1 ? knee : 1;
+  const v = depth <= k ? depth : k * (1 + Math.log(depth / k));
+  return v < GRID_RENDER_SAFETY_MAX_DEPTH ? v : GRID_RENDER_SAFETY_MAX_DEPTH;
+};
+
+/**
+ * GLSL twin of `displayDepth`. `log` is GLSL's natural log, matching
+ * `Math.log`, so the two agree to float precision. Keep them in step.
+ */
+export const DISPLAY_DEPTH_GLSL = /* glsl */ `
+float displayDepth(float depth, float knee) {
+  if (depth <= 0.0) return 0.0;
+  float k = max(knee, 1.0);
+  float v = depth <= k ? depth : k * (1.0 + log(depth / k));
+  return min(v, ${GRID_RENDER_SAFETY_MAX_DEPTH.toFixed(1)});
 }
 `;

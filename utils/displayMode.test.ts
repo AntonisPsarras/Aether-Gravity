@@ -1,20 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ADVANCED_DEPTH_AT_1AU_PER_SOLAR_MASS,
   BEGINNER_BODY_TYPES,
   GRID_RENDER_SAFETY_MAX_DEPTH,
+  TIDAL_LOG_MAX,
+  TIDAL_LOG_MIN,
+  WELL_PARAMS_ADVANCED,
   WELL_PARAMS_BEGINNER,
   beginnerVisualScale,
   depthTintFor,
   isBeginnerBodyType,
   wellParamsFor,
   isUiMode,
-  tidalKneeFor,
-  tidalMaxFor,
+  tidalTintFor,
   visualScaleFor,
 } from './displayMode';
 import type { UiMode } from './displayMode';
 import { BODY_CONFIGS } from '../constants';
 import type { BodyType } from '../types';
+import { M_SUN_IN_EARTH, auToDist } from './units';
 
 const ALL_TYPES = Object.keys(BODY_CONFIGS) as BodyType[];
 
@@ -66,34 +70,36 @@ describe('beginner body-type subset', () => {
   });
 });
 
-describe('curvature presentation accessors', () => {
+describe('curvature presentation parameters', () => {
   const MODES: UiMode[] = ['beginner', 'advanced'];
 
-  it('returns positive well and tidal parameters for every mode', () => {
+  it('draws the true potential in Advanced Mode and exaggerates in Beginner', () => {
+    expect(wellParamsFor('advanced')).toBe(WELL_PARAMS_ADVANCED);
+    expect(wellParamsFor('beginner')).toBe(WELL_PARAMS_BEGINNER);
+    expect(WELL_PARAMS_ADVANCED.model).toBe('potential');
+    expect(WELL_PARAMS_BEGINNER.model).toBe('exaggerated');
+  });
+
+  it('derives one κ for every mass from the 1 AU depth anchor', () => {
+    expect((WELL_PARAMS_ADVANCED.kappa * M_SUN_IN_EARTH) / auToDist(1))
+      .toBeCloseTo(ADVANCED_DEPTH_AT_1AU_PER_SOLAR_MASS, 9);
+  });
+
+  it('returns well-formed parameters for every mode', () => {
     for (const mode of MODES) {
       const p = wellParamsFor(mode);
-      expect(p.amplitude).toBeGreaterThan(0);
-      expect(p.exponent).toBeGreaterThan(0);
-      expect(p.exponent).toBeLessThanOrEqual(1);
-      expect(p.maxDepth).toBeGreaterThan(p.amplitude);
       expect(p.coreFactor).toBeGreaterThan(0);
-      expect(p.coreFloor).toBeGreaterThan(0);
-      expect(tidalKneeFor(mode)).toBeGreaterThan(0);
-      expect(tidalMaxFor(mode)).toBeGreaterThan(tidalKneeFor(mode));
+      expect(p.coreFloor).toBeGreaterThanOrEqual(0);
+      expect(p.displayKnee).toBeGreaterThan(0);
+      expect(p.displayKnee).toBeLessThan(GRID_RENDER_SAFETY_MAX_DEPTH);
     }
-  });
-
-  it('gives Advanced Mode more headroom and a truer mass ratio than Beginner', () => {
-    expect(wellParamsFor('advanced').maxDepth).toBeGreaterThan(wellParamsFor('beginner').maxDepth);
-    expect(wellParamsFor('advanced').exponent).toBeGreaterThan(wellParamsFor('beginner').exponent);
-    expect(tidalKneeFor('advanced')).toBeGreaterThan(tidalKneeFor('beginner'));
-    expect(tidalMaxFor('advanced')).toBeGreaterThan(tidalMaxFor('beginner'));
-  });
-
-  it('keeps every per-body ceiling well under the render-safety floor', () => {
-    for (const mode of MODES) {
-      expect(wellParamsFor(mode).maxDepth).toBeLessThan(GRID_RENDER_SAFETY_MAX_DEPTH);
-    }
+    const b = WELL_PARAMS_BEGINNER;
+    expect(b.amplitude).toBeGreaterThan(0);
+    expect(b.exponent).toBeGreaterThan(0);
+    expect(b.exponent).toBeLessThanOrEqual(1);
+    expect(b.maxDepth).toBeGreaterThan(b.amplitude);
+    expect(b.maxDepth).toBeLessThan(b.displayKnee);
+    expect(b.coreFloor).toBeGreaterThan(0);
   });
 
   it('tints wells more strongly in Beginner Mode', () => {
@@ -101,8 +107,10 @@ describe('curvature presentation accessors', () => {
     expect(depthTintFor('advanced')).toBeGreaterThanOrEqual(0);
   });
 
-  it('matches the exported Beginner constants', () => {
-    expect(wellParamsFor('beginner')).toBe(WELL_PARAMS_BEGINNER);
+  it('weights the curvature (tidal) tint more in Advanced Mode', () => {
+    expect(tidalTintFor('advanced')).toBeGreaterThan(tidalTintFor('beginner'));
+    expect(tidalTintFor('beginner')).toBeGreaterThan(0);
+    expect(TIDAL_LOG_MAX).toBeGreaterThan(TIDAL_LOG_MIN);
   });
 });
 

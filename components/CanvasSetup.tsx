@@ -73,6 +73,27 @@ export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
      * fixed-size uniform arrays impose.
      */
     maxFragmentsPerImpact: low ? 3 : 6,
+
+    // --- Spacetime grid lattice (utils/gridLattice.ts) ---
+    //
+    // Vertex work is vertices × bodies, as before. With every disc in use the
+    // worst case matches the old camera-following plane: 159.7 k vertices on
+    // high against 160.8 k (401²), 21.9 k on low against 22.8 k (151²). A
+    // single-star scene draws only the primary lattice: 96.3 k / 14.3 k.
+    // Cheapen here: fewer rings/spokes widen every unresolved well's LOD core,
+    // fewer anchors leave distant secondary wells softer, and one line level
+    // snaps the zoom-adaptive line spacing instead of cross-fading it.
+    /** Primary-lattice rings out to 4000 L* (δ ≈ 0.026 high, 0.066 low). */
+    gridRings: low ? 104 : 270,
+    /** Primary-lattice rings of the coarsening tail out to 2×10⁷ L*. */
+    gridTailRings: low ? 16 : 30,
+    gridSpokes: low ? 118 : 320,
+    gridDiscRings: low ? 75 : 150,
+    gridDiscSpokes: low ? 100 : 210,
+    /** Primary plus secondary (disc) lattices. */
+    gridMaxAnchors: low ? 2 : 3,
+    /** Grid-line levels cross-faded per pixel: 2 costs ~10 extra ALU ops per grid fragment. */
+    gridLineLevels: low ? 1 : 2,
   };
 }
 export type EnvironmentQuality = ReturnType<typeof environmentQualityForDevice>;

@@ -35,7 +35,7 @@ const MODE_COPY: Record<UiMode, { title: string; blurb: string }> = {
   },
   advanced: {
     title: 'Advanced',
-    blurb: 'Deeper curvature, smaller display sizes, faster clock, and every field and body type. Bodies remain enlarged.',
+    blurb: 'True-ratio gravity wells (planets barely dent the Sun’s), smaller display sizes, faster clock, and every field and body type. Bodies remain enlarged.',
   },
 };
 
@@ -188,7 +188,9 @@ export const SettingsPanel: React.FC = () => {
           <Group title="Display">
             <ToggleRow
               icon={<Hexagon size={16} />} label="Spacetime grid"
-              hint="Curvature well beneath the bodies."
+              hint={uiMode === 'advanced'
+                ? 'Gravitational potential on one true scale for every mass.'
+                : 'Heavier bodies sink deeper wells; planet dents are exaggerated.'}
               checked={showGrid} onToggle={toggleGrid} testId="toggle-grid"
             />
             <ToggleRow
@@ -216,7 +218,7 @@ export const SettingsPanel: React.FC = () => {
                 useStore.setState(s => ({ guidedView: view, selectedId: null, cameraLockedId: null,
                   cameraRecenterNonce: s.cameraRecenterNonce + 1, settingsOpen: false,
                   outlinerOpen: window.innerWidth < 768 ? false : s.outlinerOpen,
-                  showGrid: view === 'Proxima planets' || view === 'Overview' ? false : s.showGrid,
+                  showGrid: view === 'Overview' ? false : s.showGrid,
                 }));
               }}>{view}</button>)}</div>
               <details><summary className="cursor-pointer">Sources and assumptions</summary>

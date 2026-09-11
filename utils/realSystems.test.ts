@@ -53,6 +53,39 @@ describe('Solar System preset', () => {
     }
   });
 
+  it('gives Earth the sidereal year and Pluto its mean period (barycentric orbits)', () => {
+    // Earth follows the Earth–Moon barycentre and Pluto the Pluto–Charon one:
+    // the rails moons exert no force, so the bodies' own osculating elements
+    // (Earth's a = 1.000449 AU) would run a 365.50-day year forever.
+    const bodies = solar();
+    const sun = find(bodies, 'Sun');
+    const period = (name: string) => {
+      const b = find(bodies, name);
+      return orbitalPeriodYears(getOrbitalElements(b, sun).a, sun.mass + b.mass);
+    };
+    within(period('Earth'), 1.0000174, 0.01, 'Earth sidereal year');
+    within(period('Pluto'), 247.92065, 0.1, 'Pluto period');
+  });
+
+  it('matches JPL SSD mass parameters and mean radii', () => {
+    const bodies = solar();
+    const GM_EARTH = 398600.4418; // km³/s², JPL
+    const expected: Array<[string, number, number]> = [
+      // name, GM (km³/s², JPL SSD), mean radius (km, JPL SSD)
+      ['Moon', 4902.800, 1737.4], ['Io', 5959.91547, 1821.49], ['Europa', 3202.71210, 1560.80],
+      ['Ganymede', 9887.83275, 2631.2], ['Callisto', 7179.28340, 2410.3], ['Titan', 8978.13710, 2574.76],
+      ['Enceladus', 7.21037, 252.1], ['Titania', 226.9, 788.9], ['Triton', 1428.49546, 1352.6],
+      ['Charon', 106.1, 606.0], ['Phobos', 0.0007087, 11.08],
+    ];
+    for (const [name, gm, radiusKm] of expected) {
+      const b = find(bodies, name);
+      within(b.mass * GM_EARTH, gm, 0.05, `${name} GM`);
+      expect(Math.abs(b.radiusKm - radiusKm), `${name} radius`).toBeLessThan(0.05);
+    }
+    within(find(bodies, 'Pluto').mass * 5.97217e24, 1.30246e22, 0.05, 'Pluto mass');
+    expect(find(bodies, 'Mercury').radiusKm).toBe(2439.4);
+  });
+
   it('places every planet at its published semi-major axis', () => {
     const bodies = solar();
     const sun = find(bodies, 'Sun');
@@ -97,11 +130,14 @@ describe('Solar System preset', () => {
       ['Charon', 'Pluto', 6.3872],
       ['Phobos', 'Mars', 0.318910],
     ];
+    // Rails take their semi-major axes from the mean sidereal periods, so the
+    // unperturbed Kepler motion keeps the real mean motion (it was up to 1.1%
+    // off when the osculating J2000 snapshot set the period).
     for (const [moonName, parentName, days] of expected) {
       const moon = find(bodies, moonName);
       const parent = find(bodies, parentName);
       const p = satellitePeriodYears(moon, parent) * 365.25;
-      within(p, days, 2, `${moonName} period`);
+      within(p, days, 0.1, `${moonName} period`);
     }
   });
 
