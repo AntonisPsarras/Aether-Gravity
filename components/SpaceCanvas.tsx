@@ -28,7 +28,11 @@ import { CURVATURE_WELL_GLSL, DISPLAY_DEPTH_GLSL } from '../utils/curvatureDispl
 import {
   GRID_MAX_BODIES, GRID_MAX_DISCS, GridFrameBuilder, publishGridFrame, type GridWellFrame,
 } from '../utils/gridWells';
-import { buildDiscLatticeGeometry, buildPrimaryLatticeGeometry } from '../utils/gridLattice';
+import {
+  buildDiscLatticeGeometry,
+  buildPrimaryLatticeGeometry,
+  PRIMARY_DISC_COVERAGE_FLOOR,
+} from '../utils/gridLattice';
 import {
   DEPTH_TINT_BEGINNER, DEPTH_TINT_SCALE, TIDAL_LOG_MAX, TIDAL_LOG_MIN, TIDAL_TINT_BEGINNER,
   depthTintFor, tidalTintFor,
@@ -155,18 +159,18 @@ const GRID_LINE_LOD_MAX = 6;
  * utils/gridLattice.ts:
  *
  *  - the PRIMARY lattice (uIsDisc = 0): a polar mesh in world units, centred
- *    by its mesh position on the strongest well. Its vertices that fall under
- *    a secondary disc are pushed onto that disc's carve circle and its
- *    fragments inside the disc are discarded, so the two never overlap;
+ *    by its mesh position on the strongest well. It remains a low-opacity
+ *    fallback below every secondary disc instead of being carved away;
  *  - up to GRID_MAX_DISCS SECONDARY lattices (uIsDisc = 1): unit discs whose
  *    ring parameter t (position.y) becomes r = c·sinh(t·U) here, so one static
  *    geometry serves a disc whose radius changes every frame.
  *
  * Both evaluate the same displacement — the summed wells through
- * `displayDepth` — so they meet at the seam. No uniform or vertex position
- * depends on the camera: the surface is a function of the bodies alone. The
- * camera only drives the horizon fade and the fwidth-based line width and
- * line level, neither of which moves the surface.
+ * `displayDepth` — so they meet through an overlap-safe, resolution-aware
+ * seam. No uniform or vertex position depends on the camera: the surface is
+ * a function of the bodies alone. The camera only drives the horizon fade and
+ * the fwidth-based line width and line level, neither of which moves the
+ * surface.
  */
 const GravityGridMaterial = shaderMaterial(
   {
@@ -186,17 +190,19 @@ const GravityGridMaterial = shaderMaterial(
     uDepthTint: DEPTH_TINT_BEGINNER,
     uDepthTintScale: DEPTH_TINT_SCALE,
     uLineLevels: 2,
-    // Lattice role. A disc carries its ring profile and the circle it owns;
-    // the primary carries the discs it must carve out.
+    // Lattice role. A disc carries its ring profile; the primary keeps a
+    // coverage-safe fallback under detail discs.
     uIsDisc: 0,
     uDiscU: 1,
     uDiscCoreScale: 1,
     uDiscCenter: new THREE.Vector2(),
     uDiscRadius: 0,
-    uCarveCount: 0,
-    uCarveCenter: new Float32Array(GRID_MAX_DISCS * 2),
-    uCarveRadius: new Float32Array(GRID_MAX_DISCS),
-    uClipRadius: new Float32Array(GRID_MAX_DISCS),
+    uPrimaryDiscCount: 0,
+    uPrimaryDiscCenter: new Float32Array(GRID_MAX_DISCS * 2),
+    uPrimaryDiscRadius: new Float32Array(GRID_MAX_DISCS),
+    uPrimaryDiscGuard: new Float32Array(GRID_MAX_DISCS),
+    uPrimaryCoverageFloor: PRIMARY_DISC_COVERAGE_FLOOR,
+    uDiscGuard: 1,
   },
   `precision highp float;
 #include <common>
@@ -211,9 +217,6 @@ uniform float uDisplayKnee;
 uniform float uIsDisc;
 uniform float uDiscU;
 uniform float uDiscCoreScale;
-uniform int uCarveCount;
-uniform vec2 uCarveCenter[${GRID_MAX_DISCS}];
-uniform float uCarveRadius[${GRID_MAX_DISCS}];
 
 ${CURVATURE_WELL_GLSL}
 ${DISPLAY_DEPTH_GLSL}
@@ -233,19 +236,6 @@ void main() {
   // plane (y = 0) in render space.
   vec3 w = (modelMatrix * vec4(local, 1.0)).xyz;
   w.y = 0.0;
-  if (uIsDisc < 0.5) {
-    // Carve: primary vertices under a disc collapse onto its carve circle, so
-    // the covered triangles have no area and the disc alone shades there.
-    for (int j = 0; j < ${GRID_MAX_DISCS}; j++) {
-      if (j >= uCarveCount) break;
-      vec2 rel = w.xz - uCarveCenter[j];
-      float d = length(rel);
-      if (d < uCarveRadius[j]) {
-        w.xz = uCarveCenter[j] + (d > 1e-6 ? rel / d : vec2(1.0, 0.0)) * uCarveRadius[j];
-      }
-    }
-  }
-
   // Distances are measured in 3D from the orbital-plane point to each body,
   // so a body above or below the plane digs a correspondingly shallower dip,
   // as the true potential does. Summed, so superposition holds.
@@ -284,9 +274,12 @@ uniform float uLineLevels;
 uniform float uIsDisc;
 uniform vec2 uDiscCenter;
 uniform float uDiscRadius;
-uniform int uCarveCount;
-uniform vec2 uCarveCenter[${GRID_MAX_DISCS}];
-uniform float uClipRadius[${GRID_MAX_DISCS}];
+uniform float uDiscGuard;
+uniform int uPrimaryDiscCount;
+uniform vec2 uPrimaryDiscCenter[${GRID_MAX_DISCS}];
+uniform float uPrimaryDiscRadius[${GRID_MAX_DISCS}];
+uniform float uPrimaryDiscGuard[${GRID_MAX_DISCS}];
+uniform float uPrimaryCoverageFloor;
 varying float vDisplacement;
 varying float vTidal;
 varying vec3 vWorldPos;
@@ -297,18 +290,34 @@ float gridLines(vec2 xz, vec2 fw, float spacing) {
   return 1.0 - min(min(g.x, g.y), 1.0);
 }
 
+// 1 inside a detail disc, smoothly falling to 0 across its shared guard band.
+float discSeamBlend(float d, float radius, float guard) {
+  if (d >= radius) return 0.0;
+  float safeGuard = max(1e-6, min(guard, radius));
+  return 1.0 - smoothstep(radius - safeGuard, radius, d);
+}
+
 void main() {
   vec2 xz = vWorldPos.xz;
   // Derivatives first: they need the whole pixel quad, before any discard.
   vec2 fw = fwidth(xz);
 
-  // Seam ownership: exactly one lattice shades each point of the sheet.
+  // The detail lattice fades over the primary through one shared guard band.
+  // The primary never discards this area: that fallback is what prevents a
+  // low-density mobile disc from exposing a black hole in the grid.
+  float coverage = 1.0;
   if (uIsDisc > 0.5) {
-    if (distance(xz, uDiscCenter) > uDiscRadius) discard;
+    coverage = discSeamBlend(distance(xz, uDiscCenter), uDiscRadius, uDiscGuard);
+    if (coverage <= 0.0) discard;
   } else {
     for (int j = 0; j < ${GRID_MAX_DISCS}; j++) {
-      if (j >= uCarveCount) break;
-      if (distance(xz, uCarveCenter[j]) < uClipRadius[j]) discard;
+      if (j >= uPrimaryDiscCount) break;
+      float blend = discSeamBlend(
+        distance(xz, uPrimaryDiscCenter[j]),
+        uPrimaryDiscRadius[j],
+        uPrimaryDiscGuard[j]
+      );
+      coverage = min(coverage, mix(1.0, uPrimaryCoverageFloor, blend));
     }
   }
 
@@ -340,7 +349,7 @@ void main() {
 
   float dist = length(vWorldPos.xz - cameraPosition.xz);
   float fade = 1.0 - smoothstep(2500.0, 7000.0, dist);
-  float totalAlpha = lineAlpha * 0.4 * uLineGain * uVisualBoost * (1.0 + wellT * 0.9) * fade;
+  float totalAlpha = lineAlpha * 0.4 * uLineGain * uVisualBoost * (1.0 + wellT * 0.9) * fade * coverage;
   if (totalAlpha < 0.01) discard;
   gl_FragColor = vec4(finalColor, totalAlpha);
   #include <logdepthbuf_fragment>
@@ -1334,10 +1343,11 @@ const PhysicsEngine = ({
         // The flat far field sits at y = 0, the orbital plane; wells dip below it.
         primaryMesh.position.set(L.primaryX, 0, L.primaryZ);
         setGridBodyUniforms(primaryMat, frame, uiMode, lineLevels);
-        primaryMat.uCarveCount = L.discCount;
-        primaryMat.uCarveCenter = frame.discCenters;
-        primaryMat.uCarveRadius = frame.carveRadii;
-        primaryMat.uClipRadius = frame.discRadii;
+        primaryMat.uPrimaryDiscCount = L.discCount;
+        primaryMat.uPrimaryDiscCenter = frame.discCenters;
+        primaryMat.uPrimaryDiscRadius = frame.discRadii;
+        primaryMat.uPrimaryDiscGuard = frame.discGuards;
+        primaryMat.uPrimaryCoverageFloor = PRIMARY_DISC_COVERAGE_FLOOR;
         for (let j = 0; j < GRID_MAX_DISCS; j++) {
           const mesh = gridDiscMeshRefs.current[j];
           const mat = gridDiscMatRefs.current[j];
@@ -1350,6 +1360,7 @@ const PhysicsEngine = ({
           mat.uDiscCoreScale = L.discCoreScale[j];
           mat.uDiscCenter.set(L.discX[j], L.discZ[j]);
           mat.uDiscRadius = L.discRadius[j];
+          mat.uDiscGuard = L.discGuard[j];
         }
       }
     } else {

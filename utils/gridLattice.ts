@@ -21,9 +21,10 @@
  *    rides it every frame, so that well is always sampled identically.
  *  - Up to two SECONDARY lattices are small discs centred on the bodies that
  *    would otherwise lose the most depth to resolution (far planets in
- *    Beginner Mode, a second star, a black hole flying past). The primary
- *    lattice is carved out under each disc, so every pixel of the sheet is
- *    shaded by exactly one lattice and nothing is drawn twice.
+ *    Beginner Mode, a second star, a black hole flying past). They overlay
+ *    the primary lattice through a resolution-aware guard band. The primary
+ *    always remains a faint fallback, so a detail-disc rasterisation edge can
+ *    never turn into a hole in the sheet.
  *  - Any well narrower than 2.5 cells of the lattice that draws it gets a
  *    wider core but the SAME far-field strength K = peak·core (see
  *    `applyLatticeLod`): only a tip the lattice cannot resolve is rounded, and
@@ -96,8 +97,14 @@ const PRIMARY_HYSTERESIS = 1.25;
 const SECONDARY_HYSTERESIS = 1.5;
 /** Secondaries are re-ranked at most this often unless the body set changes, s. */
 const RERANK_INTERVAL_S = 0.5;
-/** Primary vertices within this many primary cells of a disc edge are left in place. */
-const CARVE_MARGIN_CELLS = 1.5;
+/** Width of the primary/secondary hand-off, in cells of the coarser lattice. */
+export const DISC_SEAM_GUARD_CELLS = 1.5;
+/**
+ * The primary grid never fully disappears below a detail disc. Keeping this
+ * small fallback makes the surface coverage-safe on mobile GPUs even if a
+ * disc edge is clipped, while the disc still supplies nearly all local detail.
+ */
+export const PRIMARY_DISC_COVERAGE_FLOOR = 0.18;
 
 // ---------------------------------------------------------------------------
 // Ring profile
@@ -337,8 +344,8 @@ export interface AnchorLayout {
   discCoreScale: Float64Array;
   /** U = asinh(outerRing / c): the disc's ring parameter at t = 1. */
   discU: Float64Array;
-  /** Primary vertices inside this radius are pushed onto its circle, L*. */
-  carveRadius: Float64Array;
+  /** Shared primary/secondary hand-off width, L*. */
+  discGuard: Float64Array;
 }
 
 export const createAnchorLayout = (): AnchorLayout => ({
@@ -353,8 +360,21 @@ export const createAnchorLayout = (): AnchorLayout => ({
   discOuterRing: new Float64Array(GRID_MAX_DISCS),
   discCoreScale: new Float64Array(GRID_MAX_DISCS),
   discU: new Float64Array(GRID_MAX_DISCS),
-  carveRadius: new Float64Array(GRID_MAX_DISCS),
+  discGuard: new Float64Array(GRID_MAX_DISCS),
 });
+
+/**
+ * Detail-disc contribution at `distance` from its centre. It is fully active
+ * inside the disc and fades only across its outer guard band. The primary
+ * lattice uses the complementary attenuation but is never discarded.
+ */
+export const discSeamBlend = (distance: number, radius: number, guard: number): number => {
+  if (!(radius > 0) || distance >= radius) return 0;
+  const safeGuard = Math.max(1e-6, Math.min(guard, radius));
+  if (distance <= radius - safeGuard) return 1;
+  const t = Math.max(0, Math.min(1, (radius - distance) / safeGuard));
+  return t * t * (3 - 2 * t);
+};
 
 const dist2 = (w: WellSet, i: number, x: number, z: number): number => {
   const dx = w.x[i] - x;
@@ -449,7 +469,9 @@ export class LatticeAnchors {
       const outer = discOuterRing(radius, budget.gridDiscSpokes);
       const c = discCoreScale(outer);
       const far = dist2(wells, i, L.primaryX, L.primaryZ) + radius;
-      const carve = radius - CARVE_MARGIN_CELLS * latticeCellSize(table, far);
+      const primaryCell = latticeCellSize(table, far);
+      const discCell = discCellSize(radius, c, Math.asinh(outer / c), budget.gridDiscRings, budget.gridDiscSpokes);
+      const guard = Math.min(radius * 0.5, DISC_SEAM_GUARD_CELLS * Math.max(primaryCell, discCell));
       L.discIndex[discs] = i;
       L.discX[discs] = wells.x[i];
       L.discZ[discs] = wells.z[i];
@@ -457,7 +479,7 @@ export class LatticeAnchors {
       L.discOuterRing[discs] = outer;
       L.discCoreScale[discs] = c;
       L.discU[discs] = Math.asinh(outer / c);
-      L.carveRadius[discs] = carve > 0 ? carve : 0;
+      L.discGuard[discs] = guard;
       discs++;
     }
     L.discCount = discs;

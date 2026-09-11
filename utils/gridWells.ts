@@ -53,10 +53,10 @@ export interface GridWellFrame {
   layout: AnchorLayout;
   /** Disc centres as xz pairs, packed for a `vec2[GRID_MAX_DISCS]` uniform. */
   discCenters: Float32Array;
-  /** Fragment ownership radius per disc, L*. */
+  /** Detail-disc visible radius per disc, L*. */
   discRadii: Float32Array;
-  /** Primary-vertex carve radius per disc, L*. */
-  carveRadii: Float32Array;
+  /** Shared primary/secondary seam guard per disc, L*. */
+  discGuards: Float32Array;
 }
 
 const createGridWellFrame = (layout: AnchorLayout, ids: string[]): GridWellFrame => ({
@@ -71,7 +71,7 @@ const createGridWellFrame = (layout: AnchorLayout, ids: string[]): GridWellFrame
   layout,
   discCenters: new Float32Array(GRID_MAX_DISCS * 2),
   discRadii: new Float32Array(GRID_MAX_DISCS),
-  carveRadii: new Float32Array(GRID_MAX_DISCS),
+  discGuards: new Float32Array(GRID_MAX_DISCS),
 });
 
 /** Builds the per-frame grid state. Allocation-free after construction. */
@@ -155,7 +155,7 @@ export class GridFrameBuilder {
       f.discCenters[j * 2] = on ? L.discX[j] : 0;
       f.discCenters[j * 2 + 1] = on ? L.discZ[j] : 0;
       f.discRadii[j] = on ? L.discRadius[j] : 0;
-      f.carveRadii[j] = on ? L.carveRadius[j] : 0;
+      f.discGuards[j] = on ? L.discGuard[j] : 0;
     }
     return f;
   }

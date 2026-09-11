@@ -12,8 +12,10 @@ import {
   createWellSet,
   discCoreScale,
   discOuterRing,
+  discSeamBlend,
   latticeCellSize,
   polarVertexCount,
+  PRIMARY_DISC_COVERAGE_FLOOR,
   type GridLatticeBudget,
   type RingTable,
   type WellSet,
@@ -212,8 +214,8 @@ describe('anchor selection', () => {
     for (let j = 0; j < L.discCount; j++) {
       const toPrimary = Math.hypot(L.discX[j] - L.primaryX, L.discZ[j] - L.primaryZ);
       expect(L.discRadius[j]).toBeLessThanOrEqual(0.5 * toPrimary + 1e-9);
-      expect(L.carveRadius[j]).toBeLessThan(L.discRadius[j]);
-      expect(L.carveRadius[j]).toBeGreaterThan(0);
+      expect(L.discGuard[j]).toBeGreaterThan(0);
+      expect(L.discGuard[j]).toBeLessThanOrEqual(0.5 * L.discRadius[j]);
     }
     const gap = Math.hypot(L.discX[0] - L.discX[1], L.discZ[0] - L.discZ[1]);
     expect(L.discRadius[0] + L.discRadius[1]).toBeLessThanOrEqual(gap + 1e-9);
@@ -259,6 +261,36 @@ describe('anchor selection', () => {
     const strong = wellsOf([...base, challenger(2)]);
     expect(ids(a.update(strong, t, HIGH, 2), strong)).toEqual(['neptune', 'x']);
   });
+});
+
+describe('secondary lattice seams', () => {
+  for (const [name, budget] of BUDGETS) {
+    it(`keeps primary coverage continuous through every detail-disc seam (${name})`, () => {
+      const layout = new LatticeAnchors().update(wellsOf(beginnerSolar()), tableFor(budget), budget, 0);
+      expect(layout.discCount).toBeGreaterThan(0);
+
+      for (let j = 0; j < layout.discCount; j++) {
+        const radius = layout.discRadius[j];
+        const guard = layout.discGuard[j];
+        for (let k = 0; k <= 256; k++) {
+          const distance = ((radius + guard) * k) / 256;
+          const detail = discSeamBlend(distance, radius, guard);
+          // This mirrors the shader's primary attenuation. It can soften under
+          // a disc, but it is never discarded, including on the low tier.
+          const primary = 1 - (1 - PRIMARY_DISC_COVERAGE_FLOOR) * detail;
+          expect(primary).toBeGreaterThanOrEqual(PRIMARY_DISC_COVERAGE_FLOOR - 1e-12);
+          expect(primary + detail).toBeGreaterThanOrEqual(1);
+        }
+        expect(discSeamBlend(radius, radius, guard)).toBe(0);
+        expect(discSeamBlend(radius - guard, radius, guard)).toBeCloseTo(1, 8);
+        // The smoothstep end points make both transitions continuous rather
+        // than a one-pixel ownership pop at either edge of the guard band.
+        const epsilon = guard / 10_000;
+        expect(discSeamBlend(radius - epsilon, radius, guard)).toBeLessThan(1e-6);
+        expect(1 - discSeamBlend(radius - guard + epsilon, radius, guard)).toBeLessThan(1e-6);
+      }
+    });
+  }
 });
 
 describe('resolution-aware cores', () => {
