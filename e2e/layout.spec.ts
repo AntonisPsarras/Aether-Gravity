@@ -63,6 +63,9 @@ test.describe('desktop rails', () => {
     expect(expanded.x).toBeCloseTo(16, 0);
     expect(expanded.y).toBeCloseTo(toolbarBox.y, 0);
     expect(expanded.width).toBeGreaterThanOrEqual(19 * 16);
+    // The three-body fixture must use its intrinsic content height. A desktop
+    // rail used to force the viewport cap here, leaving a large empty card.
+    expect(expanded.height).toBeLessThan(28 * 16);
     const title = outliner.locator('.universe-outliner-toggle .truncate');
     await expect(title).toHaveJSProperty('scrollWidth', await title.evaluate((element) => element.clientWidth));
 

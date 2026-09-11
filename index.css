@@ -1617,8 +1617,12 @@ html[data-reduced-motion='true'] *::after {
     left: max(1rem, var(--safe-left));
     width: clamp(19rem, 22vw, 22rem);
     max-width: calc(100vw - max(2rem, var(--safe-left) + var(--safe-right)));
-    height: 3.75rem;
-    max-height: none;
+    /* Let short systems keep a compact rail. The previous fixed 44rem height
+       turned every desktop outliner into a tall empty card; max-height still
+       gives dense systems a bounded, scrollable list. */
+    height: auto;
+    max-height: min(44rem, calc(100dvh - var(--control-bar-top) - 1rem));
+    interpolate-size: allow-keywords;
     border-radius: 0.75rem;
     transition:
       height var(--dur-rail) var(--ease-panel),
@@ -1627,7 +1631,7 @@ html[data-reduced-motion='true'] *::after {
   }
 
   .universe-outliner-anchor.is-expanded {
-    height: min(44rem, calc(100dvh - var(--control-bar-top) - 1rem));
+    height: auto;
   }
 
   .universe-outliner-toggle {
@@ -1638,6 +1642,10 @@ html[data-reduced-motion='true'] *::after {
 
   .universe-outliner-anchor:not(.is-expanded) .universe-outliner-toggle {
     border-bottom-color: transparent;
+  }
+
+  .universe-outliner-anchor:not(.is-expanded) {
+    height: 3.75rem;
   }
 
   .universe-outliner-content {
