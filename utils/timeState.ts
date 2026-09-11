@@ -53,6 +53,22 @@ export const formatSpeedReadout = (speed: number, state: TimeState): string => {
   return speed < 0 ? `−${magnitude}` : magnitude;
 };
 
+/**
+ * Readout for the throttled rate shown next to "resolving close encounter".
+ * Unlike formatSpeedReadout, this never collapses to "STOP": it only ever
+ * runs while playback is genuinely still advancing (just below the scientific
+ * pacing budget), so classifying it through STOPPED_EPSILON — a threshold
+ * meant for the user's own speed choice — would mislabel a real, if slow,
+ * rate as fully halted. Two decimal places keep a compact but tight system
+ * (e.g. TRAPPIST-1, throttled to a few percent even at rest) visibly
+ * distinct from zero instead of rounding it away.
+ */
+export const formatEncounterSpeedReadout = (speed: number): string => {
+  if (!Number.isFinite(speed) || speed === 0) return '0.00x';
+  const magnitude = `${Math.abs(speed).toFixed(2)}x`;
+  return speed < 0 ? `−${magnitude}` : magnitude;
+};
+
 export interface TimeStateVisual {
   label: string;
   /** Solid colour for the thumb, readout and pill (CSS colour string). */

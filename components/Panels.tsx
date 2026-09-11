@@ -11,6 +11,7 @@ import { creatableTypesFor, visualFor } from './bodyTypeVisuals';
 import { useMoonDraft } from '../utils/moonDraft';
 import { PHYSICS_LIMITS } from '../utils/physicsBounds';
 import {
+  formatEncounterSpeedReadout,
   formatSpeedReadout,
   snapSpeed,
   speedDetentIndex,
@@ -199,7 +200,7 @@ const TimeScrubber: React.FC<{ speed: number; state: TimeState; effectiveSpeed: 
         aria-label="Simulation speed"
         aria-valuetext={state === 'stopped'
           ? TIME_STATE_VISUALS[state].label
-          : `${TIME_STATE_VISUALS[state].label}, ${formatSpeedReadout(speed, state)}${resolvingEncounter ? `, currently ${formatSpeedReadout(effectiveSpeed, timeStateFor(effectiveSpeed, false))} while resolving a close encounter` : ''}`}
+          : `${TIME_STATE_VISUALS[state].label}, ${formatSpeedReadout(speed, state)}${resolvingEncounter ? `, currently ${formatEncounterSpeedReadout(effectiveSpeed)} while resolving a close encounter` : ''}`}
         onPointerDown={() => {
           useStore.getState().setInteractingWithUI(true);
           hapticSelectionStart();
@@ -317,7 +318,7 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
             <span className="flex items-center gap-1 whitespace-nowrap">
               <TimeIcon size={12} className="shrink-0" fill="currentColor" aria-hidden />
               {formatSpeedReadout(speed, timeState)}
-              {resolvingEncounter && <> → {formatSpeedReadout(effectiveSpeed, timeStateFor(effectiveSpeed, false))}</>}
+              {resolvingEncounter && <> → {formatEncounterSpeedReadout(effectiveSpeed)}</>}
             </span>
             {resolvingEncounter && <span className="text-[9px] font-medium opacity-80 whitespace-nowrap">resolving close encounter</span>}
           </span>

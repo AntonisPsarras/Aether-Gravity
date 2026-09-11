@@ -5,8 +5,8 @@ import { bodyVisualRadius, type UiMode } from './displayMode';
 import { getOrbitalElements } from './physicsUtils';
 
 export const presetViews: Record<string, readonly string[]> = {
-  'solar-system': ['Inner planets', 'Full system'],
-  'trappist-1': ['Overview'],
+  'solar-system': ['Star', 'Inner planets', 'Full system'],
+  'trappist-1': ['Star', 'Overview'],
 };
 
 /** Camera-only fitting. Bounds include the enlarged satellite display. */
@@ -14,6 +14,20 @@ export function presetViewFrame(bodies: CelestialBody[], view: string | null, mo
   const id = bodies.find(b => b.properties?.presetId)?.properties?.presetId;
   if (!id || !presetViews[id]) return null;
   const choice = view && presetViews[id].includes(view) ? view : presetViews[id][0];
+
+  // Default view: zoom tight on the primary, matching how a randomly
+  // generated system frames its star (bodyVisualRadius * 6) instead of
+  // fitting every orbit. A whole-system fit places the camera so far back
+  // that the (camera-independent) curvature well subtends a tiny angle and
+  // reads as flat — an optical effect, not a difference in the physics.
+  if (choice === 'Star') {
+    const star = bodies.find(b => b.type === 'Star');
+    if (!star) return null;
+    const radius = Math.max(0.2, bodyVisualRadius(star, mode) * 6);
+    const distance = radius * 1.3 / Math.sin(Math.atan(Math.tan(Math.PI / 8) * Math.min(1, aspect)));
+    return { centre: star.position.clone(), distance, choice };
+  }
+
   const selected = bodies.filter(b => choice === 'Inner planets'
     ? ['Sun', 'Mercury', 'Venus', 'Earth', 'Mars'].includes(b.name)
     : true);

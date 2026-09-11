@@ -35,7 +35,14 @@ export function scientificStepLimit(bodies: readonly CelestialBody[]): number {
       if (Number.isFinite(pericentreTime) && pericentreTime > 0) limit = Math.min(limit, pericentreTime / 256);
     }
   }
-  return Math.max(2 ** -40, 2 ** Math.floor(Math.log2(limit)));
+  // Floor at 2^-18 yr (FIXED_DT / 256, still 4x finer sub-stepping than a
+  // normal frame step): a massive body in a tight encounter with a
+  // physicalCollisions body can legitimately drive `limit` toward zero, and
+  // MAX_CATCHUP_STEPS can't make up an arbitrarily small step within one
+  // frame. Without this floor the achievable playback rate collapses to
+  // something imperceptible — indistinguishable from the sim being frozen —
+  // for a real-scale encounter that never actually resolves.
+  return Math.max(2 ** -18, 2 ** Math.floor(Math.log2(limit)));
 }
 
 type AccuracyState = { limit: number; steps: number };
