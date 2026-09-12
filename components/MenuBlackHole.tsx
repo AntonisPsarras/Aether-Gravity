@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { relativityChunk } from './shaders/relativityChunk';
-import type { DeviceTier } from '../utils/deviceCapabilities';
+import type { RenderProfile } from '../utils/graphicsQuality';
 
 /**
  * Main-menu black hole, modelled on the Play Store feature graphic: a lensed,
@@ -51,13 +51,19 @@ const GRID_EXTENT = 44;
 const GRID_EXTRA_TILT = 0.2; // the grid is viewed a little more face-on than the disk, as in the feature graphic
 
 /**
- * Per-tier budgets. Steps, noise and crossing counts are compile-time defines,
- * so each tier compiles a branch-free shader rather than paying for disabled
- * features.
+ * Per-profile budgets. Steps, noise and crossing counts are compile-time
+ * defines, so each profile compiles a branch-free shader rather than paying for
+ * disabled features.
+ *
+ * `performance` is modelled on what capable phones already ran (32 steps, one
+ * noise octave), not on the old weak-device branch (18 steps, no noise). That
+ * branch flattened the photon ring enough to read as a different image rather
+ * than a cheaper one.
  */
-export function menuBlackHoleQuality(tier: DeviceTier, isTouch: boolean) {
-  if (tier === 'low') return { steps: 18, stepScale: 0.38, noiseOctaves: 0, maxHits: 2, ringWidth: 0.22, gridSegments: 48, dust: 450 };
-  if (isTouch) return { steps: 32, stepScale: 0.26, noiseOctaves: 1, maxHits: 2, ringWidth: 0.16, gridSegments: 72, dust: 1400 };
+export function menuBlackHoleQuality(profile: RenderProfile) {
+  if (profile === 'performance') {
+    return { steps: 32, stepScale: 0.26, noiseOctaves: 1, maxHits: 2, ringWidth: 0.16, gridSegments: 72, dust: 1400 };
+  }
   return { steps: 44, stepScale: 0.2, noiseOctaves: 2, maxHits: 2, ringWidth: 0.13, gridSegments: 96, dust: 2400 };
 }
 type Quality = ReturnType<typeof menuBlackHoleQuality>;
@@ -376,12 +382,11 @@ const DISK_BASIS_T = new THREE.Matrix4()
 
 export const MenuBlackHole: React.FC<{
   theme: MenuBlackHoleTheme;
-  tier: DeviceTier;
-  isTouch: boolean;
+  profile: RenderProfile;
   reducedMotion: boolean;
   mode: Mode;
-}> = ({ theme, tier, isTouch, reducedMotion, mode }) => {
-  const quality = useMemo(() => menuBlackHoleQuality(tier, isTouch), [tier, isTouch]);
+}> = ({ theme, profile, reducedMotion, mode }) => {
+  const quality = useMemo(() => menuBlackHoleQuality(profile), [profile]);
   const anchorRef = useRef<THREE.Group>(null);
   const quadRef = useRef<THREE.Mesh>(null);
   const frameRef = useRef<THREE.Group>(null);

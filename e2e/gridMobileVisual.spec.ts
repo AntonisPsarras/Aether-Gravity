@@ -3,9 +3,9 @@ import { e2eUrl, FIXTURE_SOLAR, waitForSimulationReady } from './helpers';
 
 const PHONE = { width: 390, height: 844 };
 
-async function settleGrid(page: Page, tier: 'high' | 'low') {
+async function settleGrid(page: Page, graphics: 'quality' | 'performance') {
   await page.goto(e2eUrl(FIXTURE_SOLAR, {
-    tier,
+    graphics,
     touch: '1',
     dpr: '1',
   }));
@@ -19,29 +19,70 @@ async function settleGrid(page: Page, tier: 'high' | 'low') {
   // Let the canvas, grid uniforms, and post-processing settle on the frozen
   // Solar System frame before taking a visual baseline.
   await page.waitForTimeout(700);
-  return page.evaluate(() => ({
-    tier: window.__AETHER_TEST__!.getMetrics().deviceTier,
-    grid: window.__AETHER_TEST__!.getGridSnapshot(),
-  }));
+  return page.evaluate(() => {
+    const m = window.__AETHER_TEST__!.getMetrics();
+    return {
+      profile: m.renderProfile,
+      physicsTier: m.physicsTier,
+      grid: window.__AETHER_TEST__!.getGridSnapshot(),
+    };
+  });
 }
 
 test.describe('mobile spacetime-grid visual regression', () => {
-  test('low tier retains continuous curvature coverage at phone size', async ({ page }) => {
+  test('both profiles draw a continuous curvature surface at phone size', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.emulateMedia({ reducedMotion: 'reduce' });
 
-    const high = await settleGrid(page, 'high');
-    expect(high.tier).toBe('high');
-    expect(high.grid).not.toBeNull();
-    await expect(page).toHaveScreenshot('grid-high-tier-phone.png', { animations: 'disabled' });
+    const quality = await settleGrid(page, 'quality');
+    expect(quality.profile).toBe('quality');
+    expect(quality.grid).not.toBeNull();
+    await expect(page).toHaveScreenshot('grid-quality-phone.png', { animations: 'disabled' });
 
-    const low = await settleGrid(page, 'low');
-    expect(low.tier).toBe('low');
-    expect(low.grid).not.toBeNull();
-    expect(low.grid!.wells.map((well) => well.bodyId)).toEqual(high.grid!.wells.map((well) => well.bodyId));
-    // The low tier is allowed fewer (including zero) local-detail discs; the
-    // primary lattice is still complete and the visual baseline guards it.
-    expect(low.grid!.discs.length).toBeLessThanOrEqual(high.grid!.discs.length);
-    await expect(page).toHaveScreenshot('grid-low-tier-phone.png', { animations: 'disabled' });
+    const performance = await settleGrid(page, 'performance');
+    expect(performance.profile).toBe('performance');
+    expect(performance.grid).not.toBeNull();
+
+    // The two profiles must describe the SAME surface: same wells, same
+    // detail discs on the same bodies. Performance draws it with fewer
+    // vertices, not with a different shape — the old low tier resolved one
+    // fewer well and snapped its grid-line spacing, which is what produced
+    // the reported blocky tiling.
+    expect(performance.grid!.wells.map((w) => w.bodyId))
+      .toEqual(quality.grid!.wells.map((w) => w.bodyId));
+    expect(performance.grid!.discs.map((d) => d.bodyId).sort())
+      .toEqual(quality.grid!.discs.map((d) => d.bodyId).sort());
+
+    // A coarser lattice MUST widen the wells it cannot resolve — an unresolved
+    // well drawn at its true width aliases into a spike — so some difference is
+    // correct behaviour, not a defect. Planets track the ring-count ratio
+    // (270/200 = 1.35). Satellites move further and in BOTH directions, because
+    // a moon's effective core is set by the cell size around its parent and by
+    // which neighbours it merges with, not by its own radius.
+    //
+    // What matters is that nothing is drastically mis-sized. At the old
+    // 104-ring budget planets alone reached 2.6x, which is what made mobile
+    // funnels read as wrong rather than merely softer.
+    const MAX_CORE_RATIO = 1.75;
+    for (const well of performance.grid!.wells) {
+      const match = quality.grid!.wells.find((w) => w.bodyId === well.bodyId)!;
+      const ratio = well.core / match.core;
+      expect(ratio).toBeLessThanOrEqual(MAX_CORE_RATIO);
+      expect(ratio).toBeGreaterThanOrEqual(1 / MAX_CORE_RATIO);
+      // The invariant that must hold exactly: widening SPREADS a well, it never
+      // changes the well's total depth. peak x core is the body's strength.
+      expect(well.peak * well.core).toBeCloseTo(match.peak * match.core, 5);
+    }
+
+    await expect(page).toHaveScreenshot('grid-performance-phone.png', { animations: 'disabled' });
+  });
+
+  test('the graphics mode never changes the physics timestep', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    const forQuality = await settleGrid(page, 'quality');
+    const forPerformance = await settleGrid(page, 'performance');
+    // The hardware tier drives `physicsStepPolicy`; the user's picture choice
+    // must not move it, or the same scene would integrate differently.
+    expect(forPerformance.physicsTier).toBe(forQuality.physicsTier);
   });
 });

@@ -11,6 +11,7 @@
  * JSON degrade to a working session rather than a blank screen.
  */
 import { isUiMode, type UiMode } from './displayMode';
+import { DEFAULT_GRAPHICS_MODE, isGraphicsMode, type GraphicsMode } from './graphicsQuality';
 import { getOnboardingProgress } from './onboarding';
 import { readStorageJson, reportStorageIssue, writeStorageJsonVerified } from './browserStorage';
 
@@ -19,6 +20,12 @@ export const DISPLAY_PREFS_STORAGE_KEY = 'aether:prefs:v1';
 export interface DisplayPrefs {
   version: 1;
   uiMode: UiMode;
+  /**
+   * Quality / Performance / Auto. Global rather than per-world for the same
+   * reason as `uiMode`: it describes the *device* the person is holding, not
+   * anything about a saved universe, so `store.loadWorld` must never reset it.
+   */
+  graphicsMode: GraphicsMode;
 }
 
 /**
@@ -35,15 +42,29 @@ const seedMode = (): UiMode => {
   }
 };
 
-const defaultPrefs = (): DisplayPrefs => ({ version: 1, uiMode: seedMode() });
+const defaultPrefs = (): DisplayPrefs => ({
+  version: 1,
+  uiMode: seedMode(),
+  graphicsMode: DEFAULT_GRAPHICS_MODE,
+});
 
 let memoryPrefs: DisplayPrefs | null = null;
 
+/**
+ * `uiMode` is still required — a blob without it is not ours and is rejected.
+ * `graphicsMode` is *default-filled* instead, because every blob written before
+ * the setting existed lacks it; rejecting those would silently demote every
+ * existing user back to the seeded Beginner/Advanced default.
+ */
 export function parseDisplayPrefs(raw: unknown): DisplayPrefs | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Partial<DisplayPrefs>;
   if (!isUiMode(value.uiMode)) return null;
-  return { version: 1, uiMode: value.uiMode };
+  return {
+    version: 1,
+    uiMode: value.uiMode,
+    graphicsMode: isGraphicsMode(value.graphicsMode) ? value.graphicsMode : DEFAULT_GRAPHICS_MODE,
+  };
 }
 
 export function getDisplayPrefs(): DisplayPrefs {
@@ -84,8 +105,14 @@ export function saveDisplayPrefs(prefs: DisplayPrefs): DisplayPrefs {
 
 export const getUiMode = (): UiMode => getDisplayPrefs().uiMode;
 
+/** Merges, never replaces: writing one preference must not drop the others. */
 export const saveUiMode = (uiMode: UiMode): DisplayPrefs =>
-  saveDisplayPrefs({ version: 1, uiMode });
+  saveDisplayPrefs({ ...getDisplayPrefs(), uiMode });
+
+export const getGraphicsMode = (): GraphicsMode => getDisplayPrefs().graphicsMode;
+
+export const saveGraphicsMode = (graphicsMode: GraphicsMode): DisplayPrefs =>
+  saveDisplayPrefs({ ...getDisplayPrefs(), graphicsMode });
 
 export function resetDisplayPrefsMemoryForTests(): void {
   memoryPrefs = null;

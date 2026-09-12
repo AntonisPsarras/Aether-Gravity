@@ -10,8 +10,8 @@ import {
 } from '../../utils/relativity';
 import { displayDiskTemperatureK } from '../../utils/bodyAppearance';
 import { relativityChunk } from '../Planet/PlanetShaders';
+import type { RenderProfile } from '../../utils/graphicsQuality';
 import { environmentReflectionGLSL, useEnvironment } from '../Environment/EnvironmentContext';
-import type { DeviceTier } from '../../utils/deviceCapabilities';
 
 export type BlackHoleRigProps = {
   radius: number;
@@ -21,7 +21,7 @@ export type BlackHoleRigProps = {
   onSelect: () => void;
   interactive: boolean;
   lensTexture?: THREE.Texture | null;
-  tier: DeviceTier;
+  profile: RenderProfile;
 };
 
 const horizonVertex = `
@@ -91,7 +91,9 @@ void main() {
 }
 `;
 
-const diskFragmentHigh = `
+const diskFragmentHigh = (steps: number) => `
+#define DISK_STEPS ${steps}
+
 precision highp float;
 uniform float u_time;
 uniform float u_spin;
@@ -157,8 +159,8 @@ void main() {
   vec3 marchOrigin = vec3(uv.x, 0.0, uv.y) * 0.4;
   vec3 marchDir = normalize(tangent * 0.3 + bitangent * 0.15 + diskNormal * sign(dot(viewDir, diskNormal)));
 
-  for (int i = 0; i < 12; i++) {
-    vec3 p = marchOrigin + marchDir * (float(i) * 0.07);
+  for (int i = 0; i < DISK_STEPS; i++) {
+    vec3 p = marchOrigin + marchDir * (float(i) * (0.84 / float(DISK_STEPS)));
     p.xz *= rot2(u_time * (0.25 + u_spin * 0.5) + p.y * 1.5);
     float radial = length(p.xz);
     // Brightest annulus sits just outside the ISCO, where the disk is hottest.
@@ -166,7 +168,9 @@ void main() {
     float ring = exp(-pow((radial - ringR) * 3.5, 2.0));
     float thick = exp(-abs(p.y) * 10.0);
     float n = hash21(p.xz * 4.0 + vec2(float(i), u_time * 0.3));
-    density += ring * thick * mix(0.5, 1.2, n) * 0.055;
+    // Per-sample weight scales with the step, so total optical depth —
+    // and therefore the disk's brightness — is independent of DISK_STEPS.
+    density += ring * thick * mix(0.5, 1.2, n) * (0.66 / float(DISK_STEPS));
   }
 
   // ---- Emitted spectrum ----------------------------------------------------
@@ -236,56 +240,6 @@ void main() {
 }
 `;
 
-const parallaxDiskFragment = `
-precision highp float;
-${environmentReflectionGLSL}
-uniform float u_time;
-uniform float u_spin;
-uniform float u_accretion;
-uniform float u_parallax;
-uniform float u_layer;
-uniform float u_inner;
-uniform sampler2D u_bg_texture;
-uniform vec2 u_resolution;
-varying vec2 vUv;
-varying vec3 vWorldPos;
-varying vec3 vDiskNormalWorld;
-
-void main() {
-  vec3 viewDir = normalize(cameraPosition - vWorldPos);
-  vec2 parallax = viewDir.xz * u_parallax;
-  vec2 uv = vUv * 2.0 - 1.0 + parallax;
-  float r = length(uv);
-  float a = atan(uv.y, uv.x);
-
-  float swirl = sin(a * 5.0 - u_time * (2.0 + u_spin) + u_layer * 0.7) * 0.5 + 0.5;
-  float ripple = cos(r * (26.0 + u_layer * 4.0) - u_time * 1.5) * 0.5 + 0.5;
-  float diskMask = smoothstep(1.12, u_inner * 1.4, r) * (1.0 - smoothstep(u_inner * 1.2, u_inner, r));
-  float intensity = diskMask * (0.4 + 0.6 * swirl) * (0.65 + 0.35 * ripple);
-
-  vec3 hotColor = vec3(0.98, 0.83, 0.14);
-  vec3 coldColor = vec3(0.06, 0.08, 0.11);
-  float heat = smoothstep(1.0, 0.25, r);
-  vec3 diskColor = mix(coldColor, hotColor, heat) * intensity * (1.1 + u_accretion);
-  diskColor += environmentLight(reflect(-viewDir, normalize(vDiskNormalWorld)))
-    * (1.0 - heat) * diskMask * u_accretion * 0.08;
-
-  float horizon = smoothstep(u_inner * 1.2, u_inner, r);
-  vec3 color = mix(diskColor, vec3(0.0), horizon);
-  // Only the back layer samples the shared low-resolution capture. The other
-  // two layers retain parallax depth without tripling the texture cost.
-  if (u_layer < 0.5) {
-    vec2 screenUv = gl_FragCoord.xy / max(u_resolution, vec2(1.0));
-    vec2 lensDir = normalize(uv + 1e-5);
-    float lensAmt = smoothstep(0.9, 0.15, r) * 0.06 * (1.0 + u_spin);
-    color += texture2D(u_bg_texture, clamp(screenUv + lensDir * lensAmt, 0.0, 1.0)).rgb * 0.25;
-  }
-  float alpha = clamp(max(diskMask, horizon * 0.9), 0.0, 1.0) * (0.55 + u_layer * 0.15);
-  if (alpha < 0.03) discard;
-  gl_FragColor = vec4(color, alpha);
-}
-`;
-
 const ergosphereVertex = horizonVertex;
 const ergosphereFragment = `
 precision highp float;
@@ -321,9 +275,11 @@ export default function BlackHoleRig({
   onSelect,
   interactive,
   lensTexture,
-  tier,
+  profile,
 }: BlackHoleRigProps): React.ReactElement {
   const environment = useEnvironment();
+  // Fill-rate knob for the accretion disk, replacing the old billboard swap.
+  const diskSteps = environment.quality.blackHoleDiskSteps;
   const decorativeTime = useRef(0);
   const fallbackBgRef = useRef<THREE.DataTexture | null>(null);
   const { size, scene } = useThree();
@@ -347,7 +303,7 @@ export default function BlackHoleRig({
   // [spin, accretion] in useMemo deps caused a new THREE.ShaderMaterial to be
   // allocated on every inspector slider drag, abandoning the old one in VRAM
   // without calling .dispose().
-  const horizonMatHigh = useMemo(
+  const horizonMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
@@ -363,21 +319,7 @@ export default function BlackHoleRig({
     []
   );
 
-  const horizonMatLow = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          u_spin: { value: spin },
-          u_rimColor: { value: rimColor },
-        },
-        vertexShader: horizonVertex,
-        fragmentShader: horizonFragmentLow,
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
-  const diskMatHigh = useMemo(
+  const diskMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
@@ -394,7 +336,7 @@ export default function BlackHoleRig({
           u_photon: { value: 0.1 },
         },
         vertexShader: diskVertex,
-        fragmentShader: diskFragmentHigh,
+        fragmentShader: diskFragmentHigh(diskSteps),
         transparent: true,
         depthWrite: false,
         side: THREE.DoubleSide,
@@ -403,35 +345,6 @@ export default function BlackHoleRig({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
-
-  const makeParallaxMat = (parallax: number, layer: number) =>
-    new THREE.ShaderMaterial({
-      uniforms: {
-        u_time: { value: 0 },
-        u_spin: { value: spin },
-        u_accretion: { value: accretion },
-        u_parallax: { value: parallax },
-        uEnvironment: { value: environment.texture },
-        uEnvironmentIntensity: { value: environment.quality.reflectionIntensity },
-        u_layer: { value: layer },
-        u_inner: { value: 0.2 },
-        u_bg_texture: { value: bgTexture },
-        u_resolution: { value: new THREE.Vector2(size.width, size.height) },
-      },
-      vertexShader: diskVertex,
-      fragmentShader: parallaxDiskFragment,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: layer === 1 ? THREE.AdditiveBlending : THREE.NormalBlending,
-    });
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const diskMatLowBack = useMemo(() => makeParallaxMat(0.02, 0), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const diskMatLowMid = useMemo(() => makeParallaxMat(0.045, 1), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const diskMatLowFront = useMemo(() => makeParallaxMat(0.07, 2), []);
 
   const ergoMat = useMemo(
     () =>
@@ -458,36 +371,28 @@ export default function BlackHoleRig({
     geo.rotateX(-Math.PI / 2);
     return geo;
   }, []);
-  const diskPlaneGeo = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(2, 2, 1, 1);
-    geo.rotateX(-Math.PI / 2);
-    return geo;
-  }, []);
   const ergoGeo = useMemo(() => new THREE.SphereGeometry(1.12, 16, 16), []);
 
-  const lowDiskMats = [diskMatLowBack, diskMatLowMid, diskMatLowFront];
   const allMaterials = useMemo(
-    () => [horizonMatHigh, horizonMatLow, diskMatHigh, ergoMat, ...lowDiskMats],
-    [horizonMatHigh, horizonMatLow, diskMatHigh, ergoMat, diskMatLowBack, diskMatLowMid, diskMatLowFront]
+    () => [horizonMat, diskMat, ergoMat],
+    [horizonMat, diskMat, ergoMat]
   );
 
   useEffect(() => {
     return () => {
       horizonGeo.dispose();
       diskGeo.dispose();
-      diskPlaneGeo.dispose();
       ergoGeo.dispose();
       allMaterials.forEach((m) => m.dispose());
       fallbackBgRef.current?.dispose();
     };
-  }, [horizonGeo, diskGeo, diskPlaneGeo, ergoGeo, allMaterials]);
+  }, [horizonGeo, diskGeo, ergoGeo, allMaterials]);
 
   const rootGroupRef = useRef<THREE.Group>(null);
   const diskGroupRef = useRef<THREE.Group>(null);
   const horizonMeshRef = useRef<THREE.Mesh>(null);
   const ergoMeshRef = useRef<THREE.Mesh>(null);
   const diskHighRef = useRef<THREE.Mesh>(null);
-  const diskLowRefs = [useRef<THREE.Mesh>(null), useRef<THREE.Mesh>(null), useRef<THREE.Mesh>(null)];
 
   // Register this rig with the lens capture registry so the FBO render can
   // hide it directly without traversing the full scene graph.
@@ -509,19 +414,18 @@ export default function BlackHoleRig({
     // Inner disk edge = ISCO, anchored so a static hole is unchanged (0.20).
     const innerFraction = Math.max(0.03, 0.20 * (iscoRadiusRg(spin, true) / 6));
 
-    horizonMatHigh.uniforms.u_time.value = t;
-    horizonMatHigh.uniforms.u_spin.value = spin;
-    horizonMatHigh.uniforms.u_accretion.value = luminous;
-    horizonMatLow.uniforms.u_spin.value = spin;
+    horizonMat.uniforms.u_time.value = t;
+    horizonMat.uniforms.u_spin.value = spin;
+    horizonMat.uniforms.u_accretion.value = luminous;
 
-    diskMatHigh.uniforms.u_time.value = t;
-    diskMatHigh.uniforms.u_spin.value = spin;
-    diskMatHigh.uniforms.u_accretion.value = luminous;
-    diskMatHigh.uniforms.u_inner.value = innerFraction;
-    diskMatHigh.uniforms.u_bg_texture.value = bgTexture;
-    diskMatHigh.uniforms.uEnvironment.value = environment.texture;
-    diskMatHigh.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
-    diskMatHigh.uniforms.u_resolution.value.set(size.width, size.height);
+    diskMat.uniforms.u_time.value = t;
+    diskMat.uniforms.u_spin.value = spin;
+    diskMat.uniforms.u_accretion.value = luminous;
+    diskMat.uniforms.u_inner.value = innerFraction;
+    diskMat.uniforms.u_bg_texture.value = bgTexture;
+    diskMat.uniforms.uEnvironment.value = environment.texture;
+    diskMat.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
+    diskMat.uniforms.u_resolution.value.set(size.width, size.height);
 
     // Geometry in quad units. The quad's `r` runs 0..1 across the disk, and
     // u_inner marks the ISCO, so one r_g is u_inner / (ISCO in r_g). That
@@ -529,27 +433,15 @@ export default function BlackHoleRig({
     // photon sphere in its own coordinates, and both move with spin.
     const iscoRg = iscoRadiusRg(spin, true);
     const quadPerRg = innerFraction / Math.max(iscoRg, 1e-4);
-    diskMatHigh.uniforms.u_rs.value = 2 * quadPerRg;
-    diskMatHigh.uniforms.u_photon.value = photonSphereRadiusRg(spin, true) * quadPerRg;
+    diskMat.uniforms.u_rs.value = 2 * quadPerRg;
+    diskMat.uniforms.u_photon.value = photonSphereRadiusRg(spin, true) * quadPerRg;
     // Colour follows the real Shakura-Sunyaev peak temperature, log-compressed
     // into the visible band by `displayDiskTemperatureK` — see the note there:
     // the physics value is untouched, only the shading scale is remapped so the
     // r^-3/4 gradient is visible instead of clipping to UV white.
-    diskMatHigh.uniforms.u_diskTempPeak.value = displayDiskTemperatureK(
+    diskMat.uniforms.u_diskTempPeak.value = displayDiskTemperatureK(
       diskPeakTemperatureK(mass, spin, Math.max(accretion, 0.02)),
     );
-
-    for (let materialIndex = 0; materialIndex < lowDiskMats.length; materialIndex++) {
-      const m = lowDiskMats[materialIndex];
-      m.uniforms.uEnvironment.value = environment.texture;
-      m.uniforms.uEnvironmentIntensity.value = environment.quality.reflectionIntensity;
-      m.uniforms.u_time.value = t;
-      m.uniforms.u_spin.value = spin;
-      m.uniforms.u_accretion.value = luminous;
-      m.uniforms.u_inner.value = innerFraction;
-      m.uniforms.u_bg_texture.value = bgTexture;
-      m.uniforms.u_resolution.value.set(size.width, size.height);
-    }
 
     ergoMat.uniforms.u_time.value = t;
     ergoMat.uniforms.u_spin.value = spin;
@@ -614,7 +506,7 @@ export default function BlackHoleRig({
         if (interactive) onSelect();
       }}
     >
-      <mesh ref={horizonMeshRef} geometry={horizonGeo} scale={horizonScale} renderOrder={2} material={tier === 'high' ? horizonMatHigh : horizonMatLow} />
+      <mesh ref={horizonMeshRef} geometry={horizonGeo} scale={horizonScale} renderOrder={2} material={horizonMat} />
 
       {showErgo && (
         // Non-uniform scale: the ergosphere bulges at the equator (XZ) and
@@ -629,20 +521,11 @@ export default function BlackHoleRig({
       )}
 
       <group ref={diskGroupRef} scale={diskScale} renderOrder={3}>
-        {tier === 'high' ? (
-          <mesh ref={diskHighRef} geometry={diskGeo} material={diskMatHigh} />
-        ) : (
-          diskLowRefs.map((ref, i) => (
-            <mesh
-              key={i}
-              ref={ref}
-              geometry={diskPlaneGeo}
-              material={lowDiskMats[i]}
-              position={[0, (i - 1) * 0.008, 0]}
-              scale={1 + i * 0.03}
-            />
-          ))
-        )}
+        {/* One raymarched disk on both profiles. Performance used to swap in
+            three stacked billboard planes, which read as a different object
+            rather than a cheaper one; the raymarch step count above is the
+            fill-rate knob instead. */}
+        <mesh ref={diskHighRef} geometry={diskGeo} material={diskMat} />
       </group>
     </group>
   );

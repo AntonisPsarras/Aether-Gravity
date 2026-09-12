@@ -57,6 +57,9 @@ export interface PerfReport {
   jsHeapMb: { start: number; peak: number; end: number };
   bodyCount: number;
   deviceTier: string;
+  renderProfile: string;
+  graphicsMode: string;
+  physicsTier: string;
   contextLostCount: number;
   sampleCount: number;
 }
@@ -66,6 +69,9 @@ export interface TestMetricsSnapshot {
   canvasReady: boolean;
   contextLostCount: number;
   deviceTier: string;
+  renderProfile: string;
+  graphicsMode: string;
+  physicsTier: string;
   bodyCount: number;
 }
 
@@ -109,6 +115,9 @@ let appReady = false;
 let canvasReady = false;
 let contextLostCount = 0;
 let deviceTierLabel = 'high';
+let renderProfileLabel = 'quality';
+let graphicsModeLabel = 'auto';
+let physicsTierLabel = 'high';
 
 let collecting = false;
 let collectStart = 0;
@@ -270,6 +279,9 @@ function buildApi(): AetherTestAPI {
       canvasReady,
       contextLostCount,
       deviceTier: deviceTierLabel,
+      renderProfile: renderProfileLabel,
+      graphicsMode: graphicsModeLabel,
+      physicsTier: physicsTierLabel,
       bodyCount: useStore.getState().bodies.length,
     }),
 
@@ -307,6 +319,9 @@ function buildApi(): AetherTestAPI {
         },
         bodyCount: useStore.getState().bodies.length,
         deviceTier: deviceTierLabel,
+        renderProfile: renderProfileLabel,
+        graphicsMode: graphicsModeLabel,
+        physicsTier: physicsTierLabel,
         contextLostCount,
         sampleCount: frameTimesMs.length,
       };
@@ -344,8 +359,23 @@ export function markTestBridgeCanvasReady(): void {
   canvasReady = true;
 }
 
-export function setTestBridgeDeviceTier(tier: string): void {
-  deviceTierLabel = tier;
+/**
+ * `deviceTier` keeps meaning the RENDER tier, which is what the existing visual
+ * and perf specs assert on. The graphics mode, the resolved profile and the
+ * hardware/physics tier are reported alongside it rather than folded into it,
+ * so a spec can tell "the user picked Performance" apart from "this device is
+ * slow" — they are now genuinely different things.
+ */
+export function setTestBridgeGraphics(
+  renderTier: string,
+  profile: string,
+  mode: string,
+  physicsTier: string,
+): void {
+  deviceTierLabel = renderTier;
+  renderProfileLabel = profile;
+  graphicsModeLabel = mode;
+  physicsTierLabel = physicsTier;
 }
 
 export function incrementTestBridgeContextLost(): void {

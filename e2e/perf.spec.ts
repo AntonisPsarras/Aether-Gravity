@@ -113,21 +113,25 @@ test.describe('Performance soak', () => {
     });
   });
 
-  test('low-tier mobile profile completes soak', async ({ page }) => {
+  test('performance profile completes soak', async ({ page }) => {
     const meta = {
-      testName: 'low-tier mobile profile completes soak',
+      testName: 'performance profile completes soak',
       fixture: FIXTURE_MINIMAL,
       soakMs: SOAK_MS,
-      profile: 'tier=low, touch=1, dpr=1',
+      profile: 'graphics=performance, touch=1, dpr=1',
     };
 
+    // Drives the user-facing mode rather than the hardware tier: this is the
+    // guard for the raised performance lattice (200x200 rings/spokes), the
+    // restored half-resolution bloom with grain, and the raymarched black-hole
+    // disk, all of which cost more than the old low tier did.
     await page.goto(
-      e2eUrl(FIXTURE_MINIMAL, { tier: 'low', touch: '1', dpr: '1' }),
+      e2eUrl(FIXTURE_MINIMAL, { graphics: 'performance', touch: '1', dpr: '1' }),
     );
     await waitForSimulationReady(page);
 
-    const tier = await page.evaluate(() => window.__AETHER_TEST__!.getMetrics().deviceTier);
-    expect(tier).toBe('low');
+    const metrics = await page.evaluate(() => window.__AETHER_TEST__!.getMetrics());
+    expect(metrics.renderProfile).toBe('performance');
 
     const report = await runPerfSoak(page, SOAK_MS);
 
@@ -137,7 +141,7 @@ test.describe('Performance soak', () => {
     expect(report.contextLostCount).toBe(0);
     expect(report.fps.avg).toBeGreaterThan(Number(process.env.PERF_LOW_TIER_MIN_FPS ?? 25));
 
-    test.info().attach('perf-low-tier.json', {
+    test.info().attach('perf-performance-profile.json', {
       body: JSON.stringify(report, null, 2),
       contentType: 'application/json',
     });

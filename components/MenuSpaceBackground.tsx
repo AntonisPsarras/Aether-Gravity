@@ -7,12 +7,14 @@ import * as THREE from 'three';
 import {
   AdaptivePostFX,
   DeviceCapabilityProbe,
-  detectIsTouch,
   exposureForTier,
+  profileForTier,
   RendererConfig,
   type DeviceTier,
   useDeviceTier,
 } from './CanvasSetup';
+import { resolveRenderProfile, type RenderProfile } from '../utils/graphicsQuality';
+import { useStore } from '../utils/store';
 import { EnvironmentProvider, useReducedMotion } from './Environment/EnvironmentContext';
 import { GasClouds } from './Environment/GasClouds';
 import { MenuBlackHole, type MenuBlackHoleTheme } from './MenuBlackHole';
@@ -40,19 +42,22 @@ const THEMES: Record<string, Theme> = {
   procedural: { accent: '#92d7ff', secondary: '#b777ff', disk: { diskTemperature: 8000, diskTint: '#9a5cff', tintMix: 0.85, gridFar: '#4b3fc4' } },
 };
 
-const qualityForMenu = (tier: DeviceTier, isTouch: boolean) => ({
-  stars: tier === 'low' ? 850 : isTouch ? 1800 : 3200,
-  // Up to four full-screen fbm gas layers are the largest fill-rate cost after
-  // the black hole. Phones and weak GPUs keep the plain starfield the feature
-  // graphic uses anyway; desktop keeps the faint nebula.
-  gas: tier !== 'low' && !isTouch,
-  pointerDepth: tier === 'low' ? 0.12 : isTouch ? 0.2 : 0.48,
+const qualityForMenu = (profile: RenderProfile) => ({
+  stars: profile === 'quality' ? 3200 : 1200,
+  /**
+   * Up to four full-screen fbm gas layers — the largest fill-rate cost after
+   * the black hole, and so the first thing to reach for if Quality drops frames
+   * on a phone. It follows the PROFILE rather than touch now: gating it on
+   * `!isTouch` meant the nebula could never appear on mobile, however capable
+   * the device, which is exactly the desktop/mobile disparity being fixed.
+   */
+  gas: profile === 'quality',
+  pointerDepth: profile === 'quality' ? 0.48 : 0.2,
 });
 
-const MenuScene: React.FC<MenuSpaceBackgroundProps & { tier: DeviceTier; gpuEffectsOk: boolean; onContextLost: () => void; onContextRestored: () => void }> = ({ mode = 'landing', presetId, tier, gpuEffectsOk, onContextLost, onContextRestored }) => {
+const MenuScene: React.FC<MenuSpaceBackgroundProps & { profile: RenderProfile; gpuEffectsOk: boolean; onContextLost: () => void; onContextRestored: () => void }> = ({ mode = 'landing', presetId, profile, gpuEffectsOk, onContextLost, onContextRestored }) => {
   const reducedMotion = useReducedMotion();
-  const isTouch = detectIsTouch();
-  const quality = qualityForMenu(tier, isTouch);
+  const quality = qualityForMenu(profile);
   const theme = THEMES[presetId ?? 'procedural'] ?? THEMES.procedural;
   const rigRef = useRef<THREE.Group>(null);
   const pointer = useRef(new THREE.Vector2());
@@ -80,14 +85,14 @@ const MenuScene: React.FC<MenuSpaceBackgroundProps & { tier: DeviceTier; gpuEffe
 
   return (
     <>
-      <RendererConfig exposure={exposureForTier(tier, isTouch)} managePixelRatio={false} onContextLost={onContextLost} onContextRestored={onContextRestored} />
+      <RendererConfig exposure={exposureForTier(profile)} managePixelRatio={false} onContextLost={onContextLost} onContextRestored={onContextRestored} />
       <color attach="background" args={['#04060c']} />
-      <Stars radius={125} depth={72} count={quality.stars} factor={tier === 'low' ? 2.5 : 3.5} saturation={0.3} fade speed={reducedMotion ? 0 : 0.25} />
+      <Stars radius={125} depth={72} count={quality.stars} factor={profile === 'quality' ? 3.5 : 2.5} saturation={0.3} fade speed={reducedMotion ? 0 : 0.25} />
       {quality.gas && <GasClouds menu />}
       <group ref={rigRef}>
-        <MenuBlackHole theme={theme.disk} tier={tier} isTouch={isTouch} reducedMotion={reducedMotion} mode={mode} />
+        <MenuBlackHole theme={theme.disk} profile={profile} reducedMotion={reducedMotion} mode={mode} />
       </group>
-      {gpuEffectsOk && <AdaptivePostFX tier={tier} isTouch={isTouch} />}
+      {gpuEffectsOk && <AdaptivePostFX profile={profile} />}
     </>
   );
 };
@@ -95,11 +100,23 @@ const MenuScene: React.FC<MenuSpaceBackgroundProps & { tier: DeviceTier; gpuEffe
 const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landing', presetId = null }) => {
   const detectedTier = useDeviceTier();
   const e2eConfig = getE2EConfig();
-  const [adaptiveTier, setAdaptiveTier] = useState<DeviceTier>(detectedTier);
+  const storedGraphicsMode = useStore((s) => s.graphicsMode);
+  const graphicsMode = e2eConfig.graphics ?? storedGraphicsMode;
+  const [hardwareTier, setHardwareTier] = useState<DeviceTier>(detectedTier);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
-  const deviceTier: DeviceTier = gpuEffectsOk ? adaptiveTier : 'low';
-  const handleDetectedTier = useCallback((tier: DeviceTier) => {
-    if (!e2eConfig.tier) setAdaptiveTier(tier);
+  /**
+   * The menu honours the same preference as the simulation, but never runs the
+   * live frame-time controller: the menu is transient, and a profile pop while
+   * someone reads the title screen is pure noise. In Auto it simply uses the
+   * hardware seed.
+   */
+  const profile: RenderProfile = !gpuEffectsOk
+    ? 'performance'
+    : e2eConfig.tier
+      ? profileForTier(e2eConfig.tier)
+      : resolveRenderProfile(graphicsMode, profileForTier(hardwareTier));
+  const handleHardwareTier = useCallback((tier: DeviceTier) => {
+    if (!e2eConfig.tier) setHardwareTier(tier);
   }, [e2eConfig.tier]);
   const theme = THEMES[presetId ?? 'procedural'] ?? THEMES.procedural;
   const themeVars = { '--menu-accent': theme.accent, '--menu-secondary': theme.secondary } as React.CSSProperties;
@@ -111,8 +128,9 @@ const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landi
         <Canvas
           className="!absolute inset-0"
           camera={{ position: [0, 1, 13], fov: 47, near: 0.1, far: 220 }}
-          dpr={deviceTier === 'low' ? 1 : [1, 1.5]}
-          gl={{ antialias: deviceTier !== 'low', alpha: true, powerPreference: 'high-performance' }}
+          key={profile}
+          dpr={profile === 'quality' ? [1, 1.5] : 1}
+          gl={{ antialias: profile === 'quality', alpha: true, powerPreference: 'high-performance' }}
           onCreated={({ gl }) => {
             // Run before Three's own target listeners. Unmounting synchronously
             // prevents a lost context from being rendered for one more frame.
@@ -122,12 +140,12 @@ const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landi
             }, { capture: true, once: true });
           }}
         >
-          <EnvironmentProvider tier={deviceTier} isTouch={detectIsTouch()}>
-            {!e2eConfig.tier && <DeviceCapabilityProbe initialTier={detectedTier} onTierChange={handleDetectedTier} />}
+          <EnvironmentProvider profile={profile}>
+            {!e2eConfig.tier && <DeviceCapabilityProbe initialTier={detectedTier} onHardwareTier={handleHardwareTier} />}
             <MenuScene
               mode={mode}
               presetId={presetId}
-              tier={deviceTier}
+              profile={profile}
               gpuEffectsOk
               onContextLost={() => setGpuEffectsOk(false)}
               onContextRestored={() => setGpuEffectsOk(true)}

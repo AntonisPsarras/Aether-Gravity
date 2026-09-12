@@ -23,8 +23,8 @@ import {
 import { environmentQualityForDevice } from '../components/CanvasSetup';
 import { wellDepthAt } from './curvatureDisplay';
 
-const HIGH: GridLatticeBudget = environmentQualityForDevice('high');
-const LOW: GridLatticeBudget = environmentQualityForDevice('low');
+const HIGH: GridLatticeBudget = environmentQualityForDevice('quality');
+const LOW: GridLatticeBudget = environmentQualityForDevice('performance');
 const BUDGETS: Array<[string, GridLatticeBudget]> = [['high', HIGH], ['low', LOW]];
 const tableFor = (b: GridLatticeBudget) => buildRingTable(b.gridRings, b.gridTailRings, b.gridSpokes);
 
@@ -154,9 +154,20 @@ describe('lattice geometry and budgets', () => {
     polarVertexCount(b.gridRings + b.gridTailRings, b.gridSpokes)
     + (b.gridMaxAnchors - 1) * polarVertexCount(b.gridDiscRings, b.gridDiscSpokes);
 
-  it('keeps the worst case inside the old camera-following plane budget', () => {
-    expect(worst(HIGH)).toBeLessThanOrEqual(401 * 401);
-    expect(worst(LOW)).toBeLessThanOrEqual(151 * 151);
+  // Vertex ceilings. The quality bound is still the old camera-following
+  // plane (401²). The performance bound was raised from 151²: that number was
+  // a historical proxy for the same plane at low tier, not a measured device
+  // limit, and holding to it forced a lattice so coarse that `applyLatticeLod`
+  // widened funnels into visibly wrong shapes and left the second-strongest
+  // well with no detail disc at all.
+  const QUALITY_VERTEX_BUDGET = 401 * 401;
+  const PERFORMANCE_VERTEX_BUDGET = 270 * 270;
+
+  it('keeps each profile inside its vertex budget', () => {
+    expect(worst(HIGH)).toBeLessThanOrEqual(QUALITY_VERTEX_BUDGET);
+    expect(worst(LOW)).toBeLessThanOrEqual(PERFORMANCE_VERTEX_BUDGET);
+    // Performance must still be meaningfully cheaper than quality.
+    expect(worst(LOW)).toBeLessThan(0.5 * worst(HIGH));
     // A single-star scene draws the primary lattice alone.
     expect(polarVertexCount(HIGH.gridRings + HIGH.gridTailRings, HIGH.gridSpokes)).toBeLessThan(0.62 * 401 * 401);
   });
@@ -220,10 +231,12 @@ describe('anchor selection', () => {
     const gap = Math.hypot(L.discX[0] - L.discX[1], L.discZ[0] - L.discZ[1]);
     expect(L.discRadius[0] + L.discRadius[1]).toBeLessThanOrEqual(gap + 1e-9);
 
-    // The low tier has one disc; it goes to the neediest well.
+    // Performance resolves the same wells as quality. It used to get a single
+    // disc, which left the second-neediest well unresolved and therefore
+    // widened by the LOD — a wrong funnel shape, not merely a coarser one.
     const low = new LatticeAnchors().update(w, tableFor(LOW), LOW, 0);
-    expect(low.discCount).toBe(1);
-    expect(w.ids[low.discIndex[0]]).toBe('neptune');
+    const lowIds = Array.from(low.discIndex.subarray(0, low.discCount)).map((i) => w.ids[i]).sort();
+    expect(lowIds).toEqual(['neptune', 'uranus']);
   });
 
   it('keeps the primary unless a rival is clearly stronger', () => {
@@ -312,15 +325,46 @@ describe('resolution-aware cores', () => {
     }
   });
 
+  it('resolves the same wells on performance as on quality', () => {
+    // The performance lattice used to be coarse enough that outer planets fell
+    // through unresolved and were widened into shallow, visibly wrong funnels —
+    // the reported "the funnel looks wrong on mobile". The two profiles must
+    // now agree on WHICH wells the lattice can resolve, so they differ in line
+    // density rather than in the shape of the surface. (Saturn is widened on
+    // both: it sits between detail discs, which is a property of the scene.)
+    const resolvedFor = (b: GridLatticeBudget) => {
+      const w = wellsOf(beginnerSolar());
+      const t = tableFor(b);
+      const L = new LatticeAnchors().update(w, t, b, 0);
+      const peak = new Float32Array(w.count);
+      const core = new Float32Array(w.count);
+      applyLatticeLod(L, t, b, w, peak, core);
+      return w.ids.slice(0, w.count).filter((_, i) => core[i] <= w.core[i] * 1.01).sort();
+    };
+    expect(resolvedFor(LOW)).toEqual(resolvedFor(HIGH));
+  });
+
   it('widens a well the lattice cannot resolve', () => {
+    // Forced-coarse budget rather than the performance profile: the widening
+    // mechanism still has to work for any scene whose wells outrun the budget
+    // in force, and it must not silently stop being exercised just because the
+    // shipped budgets got better.
+    const coarse: GridLatticeBudget = {
+      ...LOW, gridRings: 40, gridTailRings: 8, gridSpokes: 48, gridMaxAnchors: 1,
+    };
     const w = wellsOf(beginnerSolar());
-    const t = tableFor(LOW);
-    const L = new LatticeAnchors().update(w, t, LOW, 0);
+    const t = tableFor(coarse);
+    const L = new LatticeAnchors().update(w, t, coarse, 0);
     const peak = new Float32Array(w.count);
     const core = new Float32Array(w.count);
-    applyLatticeLod(L, t, LOW, w, peak, core);
-    const uranus = w.ids.indexOf('uranus'); // no disc on the low tier
-    expect(core[uranus]).toBeGreaterThan(2 * w.core[uranus]);
+    applyLatticeLod(L, t, coarse, w, peak, core);
+
+    const widened = w.ids.slice(0, w.count).filter((_, i) => core[i] > 2 * w.core[i]);
+    expect(widened.length).toBeGreaterThan(0);
+    // Widening spreads a well; it must never change how deep the well is.
+    for (let i = 0; i < w.count; i++) {
+      expect((peak[i] * core[i]) / w.strength[i]).toBeCloseTo(1, 5);
+    }
   });
 
   it('changes continuously across a disc seam', () => {

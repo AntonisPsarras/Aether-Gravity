@@ -1,10 +1,11 @@
 import React from 'react';
 import {
   X, Settings, Hexagon, Sparkles, Globe, Orbit, Waves, Activity, GraduationCap, Gauge,
-  HardDrive,
+  HardDrive, Gem, Zap, Wand2,
 } from 'lucide-react';
 import { useStore } from '../utils/store';
 import type { UiMode } from '../utils/displayMode';
+import { resolveRenderProfile, type GraphicsMode } from '../utils/graphicsQuality';
 import { realSecondsPerEarthYear } from '../utils/simRate';
 import { getRealSystem } from '../content/realSystems';
 import { presetViews } from '../utils/presetViews';
@@ -27,6 +28,21 @@ import { CONSERVATIVE_LOCAL_STORAGE_BYTES, getAetherStorageUsage } from '../util
  * habitable zone are flipped often enough that they are mirrored on the bar
  * too (the habitable zone only above 390px); dust and stability live here only.
  */
+
+const GRAPHICS_COPY: Record<GraphicsMode, { title: string; blurb: string }> = {
+  quality: {
+    title: 'Quality',
+    blurb: 'Every effect at full detail — the same picture desktop renders. Switching briefly reloads the view.',
+  },
+  performance: {
+    title: 'Performance',
+    blurb: 'Lower resolution, fewer particles and lighter post-processing, tuned for a steady 60 fps. No effect is switched off.',
+  },
+  auto: {
+    title: 'Auto',
+    blurb: 'Measures your frame rate and moves up to Quality if the device holds 60 fps.',
+  },
+};
 
 const MODE_COPY: Record<UiMode, { title: string; blurb: string }> = {
   beginner: {
@@ -96,6 +112,10 @@ export const SettingsPanel: React.FC = () => {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const uiMode = useStore((s) => s.uiMode);
   const setUiMode = useStore((s) => s.setUiMode);
+  const graphicsMode = useStore((s) => s.graphicsMode);
+  const setGraphicsMode = useStore((s) => s.setGraphicsMode);
+  const autoRenderProfile = useStore((s) => s.autoRenderProfile);
+  const activeProfile = resolveRenderProfile(graphicsMode, autoRenderProfile);
   const speed = useStore((s) => s.speed);
   const showGrid = useStore((s) => s.showGrid);
   const showDust = useStore((s) => s.showDust);
@@ -182,6 +202,48 @@ export const SettingsPanel: React.FC = () => {
             <p className="px-1 text-[10px] italic text-pulsar-white/25 leading-snug">
               Display and pacing only — the simulation itself is identical in both modes, and
               switching never changes or discards any body.
+            </p>
+          </Group>
+
+          <Group title="Graphics">
+            <div
+              className="flex gap-1.5 p-1 rounded-xl bg-black/30 border border-white/5"
+              role="radiogroup"
+              aria-label="Graphics quality"
+              data-testid="graphics-mode-group"
+            >
+              {(['quality', 'performance', 'auto'] as GraphicsMode[]).map((mode) => {
+                const Icon = mode === 'quality' ? Gem : mode === 'performance' ? Zap : Wand2;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={graphicsMode === mode}
+                    onClick={() => setGraphicsMode(mode)}
+                    data-testid={`graphics-mode-${mode}`}
+                    className={cn(
+                      'touch-target flex-1 min-h-[2.75rem] flex items-center justify-center gap-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all',
+                      graphicsMode === mode
+                        ? 'bg-nova-gold/20 text-nova-gold ring-1 ring-inset ring-nova-gold/30'
+                        : 'text-pulsar-white/45 hover:text-pulsar-white hover:bg-white/5',
+                    )}
+                  >
+                    <Icon size={14} />
+                    {GRAPHICS_COPY[mode].title}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="px-1 text-[11px] leading-snug text-pulsar-white/45">{GRAPHICS_COPY[graphicsMode].blurb}</p>
+            {graphicsMode === 'auto' && (
+              <p className="px-1 text-[10px] text-pulsar-white/30" data-testid="graphics-mode-status">
+                Currently: {GRAPHICS_COPY[activeProfile].title}
+              </p>
+            )}
+            <p className="px-1 text-[10px] italic text-pulsar-white/25 leading-snug">
+              Appearance only — the physics, the timestep and every body are identical in all three
+              modes. This setting is remembered across every universe.
             </p>
           </Group>
 

@@ -15,7 +15,8 @@ import { buildRealSystem, getRealSystem } from '../content/realSystems';
 import { resetAccumulator, resetVerletCache, setSimTime, getSimTime } from './physicsSoA';
 import { deserializeBodies, sanitizeWorldSettings } from './worldStorage';
 import type { UiMode } from './displayMode';
-import { getUiMode, saveUiMode } from './displayPrefs';
+import type { GraphicsMode, RenderProfile } from './graphicsQuality';
+import { getGraphicsMode, getUiMode, saveGraphicsMode, saveUiMode } from './displayPrefs';
 import {
   clampMass,
   clampRadius,
@@ -73,6 +74,18 @@ interface AppState {
    * `utils/displayPrefs.ts` rather than from the world settings blob.
    */
   uiMode: UiMode;
+  /**
+   * Quality / Performance / Auto. Rendering only — see `utils/graphicsQuality.ts`.
+   * Global like `uiMode`, so it survives loading a different world.
+   */
+  graphicsMode: GraphicsMode;
+  /**
+   * What Auto has currently settled on. Written by the frame-time controller in
+   * the canvas and read by the settings panel so "Auto" can say which profile
+   * is actually running instead of being a black box. Ignored unless
+   * `graphicsMode === 'auto'`.
+   */
+  autoRenderProfile: RenderProfile;
   /** Whether the in-world settings sheet is open. */
   settingsOpen: boolean;
   /** Bumped when the camera should snap to the primary star (e.g. after generate). */
@@ -122,6 +135,8 @@ interface AppState {
   toggleDebugMode: () => void;
   /** Switch presentation mode. Non-destructive: no body data is touched. */
   setUiMode: (mode: UiMode) => void;
+  setGraphicsMode: (mode: GraphicsMode) => void;
+  setAutoRenderProfile: (profile: RenderProfile) => void;
   setSettingsOpen: (open: boolean) => void;
   lockInspectorFields: (bodyId: string, fields: string[]) => void;
   unlockInspectorFields: (bodyId: string, fields?: string[]) => void;
@@ -164,6 +179,8 @@ export const useStore = create<AppState>((set, get) => ({
   showOrbitPaths: true,
   historyVersion: 0,
   uiMode: getUiMode(),
+  graphicsMode: getGraphicsMode(),
+  autoRenderProfile: 'quality',
   settingsOpen: false,
   cameraRecenterNonce: 0,
   guidedView: null,
@@ -516,6 +533,17 @@ export const useStore = create<AppState>((set, get) => ({
     saveUiMode(mode);
     set({ uiMode: mode });
   },
+  /**
+   * Rendering only. Deliberately absent from `loadWorld` and from
+   * `WorldData.settings`, which is what keeps it global across every world.
+   */
+  setGraphicsMode: (mode) => {
+    saveGraphicsMode(mode);
+    set({ graphicsMode: mode });
+  },
+  /** Session-only: a measurement, not a preference, so it is never persisted. */
+  setAutoRenderProfile: (profile) => set((s) =>
+    s.autoRenderProfile === profile ? s : { autoRenderProfile: profile }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
 
   generateNewSystem: () => {

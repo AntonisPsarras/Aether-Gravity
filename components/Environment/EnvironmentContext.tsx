@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { DeviceTier, environmentQualityForDevice, EnvironmentQuality } from '../CanvasSetup';
+import { environmentQualityForDevice, EnvironmentQuality, RenderProfile } from '../CanvasSetup';
 import { useReducedMotion as useReducedMotionHook } from '../hooks/useReducedMotion';
 
 /** Re-exported from the shared hooks module; DOM panels need it too. */
@@ -30,12 +30,12 @@ export function createEnvironmentTexture(width: number) {
 }
 
 const EnvironmentContext = createContext<{ quality: EnvironmentQuality; texture: THREE.Texture | null; reducedMotion: boolean }>({
-  quality: environmentQualityForDevice('low'), texture: null, reducedMotion: false,
+  quality: environmentQualityForDevice('performance'), texture: null, reducedMotion: false,
 });
 export const useEnvironment = () => useContext(EnvironmentContext);
 
-export function EnvironmentProvider({ tier, isTouch, children }: { tier: DeviceTier; isTouch: boolean; children: React.ReactNode }) {
-  const quality = useMemo(() => environmentQualityForDevice(tier, isTouch), [tier, isTouch]);
+export function EnvironmentProvider({ profile, children }: { profile: RenderProfile; children: React.ReactNode }) {
+  const quality = useMemo(() => environmentQualityForDevice(profile), [profile]);
   const reducedMotion = useReducedMotionHook();
   const texture = useMemo(() => createEnvironmentTexture(quality.reflectionResolution), [quality.reflectionResolution]);
   useEffect(() => () => texture.dispose(), [texture]);

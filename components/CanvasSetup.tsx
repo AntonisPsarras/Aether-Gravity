@@ -6,47 +6,90 @@ import { getE2EConfig } from '../utils/e2eConfig';
 import {
   classifyDeviceCapabilities,
   combineDeviceTiers,
-  DeviceTierHysteresis,
   type DeviceTier,
 } from '../utils/deviceCapabilities';
+import { AutoGraphicsController } from '../utils/autoGraphics';
+import type { RenderProfile } from '../utils/graphicsQuality';
 
 /**
- * Device capability tiering.
+ * Render profiles.
  *
- * Tiers change *cost*, never *look*. `low` (outdated / memory-constrained
- * mobile GPUs) renders bloom at quarter resolution with fewer mip levels and
- * trims geometry/particle budgets; `high` (desktop and capable phones) renders
- * everything at full budget. Exposure, bloom threshold/intensity and grid
- * brightness are identical on every tier so the scene reads the same on a
- * phone as on desktop.
+ * Profiles change *cost*, never *look*. `performance` renders at lower
+ * resolution, density and sampling; `quality` renders the full desktop budget.
+ * Every visual FEATURE is present in both — no effect is switched off, no
+ * shader branch is removed — so the only difference a user can point at is
+ * sharpness. Exposure, bloom threshold/intensity and grid brightness are
+ * identical, so the scene reads the same on a phone as on desktop.
+ *
+ * The one legitimate exception is *distance* LOD (`detailedBodyPixelRadius`):
+ * a body smaller than that many pixels drops to the cheap shader path. That is
+ * a function of apparent size, not of the device, so it never removes detail
+ * the viewer could actually resolve.
  */
 export type { DeviceTier } from '../utils/deviceCapabilities';
+export type { RenderProfile } from '../utils/graphicsQuality';
+
+/**
+ * Bridges the hardware guess into a starting profile. This is a SEED, never a
+ * ceiling — see `AutoGraphicsController`.
+ */
+export const profileForTier = (tier: DeviceTier): RenderProfile =>
+  tier === 'low' ? 'performance' : 'quality';
+
+/**
+ * The legacy `DeviceTier` axis, derived from the profile, for the many render
+ * call sites still written in terms of it.
+ */
+export const renderTierFor = (profile: RenderProfile): DeviceTier =>
+  profile === 'quality' ? 'high' : 'low';
 
 /** Rendering-only budgets. TODO: profile fill rate on older GPUs before further tuning. */
-export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
-  const low = tier === 'low';
+export function environmentQualityForDevice(profile: RenderProfile) {
+  const low = profile === 'performance';
   return {
     gasBackgroundLayers: low ? 2 : 4,
     gasLocalLayers: low ? 1 : 2,
     gasEmitterCap: 2,
     gasOctaves: low ? 3 : 5,
-    gasOpacity: low ? 0.10 : 0.12,
+    /** Same fragment count either way — a difference here would be pure look. */
+    gasOpacity: 0.12,
     reflectionResolution: low ? 32 : 64,
-    reflectionIntensity: low ? 0.12 : 0.18,
+    /**
+     * How brightly the environment radiance lights bodies. Same on both: this
+     * is a lighting level, not a cost — the resolution above is the cost knob.
+     */
+    reflectionIntensity: 0.18,
     radiationEmitterCap: low ? 4 : 8,
     radiationSegments: low ? 12 : 24,
     radiationDetail: low ? 0 : 1,
     radiationAnimationRate: 1,
-    dustCount: low ? 240 : isTouch ? 525 : 1500,
-    dustSize: low ? 3.8 : 3,
-    dustOpacityGain: low ? 1.65 : 1,
+    dustCount: low ? 525 : 1500,
+    dustSize: low ? 3.4 : 3,
+    dustOpacityGain: low ? 1.3 : 1,
     dustMotion: low ? 0.5 : 1,
     orbitSegments: low ? 64 : 128,
     orbitRefreshHz: low ? 2 : 5,
     blackHoleCaptureResolution: low ? 128 : 256,
     blackHoleCaptureInterval: low ? 6 : 3,
-    bloomResolutionScale: low ? 0.25 : 0.5,
-    detailedBodyPixelRadius: low ? 110 : 0,
+    /**
+     * Bloom working resolution, read by `AdaptivePostFX`. `undefined` on
+     * quality deliberately: the desktop path never passed the prop, so leaving
+     * it unset keeps the library default and guarantees Quality is byte-identical
+     * to what desktop renders today rather than merely close to it.
+     */
+    bloomResolutionScale: low ? 0.5 : undefined,
+    /**
+     * Distance LOD only — a body projecting smaller than this many pixels takes
+     * the cheap shader path. `quality` resolves every body in full.
+     */
+    detailedBodyPixelRadius: low ? 90 : 0,
+    /**
+     * Raymarch steps for the black-hole accretion disk. The disk stays
+     * raymarched on BOTH profiles (billboard stand-ins were a look change);
+     * this step count is the fill-rate knob instead, and it is the first thing
+     * to cut if `performance` misses 60fps on black-hole scenes.
+     */
+    blackHoleDiskSteps: low ? 24 : 48,
 
     // --- Collision / evolution event VFX ---
     //
@@ -59,44 +102,89 @@ export function environmentQualityForDevice(tier: DeviceTier, isTouch = false) {
     /** Hard ceiling on live effects; the oldest is evicted past this. */
     maxConcurrentEffects: low ? 4 : 12,
     /** Points in a debris burst. One draw call, geometry shared across effects. */
-    debrisParticles: low ? 20 : 64,
-    /** Relativistic jet cones on black-hole accretion. Two extra draw calls. */
-    jetEnabled: !low,
-    /** Supernova / accretion shell tessellation. 512 vs 2048 triangles. */
-    compactShellSegments: low ? 16 : 32,
-    /** Global multiplier on effect brightness; low tier has reduced bloom. */
-    effectIntensity: low ? 0.7 : 1,
+    debrisParticles: low ? 24 : 64,
     /**
-     * Debris BODIES (not particles) a single destructive impact may create.
-     * This is a physics budget, not a rendering one: bodies cost O(N²) force
-     * evaluations and compete for the hard 50-body cap that the gravity grid's
-     * fixed-size uniform arrays impose.
+     * Relativistic jet cones on black-hole accretion. Two extra draw calls.
+     * On in both profiles: removing them was a look change, and two draw calls
+     * are not where a phone's frame budget goes.
      */
-    maxFragmentsPerImpact: low ? 3 : 6,
+    jetEnabled: true,
+    /** Supernova / accretion shell tessellation. 512 vs 2048 triangles. */
+    compactShellSegments: low ? 20 : 32,
+    /**
+     * Global multiplier on effect brightness. 1 on both profiles: it existed
+     * only to compensate for the weaker low-tier bloom, and `performance` now
+     * runs the same bloom response at half resolution. A brightness difference
+     * is a look change with no cost attached.
+     */
+    effectIntensity: 1,
 
     // --- Spacetime grid lattice (utils/gridLattice.ts) ---
     //
-    // Vertex work is vertices × bodies, as before. With every disc in use the
-    // worst case matches the old camera-following plane: 159.7 k vertices on
-    // high against 160.8 k (401²), 21.9 k on low against 22.8 k (151²). A
-    // single-star scene draws only the primary lattice: 96.3 k / 14.3 k.
+    // Vertex work is vertices × bodies. With every disc in use: ~159.7 k
+    // vertices on quality, ~70.2 k on performance. The performance budget was
+    // raised from 104/118 rings/spokes because `applyLatticeLod` widens every
+    // well it cannot resolve by `LOD_CELLS_PER_CORE × cell size` — so a coarse
+    // lattice does not merely look blocky, it renders funnels that are
+    // measurably too wide and too shallow. At 104/118 a Solar System's Saturn
+    // fell through unresolved and was drawn 24% too wide. 118 spokes also made
+    // cells strongly anisotropic (~2.1 L* of arc against a ~1 L* radial step at
+    // r = 40), which feeds anisotropic `fwidth` straight into the line-LOD term.
+    //
     // Cheapen here: fewer rings/spokes widen every unresolved well's LOD core,
-    // fewer anchors leave distant secondary wells softer, and one line level
-    // snaps the zoom-adaptive line spacing instead of cross-fading it.
-    /** Primary-lattice rings out to 4000 L* (δ ≈ 0.026 high, 0.066 low). */
-    gridRings: low ? 104 : 270,
+    // and fewer anchors leave distant secondary wells softer. Do NOT cheapen by
+    // dropping to one line level — see `gridLineLevels` below.
+    /**
+     * Primary-lattice rings out to 4000 L*. 200×200 on performance is the
+     * smallest budget at which the lattice still resolves every well a Solar
+     * System scene contains — i.e. the cheapest lattice that changes line
+     * DENSITY without changing the SHAPE of any funnel. It costs 70.2 k
+     * vertices against quality's 159.7 k.
+     */
+    gridRings: low ? 200 : 270,
     /** Primary-lattice rings of the coarsening tail out to 2×10⁷ L*. */
-    gridTailRings: low ? 16 : 30,
-    gridSpokes: low ? 118 : 320,
-    gridDiscRings: low ? 75 : 150,
-    gridDiscSpokes: low ? 100 : 210,
-    /** Primary plus secondary (disc) lattices. */
-    gridMaxAnchors: low ? 2 : 3,
-    /** Grid-line levels cross-faded per pixel: 2 costs ~10 extra ALU ops per grid fragment. */
-    gridLineLevels: low ? 1 : 2,
+    gridTailRings: low ? 22 : 30,
+    gridSpokes: low ? 200 : 320,
+    gridDiscRings: low ? 96 : 150,
+    gridDiscSpokes: low ? 132 : 210,
+    /**
+     * Primary plus secondary (disc) lattices. Three on both profiles: dropping
+     * to two left the second-strongest well unresolved, and `applyLatticeLod`
+     * then widened it into a visibly wrong, shallow funnel.
+     */
+    gridMaxAnchors: 3,
+    /**
+     * Grid-line levels cross-faded per pixel. ALWAYS 2.
+     *
+     * One level takes the `floor(lod + 0.5)` branch in the grid fragment shader,
+     * which SNAPS line spacing rather than cross-fading it: any per-quad jitter
+     * in `lod` jumps the spacing by 4x, tiling the surface into blocks of two
+     * different densities that flicker as the camera moves. That was the
+     * reported "buggy curvature graph" on mobile. Two levels cost ~10 extra ALU
+     * ops per grid fragment — far too little to buy back a broken surface.
+     */
+    gridLineLevels: 2,
   };
 }
 export type EnvironmentQuality = ReturnType<typeof environmentQualityForDevice>;
+
+/**
+ * Budgets that change the SIMULATION, not the picture.
+ *
+ * Deliberately separate from `environmentQualityForDevice` and keyed on the
+ * hardware `DeviceTier`, never on the user's graphics mode. Debris bodies cost
+ * O(N²) force evaluations and compete for the hard 50-body cap the gravity
+ * grid's fixed-size uniform arrays impose, so a weak CPU must be allowed fewer
+ * of them — but picking "Performance" for a smoother picture must never change
+ * what the physics actually does, or two users watching the same collision
+ * would see different outcomes.
+ */
+export function physicsBudgetForTier(tier: DeviceTier) {
+  return {
+    /** Debris BODIES (not particles) a single destructive impact may create. */
+    maxFragmentsPerImpact: tier === 'low' ? 3 : 6,
+  };
+}
 
 const MOBILE_UA_REGEX = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
@@ -128,17 +216,28 @@ function readRendererStrings(gl: THREE.WebGLRenderer): { renderer?: string; vend
   };
 }
 
-/** Refines the pre-canvas tier with real WebGL limits and sustained frame timing. */
+/**
+ * Refines the pre-canvas hardware tier with real WebGL limits, and — only in
+ * Auto — drives the live render profile from sustained frame timing.
+ *
+ * The two outputs are deliberately separate callbacks. `onHardwareTier` is a
+ * statement about the DEVICE and is the only one allowed to reach the physics
+ * timestep; `onProfileChange` is a statement about the PICTURE. Merging them
+ * (as the single `onTierChange` used to) meant a frame-rate dip silently
+ * changed the integrator's step size mid-session.
+ */
 export function DeviceCapabilityProbe({
   initialTier,
-  onTierChange,
+  onHardwareTier,
+  onProfileChange,
 }: {
   initialTier: DeviceTier;
-  onTierChange: (tier: DeviceTier) => void;
+  onHardwareTier: (tier: DeviceTier) => void;
+  /** Omitted outside Auto, which disables frame-time observation entirely. */
+  onProfileChange?: (profile: RenderProfile) => void;
 }): null {
   const gl = useThree((s) => s.gl);
-  const adaptive = useRef(new DeviceTierHysteresis(initialTier));
-  const warmupFrames = useRef(0);
+  const auto = useRef(new AutoGraphicsController(profileForTier(initialTier)));
 
   useEffect(() => {
     const ctx = gl.getContext();
@@ -149,15 +248,17 @@ export function DeviceCapabilityProbe({
       maxTextureSize: gl.capabilities.maxTextureSize,
       maxRenderbufferSize: Number(ctx.getParameter(ctx.MAX_RENDERBUFFER_SIZE)),
     }));
-    adaptive.current = new DeviceTierHysteresis(refined);
-    onTierChange(refined);
-  }, [gl, initialTier, onTierChange]);
+    // The refined tier only SEEDS the controller. It is not a ceiling: a phone
+    // that sustains 60fps must be able to reach `quality` regardless of what
+    // `navigator.deviceMemory` claimed.
+    auto.current = new AutoGraphicsController(profileForTier(refined));
+    onHardwareTier(refined);
+  }, [gl, initialTier, onHardwareTier]);
 
   useFrame((_, delta) => {
-    if (document.hidden || warmupFrames.current++ < 120) return;
-    const fps = 1 / Math.max(delta, 1e-4);
-    const changed = adaptive.current.observe(fps);
-    if (changed) onTierChange(changed);
+    if (!onProfileChange || document.hidden) return;
+    const changed = auto.current.observe(delta);
+    if (changed) onProfileChange(changed);
   });
   return null;
 }
@@ -246,7 +347,7 @@ export function RendererConfig({
  * blew phones out to a white haze toward the horizon. Kept as a function so
  * callers (SpaceCanvas, MenuSpaceBackground) have one place to ask.
  */
-export function exposureForTier(_tier: DeviceTier, _isTouch = false): number {
+export function exposureForTier(_profile?: RenderProfile): number {
   return 1.0;
 }
 
@@ -256,11 +357,7 @@ export function exposureForTier(_tier: DeviceTier, _isTouch = false): number {
  * fallback (GPU effects disabled after a context loss) needs a lift, because
  * bloom is then genuinely absent.
  */
-export function gridVisualBoostForDevice(
-  _tier: DeviceTier,
-  _isTouch: boolean,
-  postFxEnabled: boolean,
-): number {
+export function gridVisualBoostForDevice(postFxEnabled: boolean): number {
   return postFxEnabled ? 1.0 : 2.35;
 }
 
@@ -269,38 +366,32 @@ const BLOOM_THRESHOLD = 0.5;
 const BLOOM_INTENSITY = 1.2;
 
 /**
- * Adaptive post-processing. Every tier gets the same bloom response and
- * vignette, so the scene looks the same everywhere; only the cost differs.
- * All effects in one composer merge into a single EffectPass, so the vignette
- * and grain are a few ALU ops per pixel rather than extra passes.
+ * Post-processing. Both profiles get the same bloom RESPONSE (threshold,
+ * intensity, full mip chain), the same grain and the same vignette, so the
+ * scene reads identically; only the bloom's working resolution differs. All
+ * effects merge into a single EffectPass, so grain and vignette are a few ALU
+ * ops per pixel rather than extra passes.
  *
- *  - Desktop (`high`, non-touch): full-resolution bloom + grain + vignette.
- *  - Capable mobile (`high`, touch): half-resolution bloom + grain + vignette.
- *  - Weak mobile (`low`): quarter-resolution, three-level bloom + vignette.
+ *  - `quality`     — full-resolution bloom + grain + vignette (the desktop path).
+ *  - `performance` — half-resolution bloom + grain + vignette.
+ *
+ * The old third branch rendered quarter-resolution bloom with `levels={3}` and
+ * dropped the grain entirely. Truncating the mip chain visibly cuts the glow
+ * falloff short, which is a look change rather than a cost one, so it is gone.
+ * `resolutionScale` is the knob to step down if `performance` misses 60fps —
+ * `levels` is not.
  */
-export function AdaptivePostFX({ tier, isTouch }: { tier: DeviceTier; isTouch: boolean }): React.ReactElement | null {
-  if (tier === 'low') {
-    return (
-      <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom luminanceThreshold={BLOOM_THRESHOLD} mipmapBlur intensity={BLOOM_INTENSITY} resolutionScale={0.25} levels={3} />
-        <Vignette darkness={0.3} />
-      </EffectComposer>
-    );
-  }
-
-  if (isTouch) {
-    return (
-      <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom luminanceThreshold={BLOOM_THRESHOLD} mipmapBlur intensity={BLOOM_INTENSITY} resolutionScale={0.5} />
-        <Noise opacity={0.03} />
-        <Vignette darkness={0.3} />
-      </EffectComposer>
-    );
-  }
+export function AdaptivePostFX({ profile }: { profile: RenderProfile }): React.ReactElement | null {
+  const { bloomResolutionScale } = environmentQualityForDevice(profile);
 
   return (
-    <EffectComposer multisampling={0}>
-      <Bloom luminanceThreshold={BLOOM_THRESHOLD} mipmapBlur intensity={BLOOM_INTENSITY} />
+    <EffectComposer multisampling={0} enableNormalPass={false}>
+      <Bloom
+        luminanceThreshold={BLOOM_THRESHOLD}
+        mipmapBlur
+        intensity={BLOOM_INTENSITY}
+        resolutionScale={bloomResolutionScale}
+      />
       <Noise opacity={0.03} />
       <Vignette darkness={0.3} />
     </EffectComposer>

@@ -4,7 +4,9 @@ import {
   getDisplayPrefs,
   getUiMode,
   parseDisplayPrefs,
+  getGraphicsMode,
   resetDisplayPrefsMemoryForTests,
+  saveGraphicsMode,
   saveUiMode,
 } from './displayPrefs';
 import {
@@ -44,7 +46,20 @@ describe('parseDisplayPrefs', () => {
   });
 
   it('accepts a well-formed record', () => {
-    expect(parseDisplayPrefs({ version: 1, uiMode: 'advanced' })).toEqual({ version: 1, uiMode: 'advanced' });
+    expect(parseDisplayPrefs({ version: 1, uiMode: 'advanced', graphicsMode: 'quality' }))
+      .toEqual({ version: 1, uiMode: 'advanced', graphicsMode: 'quality' });
+  });
+
+  // Every blob written before the graphics setting existed lacks the field.
+  // Rejecting those would silently reset each existing user's display mode.
+  it('default-fills a missing graphics mode instead of rejecting the record', () => {
+    expect(parseDisplayPrefs({ version: 1, uiMode: 'advanced' }))
+      .toEqual({ version: 1, uiMode: 'advanced', graphicsMode: 'auto' });
+  });
+
+  it('default-fills an unrecognised graphics mode without discarding the ui mode', () => {
+    expect(parseDisplayPrefs({ version: 1, uiMode: 'beginner', graphicsMode: 'ultra' }))
+      .toEqual({ version: 1, uiMode: 'beginner', graphicsMode: 'auto' });
   });
 });
 
@@ -73,8 +88,32 @@ describe('persistence', () => {
     resetDisplayPrefsMemoryForTests();
     expect(getUiMode()).toBe('advanced');
     expect(JSON.parse(localStorage.getItem(DISPLAY_PREFS_STORAGE_KEY)!)).toEqual({
-      version: 1, uiMode: 'advanced',
+      version: 1, uiMode: 'advanced', graphicsMode: 'auto',
     });
+  });
+
+  it('round-trips a saved graphics mode through localStorage', () => {
+    saveGraphicsMode('performance');
+    resetDisplayPrefsMemoryForTests();
+    expect(getGraphicsMode()).toBe('performance');
+  });
+
+  // Each writer used to rebuild the whole blob from scratch, so adding a second
+  // preference would have made every write of one silently reset the other.
+  it('writing either preference preserves the other', () => {
+    saveUiMode('advanced');
+    saveGraphicsMode('quality');
+    resetDisplayPrefsMemoryForTests();
+    expect(getUiMode()).toBe('advanced');
+    expect(getGraphicsMode()).toBe('quality');
+
+    saveUiMode('beginner');
+    resetDisplayPrefsMemoryForTests();
+    expect(getGraphicsMode()).toBe('quality');
+  });
+
+  it('defaults a brand-new user to auto', () => {
+    expect(getGraphicsMode()).toBe('auto');
   });
 
   it('falls back to the seeded default on corrupt JSON rather than throwing', () => {

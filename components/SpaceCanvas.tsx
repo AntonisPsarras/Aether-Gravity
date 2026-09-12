@@ -76,7 +76,7 @@ import { registerRenderObjects, unregisterRenderObjects } from '../utils/renderB
 import { getE2EConfig, isE2EMode } from '../utils/e2eConfig';
 import {
   incrementTestBridgeContextLost,
-  setTestBridgeDeviceTier,
+  setTestBridgeGraphics,
 } from '../utils/testBridge';
 import {
   cancelAllBodyPointerGestures,
@@ -96,10 +96,14 @@ import {
   DeviceCapabilityProbe,
   useDeviceTier,
   environmentQualityForDevice,
+  physicsBudgetForTier,
+  profileForTier,
+  renderTierFor,
   exposureForTier,
   gridVisualBoostForDevice,
   detectIsTouch,
 } from './CanvasSetup';
+import { resolveRenderProfile, type RenderProfile } from '../utils/graphicsQuality';
 
 /** No-op raycast — opts a mesh out of all picking without removing it. */
 const NO_RAYCAST: THREE.Object3D['raycast'] = () => null;
@@ -708,6 +712,43 @@ const CameraFlyTo = ({
 };
 
 /** Snap orbit camera to the primary star after generate / new universe only. */
+/** Camera position and orbit target, carried across a WebGL context rebuild. */
+export interface CameraPose {
+  position: [number, number, number];
+  target: [number, number, number];
+}
+
+/**
+ * Preserves the view across a `<Canvas>` remount.
+ *
+ * Switching graphics mode changes context-creation attributes, which forces a
+ * new context and therefore a brand-new camera built from the `camera` prop's
+ * defaults. Without this the user would tap "Quality" and be teleported back to
+ * the default overview, losing whatever they were looking at. The ref lives in
+ * `SpaceCanvas`, outside the Canvas, so it survives the unmount that writes it.
+ */
+const CameraPoseBridge = ({ store }: { store: React.MutableRefObject<CameraPose | null> }): null => {
+  const { camera, controls } = useThree();
+
+  useEffect(() => {
+    const saved = store.current;
+    if (saved && isOrbitControlsLike(controls)) {
+      camera.position.set(saved.position[0], saved.position[1], saved.position[2]);
+      controls.target.set(saved.target[0], saved.target[1], saved.target[2]);
+      controls.update();
+    }
+    return () => {
+      if (!isOrbitControlsLike(controls)) return;
+      store.current = {
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+      };
+    };
+  }, [camera, controls, store]);
+
+  return null;
+};
+
 const CameraRecenter = ({
   floatingOffset,
 }: {
@@ -981,7 +1022,8 @@ const PhysicsEngine = ({
   parentMapRef,
   bodyByIdRef,
   primaryStarIdRef,
-  deviceTier,
+  physicsTier,
+  renderProfile,
   gridVisualBoost,
   creationDragActiveRef,
   gasRemnants,
@@ -992,7 +1034,15 @@ const PhysicsEngine = ({
   parentMapRef: React.MutableRefObject<Map<string, CelestialBody | null>>;
   bodyByIdRef: React.MutableRefObject<Map<string, CelestialBody>>;
   primaryStarIdRef: React.MutableRefObject<string | null>;
-  deviceTier: import('./CanvasSetup').DeviceTier;
+  /**
+   * HARDWARE tier. The ONLY tier in this component allowed to reach the
+   * integrator — `simElapsedForFrame`, `runFixedSteps`, `simulationPacingScale`
+   * and the fragment budget. Never derived from the user's graphics mode, so
+   * the simulation is identical in Quality, Performance and Auto.
+   */
+  physicsTier: import('./CanvasSetup').DeviceTier;
+  /** PICTURE only. Must never be passed to anything in the list above. */
+  renderProfile: RenderProfile;
   gridVisualBoost: number;
   creationDragActiveRef: React.MutableRefObject<boolean>;
   gasRemnants: React.MutableRefObject<GasRemnant[]>;
@@ -1024,13 +1074,14 @@ const PhysicsEngine = ({
   const waveEventBufferRef = useRef<WaveEvent[]>([]);
   const stepStateRef = useRef({ collisionOccurred: false });
 
-  // Event-VFX and fragment budgets for this device tier. `maxFragmentsPerImpact`
-  // is a physics budget (bodies cost O(N²) and compete for the 50-body cap);
-  // the rest are rendering budgets.
+  // Rendering budgets follow the chosen picture...
   const effectQuality = useMemo(
-    () => environmentQualityForDevice(deviceTier),
-    [deviceTier],
+    () => environmentQualityForDevice(renderProfile),
+    [renderProfile],
   );
+  // ...while the fragment budget follows the hardware, because it changes how
+  // many BODIES a collision creates and therefore what the simulation does.
+  const physicsBudget = useMemo(() => physicsBudgetForTier(physicsTier), [physicsTier]);
   const debrisGeometry = useDebrisGeometry(effectQuality.debrisParticles);
 
   // Static lattice geometry for this tier's budget (utils/gridLattice.ts). The
@@ -1058,7 +1109,7 @@ const PhysicsEngine = ({
       eventBufferRef.current,
       waveEventBufferRef.current,
       dt,
-      effectQuality.maxFragmentsPerImpact,
+      physicsBudget.maxFragmentsPerImpact,
     )) {
       resetVerletCache();
       stepStateRef.current.collisionOccurred = true;
@@ -1067,7 +1118,7 @@ const PhysicsEngine = ({
     checkEvolutionInPlace(bodies, eventBufferRef.current);
     if (eventBufferRef.current.length !== beforeEvolution) resetVerletCache();
     return bodies;
-  }, [effectQuality.maxFragmentsPerImpact]);
+  }, [physicsBudget.maxFragmentsPerImpact]);
 
   /**
    * Append an effect, evicting the oldest past the tier's concurrency cap. The
@@ -1117,7 +1168,7 @@ const PhysicsEngine = ({
     // multiplier on a base rate, not a raw years-per-second. Sign of `speed`
     // lets the user run physics in reverse for short bursts. Beginner Mode
     // consumes time more slowly; the timestep and integrator are identical.
-    const simElapsed = simElapsedForFrame(Math.min(delta, 0.1), speed, uiMode, bodiesRef.current, deviceTier);
+    const simElapsed = simElapsedForFrame(Math.min(delta, 0.1), speed, uiMode, bodiesRef.current, physicsTier);
 
     let effectsChanged = false;
     for (let i = visualEffectsRef.current.length - 1; i >= 0; i--) {
@@ -1140,7 +1191,7 @@ const PhysicsEngine = ({
       // Fixed-timestep Velocity-Verlet — deterministic regardless of frame rate.
       // Collision + evolution checks run at each fixed step so contact events
       // are not missed when the user runs at high speed multipliers.
-      runFixedSteps(bodiesRef, simElapsed, fixedStepCallback, deviceTier);
+      runFixedSteps(bodiesRef, simElapsed, fixedStepCallback, physicsTier);
       collisionOccurred = stepStateRef.current.collisionOccurred;
 
       if (bodiesRef.current && bodiesRef.current.length > 0) {
@@ -1248,7 +1299,7 @@ const PhysicsEngine = ({
     useStore.getState().setScientificPacingScale(
       paused || Math.abs(speed) <= 0.01
         ? 1
-        : simulationPacingScale(speed, uiMode, bodiesRef.current, deviceTier),
+        : simulationPacingScale(speed, uiMode, bodiesRef.current, physicsTier),
     );
 
     // One O(N²) parent pass + id lookup map for the whole frame (BodyMesh, overlays).
@@ -1819,14 +1870,14 @@ const BlackHoleBody = ({
   spin,
   accretion,
   mass,
-  deviceTier,
+  renderProfile,
 }: {
   visualRadius: number;
   eventHorizonScale: number;
   spin: number;
   accretion: number;
   mass: number;
-  deviceTier: DeviceTier;
+  renderProfile: RenderProfile;
 }) => {
   const lensTexture = useBlackHoleLensTexture();
   return (
@@ -1836,7 +1887,7 @@ const BlackHoleBody = ({
       accretion={accretion}
       mass={mass}
       lensTexture={lensTexture}
-      tier={deviceTier}
+      profile={renderProfile}
       interactive={false}
       onSelect={() => {}}
     />
@@ -2520,7 +2571,7 @@ const BodyMesh = React.memo(({
           spin={props.spinParameter ?? 0}
           accretion={props.accretionRate ?? 0.5}
           mass={data.mass}
-          deviceTier={deviceTier}
+          renderProfile={profileForTier(deviceTier)}
         />
         </group>
       )}
@@ -2636,35 +2687,92 @@ const SpaceCanvas: React.FC<{
   setCreationMode: (mode: BodyType | null) => void;
   onBodyCreate: (snapshot: SimulationSnapshot, createdBody: CelestialBody) => void;
 }> = ({ creationMode, setCreationMode, onBodyCreate }) => {
-  const isTouchDevice = detectIsTouch();
+  // NOTE: `detectIsTouch()` is deliberately absent here. It still answers INPUT
+  // questions (hit-target sizing at L1938, creation-drag scale at L659), but it
+  // no longer chooses render budgets: a user asking for maximum graphics on a
+  // phone is not asking for a lower-resolution scene, and keying quality off
+  // touch is what made desktop parity unreachable on mobile.
   const detectedTier = useDeviceTier();
   const e2eConfig = getE2EConfig();
-  const [adaptiveTier, setAdaptiveTier] = useState<DeviceTier>(detectedTier);
+  const storedGraphicsMode = useStore((s) => s.graphicsMode);
+  const graphicsMode = e2eConfig.graphics ?? storedGraphicsMode;
+  /**
+   * The HARDWARE tier. Refined once by the WebGL-limits probe and never by
+   * frame timing or by the user's graphics mode. This is the only value allowed
+   * to reach the integrator (`physicsStepPolicy`), so the simulation is
+   * identical whichever picture the user asked for.
+   */
+  const [physicsTier, setPhysicsTier] = useState<DeviceTier>(detectedTier);
+  /**
+   * Auto's live verdict. Seeded from hardware, then earned by frame timing.
+   * Kept in the store rather than locally so the settings panel can show which
+   * profile Auto has actually settled on.
+   */
+  const autoProfile = useStore((s) => s.autoRenderProfile);
+  const setAutoProfile = useStore((s) => s.setAutoRenderProfile);
   const [creationDragging, setCreationDragging] = useState(false);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
   const [glEpoch, setGlEpoch] = useState(0);
   const gasRemnants = useRef<GasRemnant[]>([]);
-  const effectiveTier: DeviceTier = gpuEffectsOk ? adaptiveTier : 'low';
+
+  const renderProfile: RenderProfile = !gpuEffectsOk
+    ? 'performance'
+    : e2eConfig.tier
+      ? profileForTier(e2eConfig.tier)
+      : resolveRenderProfile(graphicsMode, autoProfile);
+
+  /**
+   * `antialias` and `powerPreference` are context-CREATION attributes, so
+   * changing them tears down and rebuilds the WebGL context. That is acceptable
+   * when the user taps a mode themselves; it is not acceptable as a spontaneous
+   * mid-simulation black flash. So the context follows the user's EXPLICIT
+   * choice only — in Auto it stays pinned to the hardware seed and the auto
+   * controller never triggers a teardown.
+   *
+   * The cost is small: post-processing renders the scene into its own
+   * framebuffer with `multisampling={0}`, so the context's MSAA flag barely
+   * reaches the composited image. `powerPreference` is the attribute that
+   * actually matters here.
+   */
+  const contextProfile: RenderProfile = e2eConfig.tier
+    ? profileForTier(e2eConfig.tier)
+    : graphicsMode === 'auto'
+      ? profileForTier(detectedTier)
+      : renderProfile;
+
+  /** Survives the context rebuild above; see `CameraPoseBridge`. */
+  const cameraPoseRef = useRef<CameraPose | null>(null);
+
+  /** The legacy tier axis, for render call sites still written in those terms. */
+  const renderTier = renderTierFor(renderProfile);
+
   const canvasDpr: [number, number] = e2eConfig.dpr != null
     ? [e2eConfig.dpr, e2eConfig.dpr]
-    : effectiveTier === 'low' ? [1, 1.25] : [1, 2];
+    : renderProfile === 'performance' ? [1, 1.5] : [1, 2];
   const renderQuality = useMemo(
-    () => environmentQualityForDevice(effectiveTier, isTouchDevice),
-    [effectiveTier, isTouchDevice],
+    () => environmentQualityForDevice(renderProfile),
+    [renderProfile],
   );
-  const handleDetectedTier = useCallback((tier: DeviceTier) => {
-    if (!e2eConfig.tier) setAdaptiveTier(tier);
+  const handleHardwareTier = useCallback((tier: DeviceTier) => {
+    if (!e2eConfig.tier) setPhysicsTier(tier);
   }, [e2eConfig.tier]);
+  const handleAutoProfile = useCallback((profile: RenderProfile) => {
+    setAutoProfile(profile);
+  }, [setAutoProfile]);
+
+  // Seed Auto from the hardware guess before the controller has spoken, so the
+  // first frames are not spent on the wrong profile.
+  useEffect(() => {
+    if (graphicsMode === 'auto') setAutoProfile(profileForTier(physicsTier));
+    // Only on a hardware-tier refinement, never on the controller's own verdict.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [physicsTier]);
 
   useEffect(() => {
-    setTestBridgeDeviceTier(effectiveTier);
-  }, [effectiveTier]);
-  const exposure = exposureForTier(effectiveTier, isTouchDevice);
-  const gridVisualBoost = gridVisualBoostForDevice(
-    effectiveTier,
-    isTouchDevice,
-    gpuEffectsOk,
-  );
+    setTestBridgeGraphics(renderTierFor(renderProfile), renderProfile, graphicsMode, physicsTier);
+  }, [renderProfile, graphicsMode, physicsTier]);
+  const exposure = exposureForTier(renderProfile);
+  const gridVisualBoost = gridVisualBoostForDevice(gpuEffectsOk);
   const bodiesRef = useRef<CelestialBody[]>([]);
   const creationDragActiveRef = useRef(false);
   const floatingOffset = useRef(new THREE.Vector3(0, 0, 0));
@@ -2785,20 +2893,30 @@ const SpaceCanvas: React.FC<{
       onContextMenu={(e) => e.preventDefault()}
     >
     <Canvas
-      key={glEpoch}
+      key={`${glEpoch}:${contextProfile}`}
       dpr={canvasDpr}
       style={{ touchAction: 'none', width: '100%', height: '100%' }}
       camera={{ position: [0, 150, 250], fov: 45, near: 0.001, far: 100000000 }}
       gl={{
         logarithmicDepthBuffer: true,
-        antialias: !isTouchDevice,
-        powerPreference: isTouchDevice ? 'low-power' : 'high-performance',
+        // Keyed on the PROFILE, not on touch. A phone set to Quality gets the
+        // same context attributes desktop does, which is what makes Quality on
+        // mobile the desktop path rather than merely a closer approximation.
+        antialias: contextProfile === 'quality',
+        powerPreference: contextProfile === 'quality' ? 'high-performance' : 'low-power',
       } as any}
       onPointerMissed={handleCanvasPointerMissed}
     >
       {!e2eConfig.tier && (
-        <DeviceCapabilityProbe initialTier={detectedTier} onTierChange={handleDetectedTier} />
+        <DeviceCapabilityProbe
+          initialTier={detectedTier}
+          onHardwareTier={handleHardwareTier}
+          // Frame-time observation runs only in Auto. An explicit choice is the
+          // user's to keep, even on a device that cannot sustain it.
+          onProfileChange={graphicsMode === 'auto' ? handleAutoProfile : undefined}
+        />
       )}
+      <CameraPoseBridge store={cameraPoseRef} />
       <RendererConfig
         exposure={exposure}
         managePixelRatio={false}
@@ -2811,7 +2929,7 @@ const SpaceCanvas: React.FC<{
           setGlEpoch((n) => n + 1);
         }}
       />
-      <EnvironmentProvider tier={effectiveTier} isTouch={isTouchDevice}>
+      <EnvironmentProvider profile={renderProfile}>
       <BlackHoleLensCapture
         enabled={hasBlackHole && gpuEffectsOk}
         resolution={renderQuality.blackHoleCaptureResolution}
@@ -2823,7 +2941,7 @@ const SpaceCanvas: React.FC<{
         <Stars
           radius={300}
           depth={50}
-          count={effectiveTier === 'low' ? 2000 : isTouchDevice ? 3500 : 5000}
+          count={renderProfile === 'quality' ? 5000 : 3500}
           factor={4}
           saturation={0}
           fade
@@ -2839,7 +2957,8 @@ const SpaceCanvas: React.FC<{
           parentMapRef={parentMapRef}
           bodyByIdRef={bodyByIdRef}
           primaryStarIdRef={primaryStarIdRef}
-          deviceTier={effectiveTier}
+          physicsTier={physicsTier}
+          renderProfile={renderProfile}
           gridVisualBoost={gridVisualBoost}
           creationDragActiveRef={creationDragActiveRef}
           gasRemnants={gasRemnants}
@@ -2860,7 +2979,7 @@ const SpaceCanvas: React.FC<{
             bodiesRef={bodiesRef}
             floatingOffset={floatingOffset}
             onDragActiveChange={handleCreationDragChange}
-            deviceTier={effectiveTier}
+            deviceTier={renderTier}
           />
         )}
         {showStability && (
@@ -2884,7 +3003,7 @@ const SpaceCanvas: React.FC<{
               bodyByIdRef={bodyByIdRef}
               primaryStarIdRef={primaryStarIdRef}
               registerBodyObject={registerBodyObject}
-              deviceTier={effectiveTier}
+              deviceTier={renderTier}
             />
           ))}
           {habitableZoneStars.map((star: CelestialBody) => (
@@ -2893,7 +3012,7 @@ const SpaceCanvas: React.FC<{
         </group>
         <RadiationEffects bodiesRef={bodiesRef} floatingOffset={floatingOffset} />
         <AdaptiveOrbitControls enabled={!creationDragging && !isInteractingWithUI} />
-        {gpuEffectsOk && <AdaptivePostFX tier={effectiveTier} isTouch={isTouchDevice} />}
+        {gpuEffectsOk && <AdaptivePostFX profile={renderProfile} />}
       </BlackHoleLensCapture>
       </EnvironmentProvider>
     </Canvas>
