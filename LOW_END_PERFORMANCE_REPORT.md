@@ -78,4 +78,4 @@ perceptually unchanged.
   21-body Solar System 60.3 FPS, and low-tier mobile 60.7 FPS. All had zero context
   losses and flat sampled heap readings. The allocation/Zustand regression also passed.
 
-No dependency or lockfile was installed, updated, or modified.
+As of 9 September 2026 (this report), no dependency or lockfile was installed, updated, or modified.

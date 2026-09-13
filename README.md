@@ -47,6 +47,7 @@ Everything runs locally. The app makes **no network requests at all**: no accoun
 - **State:** Zustand
 - **Styling:** Tailwind CSS
 - **Mobile:** Capacitor 8 (`com.aethergravity.app`, minSdk 24, target SDK 36)
+- **Haptics:** `@capacitor/haptics` (native vibration on Android, including the `VIBRATE` permission)
 - **Testing:** Vitest · Playwright
 
 ---
