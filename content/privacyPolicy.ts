@@ -107,6 +107,7 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
     icon: 'internet',
     paragraphs: [
       'The Android Application does not request Internet or network-state permission. Routine gameplay and universe management do not use a network connection or upload your saves.',
+      'The Android Application requests the VIBRATE permission so haptic feedback can run through the device vibrator. It does not request INTERNET or ACCESS_NETWORK_STATE.',
       'If you choose a hosted-policy, GitHub, or email link, the Application hands that action to your browser or email application. The external application may use a network connection under its own privacy practices.',
     ],
   },
