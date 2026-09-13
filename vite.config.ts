@@ -1,7 +1,43 @@
 import path from 'path';
+import { existsSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const repoRoot = path.dirname(fileURLToPath(import.meta.url));
+const e2eFixturesDir = path.resolve(repoRoot, 'e2e', 'fixtures');
+
+/** Serve JSON fixtures in `vite` / Playwright only — they must not ship in `dist/`. */
+function e2eFixturesPlugin(): Plugin {
+  return {
+    name: 'e2e-fixtures',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const urlPath = req.url?.split('?')[0] ?? '';
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          next();
+          return;
+        }
+        if (!urlPath.startsWith('/e2e/fixtures/')) {
+          next();
+          return;
+        }
+        const name = path.basename(urlPath);
+        if (!name.endsWith('.json')) {
+          next();
+          return;
+        }
+        const file = path.join(e2eFixturesDir, name);
+        if (!existsSync(file)) {
+          next();
+          return;
+        }
+        res.setHeader('Content-Type', 'application/json');
+        createReadStream(file).pipe(res);
+      });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   loadEnv(mode, '.', '');
@@ -35,10 +71,10 @@ export default defineConfig(({ mode }) => {
     esbuild: {
       drop: mode === 'production' ? ['debugger'] : [],
     },
-    plugins: [react()],
+    plugins: [react(), e2eFixturesPlugin()],
     resolve: {
       alias: {
-        '@': path.dirname(fileURLToPath(import.meta.url)),
+        '@': repoRoot,
       },
     },
   };
