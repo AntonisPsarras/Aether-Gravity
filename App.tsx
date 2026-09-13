@@ -7,6 +7,8 @@ import UniverseOutliner from './components/UniverseOutliner';
 import MoonCreatorPanel from './components/MoonCreatorPanel';
 import { pickMoonParent, useMoonDraft } from './utils/moonDraft';
 import ErrorBoundary from './components/ErrorBoundary';
+import WebGL2RequiredScreen from './components/WebGL2RequiredScreen';
+import { isWebGL2Available } from './utils/webgl2Support';
 import {
   CURRENT_WORLD_VERSION,
   getWorld,
@@ -427,6 +429,7 @@ const App: React.FC = () => {
   const [e2eBootstrapping, setE2eBootstrapping] = useState(
     e2eConfig.enabled && !!e2eConfig.fixture,
   );
+  const [webgl2Ok] = useState(() => isWebGL2Available());
   const loadWorld = useStore((s) => s.loadWorld);
   const setBodies = useStore((s) => s.setBodies);
   const generateNewSystem = useStore((s) => s.generateNewSystem);
@@ -582,6 +585,10 @@ const App: React.FC = () => {
     setActiveWorldId(null);
     setBodies([]);
   };
+
+  if (!webgl2Ok) {
+    return <WebGL2RequiredScreen />;
+  }
 
   if (e2eBootstrapping) {
     return (
