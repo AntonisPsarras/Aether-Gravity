@@ -7,6 +7,7 @@ This guide will walk you through building and deploying your Aether Gravity app 
 ✅ **Already Installed:**
 - Android Studio
 - Node.js and npm
+- **JDK 21** (`capacitor.build.gradle` uses `JavaVersion.VERSION_21`). Set `JAVA_HOME` to a JDK 21 install, or put `org.gradle.java.home` in your user-level `~/.gradle/gradle.properties` (do not commit a machine-local path in this repo's `android/gradle.properties`). Android Studio's bundled JBR is typically Java 21.
 
 ## Project Setup (Already Complete)
 

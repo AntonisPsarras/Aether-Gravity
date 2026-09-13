@@ -214,7 +214,7 @@ You may clone this repository and run it on your own machine for any non-commerc
 
 - **[Node.js](https://nodejs.org/) 18 or newer** and **npm**. CI runs on Node 22, which is the safest choice.
 - A browser with **WebGL2**. The simulation will not start without it.
-- Android work additionally needs JDK 17 and Android Studio — see [`ANDROID_BUILD.md`](./ANDROID_BUILD.md).
+- Android work additionally needs JDK 21 and Android Studio — see [`ANDROID_BUILD.md`](./ANDROID_BUILD.md).
 
 ### 1. Clone the repository
 
