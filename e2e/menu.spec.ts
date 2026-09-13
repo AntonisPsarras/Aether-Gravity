@@ -197,7 +197,9 @@ test.describe('premium main menu', () => {
     } else {
       const worldCard = page.locator('article').filter({ hasText: 'Delete Me' });
       await worldCard.getByRole('button', { name: 'World actions' }).click();
-      await worldCard.getByRole('button', { name: 'Delete', exact: true }).click();
+      // The actions sheet is portaled to document.body, so Delete is not
+      // a descendant of the world card.
+      await page.getByRole('dialog', { name: 'Actions for Delete Me' }).getByRole('button', { name: 'Delete', exact: true }).click();
     }
     await expect(page.getByText(/permanently delete.*Delete Me.*cannot be undone/i)).toBeVisible();
     await page.getByRole('button', { name: 'Cancel' }).click();

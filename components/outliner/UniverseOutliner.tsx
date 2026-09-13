@@ -204,7 +204,7 @@ const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract })
           role="region"
           aria-label="Universe Outliner contents"
           aria-hidden={!isOpen}
-          inert={!isOpen}
+          {...(!isOpen ? { inert: true } : {})}
           className="universe-outliner-content"
           data-open={isOpen ? 'true' : 'false'}
         >
