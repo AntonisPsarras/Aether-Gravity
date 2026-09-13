@@ -67,3 +67,19 @@ android/app/keystore.properties
 *.keystore
 *.jks
 
+# Agent / local IDE
+.claude/
+
+# iOS / CocoaPods (not shipped from this repo)
+ios/
+*.xcuserstate
+DerivedData/
+Pods/
+
+# Build artifacts
+*.apk
+*.aab
+coverage/
+*.hprof
+**/.gradle/
+
