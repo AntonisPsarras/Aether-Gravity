@@ -282,7 +282,7 @@ The spec skips itself without that environment variable, so it stays out of the 
 
 - **Unit (Vitest — 24 suites, 338 tests, under `utils/`):** integrator fidelity and energy behaviour, unit-system self-consistency, orbital-element conversions, the Kepler solver, relativity formulas (Schwarzschild, Kerr, ISCO, photon sphere, disk efficiency, redshift), mass–radius and classification relations, habitability, all three real-system presets, input bounds, world storage and migration, display-mode gating, and onboarding state.
 - **End-to-end (Playwright, `e2e/`):** smoke, simulation controls with a bounded energy-drift assertion, layout across breakpoints including a ≥44 px touch-target check, main menu and world creation, onboarding, inspector edit-locking against the physics sync, shader compilation and WebGL context loss/restore, and an FPS soak across four scene profiles.
-- **CI:** `.github/workflows/playwright.yml` runs both suites on every push and pull request to `main`.
+- **CI:** `.github/workflows/playwright.yml` runs both suites on Node 22 for pushes to `main`, pull requests targeting any branch, and manual `workflow_dispatch`.
 
 ---
 
