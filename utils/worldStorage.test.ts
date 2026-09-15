@@ -4,6 +4,8 @@ import { CelestialBody } from '../types';
 import {
   CURRENT_WORLD_VERSION,
   createWorld,
+  createFolder,
+  moveWorldToFolder,
   deleteFolder,
   getFolderList,
   getWorld,
@@ -179,6 +181,23 @@ describe('world storage reliability', () => {
     expect(getWorldList()).toEqual([]);
     expect(() => createWorld('Must not overwrite')).toThrow(/unreadable/i);
     expect(values.get('aether:worlds:index')).toBe(raw);
+  });
+
+  it('rejects archive growth beyond its readable limit without replacing metadata', () => {
+    const raw = JSON.stringify(Array.from({ length: 10000 }, (_, i) => ({ id: `f${i}`, name: `Folder ${i}`, createdAt: 1 })));
+    values.set('aether:worlds:folders', raw);
+    expect(() => createFolder('Overflow')).toThrow();
+    expect(values.get('aether:worlds:folders')).toBe(raw);
+    expect(getFolderList()).toHaveLength(10000);
+  });
+
+  it('rejects stale folder destinations without altering a world archive', () => {
+    const id = createWorld('Destination test');
+    const before = values.get('aether:worlds:index');
+    expect(() => moveWorldToFolder(id, 'deleted-folder')).toThrow();
+    expect(values.get('aether:worlds:index')).toBe(before);
+    expect(() => createWorld('Invalid destination', 'deleted-folder')).toThrow();
+    expect(getWorldList()).toHaveLength(1);
   });
 
   it('reports quota and read-back verification failures without replacing the previous save', () => {

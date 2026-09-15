@@ -1,3 +1,5 @@
+import { mutateArchive, mutateClosedWorld } from '../utils/worldOwnership';
+import { StorageOperationError, storageIssueMessage } from '../utils/browserStorage';
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Info, Sparkles, Globe2, Play, Pencil, Trash2, Check, X, Calendar, Clock, Folder, ChevronRight, ChevronDown, FolderInput, MoreVertical, Shield, ArrowDown, ArrowRight, Orbit, Dices, Rocket, Star, GripVertical } from 'lucide-react';
@@ -81,7 +83,7 @@ const WorldCard: React.FC<{
     folders: FolderMeta[];
     onOpen: (id: string) => void;
     onRename: (id: string, name: string) => void;
-    onDelete: (id: string) => void;
+    onDelete: (id: string) => void | Promise<void>;
     onMove: (worldId: string, folderId?: string) => void;
     onDragStart: (worldId: string) => void;
     onDragEnd: () => void;
@@ -103,11 +105,11 @@ const WorldCard: React.FC<{
             setIsEditing(false);
             setError(null);
         } catch (e: any) {
-            setError(e.message);
+            setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.');
         }
     };
     const handleCancelEdit = () => { setEditName(world.name); setIsEditing(false); setError(null); };
-    const handleConfirmDelete = () => { onDelete(world.id); setShowDeleteConfirm(false); };
+    const handleConfirmDelete = async () => { await onDelete(world.id); setShowDeleteConfirm(false); };
 
     useEffect(() => {
         if (!showDeleteConfirm && !showActionsMenu && !isEditing) return;
@@ -146,8 +148,8 @@ const WorldCard: React.FC<{
                         <div className="flex flex-col gap-1">
                             <div className="flex flex-wrap items-center gap-2">
                                 <input type="text" value={editName} maxLength={64} onChange={(e) => { setEditName(e.target.value); if (error) setError(null); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') handleCancelEdit(); }} autoFocus className={`min-w-0 w-full sm:flex-1 sm:w-auto bg-black/40 border rounded px-2 py-1 text-sm text-pulsar-white font-medium focus:outline-none focus:ring-1 ${error ? 'border-red-500/50 focus:ring-red-500/50' : 'border-nova-gold/40 focus:ring-nova-gold/50'}`} />
-                                <button onClick={handleSaveRename} className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-emerald-400 hover:bg-emerald-500/20 rounded"><Check size={16} /></button>
-                                <button onClick={handleCancelEdit} className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-slate-400 hover:bg-white/10 rounded"><X size={16} /></button>
+                                <button onClick={handleSaveRename} aria-label="Save name" className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-emerald-400 hover:bg-emerald-500/20 rounded"><Check size={16} /></button>
+                                <button onClick={handleCancelEdit} aria-label="Cancel rename" className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-slate-400 hover:bg-white/10 rounded"><X size={16} /></button>
                             </div>
                             {error && <p className="text-[10px] text-red-500 ml-1">{error}</p>}
                         </div>
@@ -247,7 +249,7 @@ const FolderSection: React.FC<{
     onRenameWorld: (id: string, name: string) => void;
     onDeleteWorld: (id: string) => void;
     onRenameFolder: (id: string, name: string) => void;
-    onDeleteFolder: (id: string) => void;
+    onDeleteFolder: (id: string) => void | Promise<void>;
     onMoveWorld: (worldId: string, folderId?: string) => void;
     draggedWorldId: string | null;
     onWorldDragStart: (worldId: string) => void;
@@ -270,7 +272,7 @@ const FolderSection: React.FC<{
             setIsEditing(false);
             setError(null);
         } catch (e: any) {
-            setError(e.message);
+            setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.');
         }
     };
 
@@ -298,7 +300,7 @@ const FolderSection: React.FC<{
                     </p>
                     <div className="flex gap-2">
                         <button onClick={() => setShowDeleteConfirm(false)} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg">Cancel</button>
-                        <button onClick={() => { onDeleteFolder(folder.id); setShowDeleteConfirm(false); }} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 rounded-lg">Delete collection</button>
+                        <button onClick={async () => { await onDeleteFolder(folder.id); setShowDeleteConfirm(false); }} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 rounded-lg">Delete collection</button>
                     </div>
                 </div>
             )}
@@ -437,13 +439,21 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const draggedWorldRef = useRef<string | null>(null);
 
     useEffect(() => {
-        setWorlds(getWorldList());
-        setFolders(getFolderList());
+        const refresh = () => { setWorlds(getWorldList()); setFolders(getFolderList()); };
+        const changed = (event: StorageEvent) => {
+            if (event.key === null || event.key.startsWith('aether:worlds:')) refresh();
+        };
+        refresh();
+        window.addEventListener('storage', changed);
+        return () => window.removeEventListener('storage', changed);
     }, []);
 
     const selectedSystem = useMemo(() => REAL_SYSTEMS.find((system) => system.id === preset), [preset]);
     const recentWorld = worlds[0];
-    const uncategorized = useMemo(() => worlds.filter((world) => !world.folderId), [worlds]);
+    const uncategorized = useMemo(() => {
+        const ids = new Set(folders.map(folder => folder.id));
+        return worlds.filter(world => !world.folderId || !ids.has(world.folderId));
+    }, [worlds, folders]);
 
     const openCreator = () => {
         setPreset(defaultPresetId);
@@ -458,49 +468,49 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     };
     const scrollToHero = () => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
 
-    const handleCreateWorld = () => {
+    const handleCreateWorld = async () => {
         try {
             const name = newWorldName.trim() || `${selectedSystem?.name ?? 'Uncharted'} Universe`;
-            const id = createWorld(name, undefined, preset ?? undefined);
+            const id = await mutateArchive(() => createWorld(name, undefined, preset ?? undefined));
             closeCreator();
             onCreateWorld(id, preset ?? undefined);
         } catch (e: any) {
-            setError(e.message);
+            setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.');
         }
     };
 
-    const handleCreateFolder = () => {
+    const handleCreateFolder = async () => {
         try {
             const name = newWorldName.trim() || `Folder ${folders.length + 1}`;
-            createFolder(name);
+            await mutateArchive(() => createFolder(name));
             closeCreator();
             setFolders(getFolderList());
             // The collection composer lives in the hero. Return the user to the
             // archive they were managing instead of leaving them at the top menu.
             requestAnimationFrame(() => libraryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
         } catch (e: any) {
-            setError(e.message);
+            setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.');
         }
     };
 
-    const handleRename = (id: string, name: string) => {
-        try { renameWorld(id, name); setWorlds(getWorldList()); setError(null); }
-        catch (e: any) { setError(e.message); }
+    const handleRename = async (id: string, name: string) => {
+        try { await mutateArchive(() => renameWorld(id, name)); setWorlds(getWorldList()); setError(null); }
+        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
     };
-    const handleRenameFolder = (id: string, name: string) => {
-        try { renameFolder(id, name); setFolders(getFolderList()); setError(null); }
-        catch (e: any) { setError(e.message); }
+    const handleRenameFolder = async (id: string, name: string) => {
+        try { await mutateArchive(() => renameFolder(id, name)); setFolders(getFolderList()); setError(null); }
+        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
     };
-    const handleMoveWorld = (worldId: string, folderId?: string) => {
+    const handleMoveWorld = async (worldId: string, folderId?: string) => {
         try {
             const world = worlds.find((item) => item.id === worldId);
-            moveWorldToFolder(worldId, folderId);
+            await mutateArchive(() => moveWorldToFolder(worldId, folderId));
             setWorlds(getWorldList());
             setError(null);
             const destination = folderId ? folders.find((folder) => folder.id === folderId)?.name ?? 'collection' : 'Independent systems';
             setMoveNotice(`${world?.name ?? 'Universe'} moved to ${destination}.`);
         }
-        catch (e: any) { setError(e.message); }
+        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
     };
     const handleWorldDragStart = (worldId: string) => {
         draggedWorldRef.current = worldId;
@@ -521,13 +531,13 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
         if (draggedWorldRef.current && target) handleMoveWorld(draggedWorldRef.current, target.dataset.folderDropId || undefined);
         handleWorldDragEnd();
     };
-    const handleDelete = (id: string) => {
-        try { deleteWorld(id); setWorlds(getWorldList()); setError(null); }
-        catch (e: any) { setError(e.message); }
+    const handleDelete = async (id: string) => {
+        try { await mutateClosedWorld(id, () => deleteWorld(id)); setWorlds(getWorldList()); setError(null); }
+        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
     };
-    const handleDeleteFolder = (id: string) => {
-        try { deleteFolder(id); setFolders(getFolderList()); setWorlds(getWorldList()); setError(null); }
-        catch (e: any) { setError(e.message); }
+    const handleDeleteFolder = async (id: string) => {
+        try { await mutateArchive(() => deleteFolder(id)); setFolders(getFolderList()); setWorlds(getWorldList()); setError(null); }
+        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
     };
     const closeTutorial = () => {
         markTutorialSeen();

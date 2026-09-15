@@ -1,3 +1,19 @@
+# Current physics model — 14 September 2026
+
+The implementation and current regression evidence are summarized in [PRODUCTION_READINESS](docs/PRODUCTION_READINESS.md) and [Scientific presets](docs/SCIENTIFIC_PRESETS.md). The report below this section is **historical**: its Euler, arbitrary-unit and Float32 descriptions do not describe the current engine.
+
+Current integration uses Velocity-Verlet with double-precision vectors and acceleration buffers. Canonical units are Earth mass, 0.025 AU and Julian year, with G derived from SI. The base fixed step is 1/1024 year; encounter limits and scientific pacing can reduce it to 2^-18 year. Frame catch-up is bounded; discarded elapsed wall time is not silently replayed after backgrounding. Fixed-step reversibility applies only without dissipative events, clamps or changing step selection.
+
+This review repairs partial acceleration-cache initialization and collision accounting. Ordinary impacts conserve total mass and linear momentum; fragment positions are recentered to preserve the barycentre. Orbital angular momentum that cannot be represented after merging is retained in intrinsic angular-momentum fields in canonical M L²/T units. These fields are accounting, not a rigid-body spin model. Compact interactions retain an illustrative 99% mass fraction; events carry the lost mass and momentum. Their wave amplitude is not radiated energy in joules. Supernova loss is similarly explicit. The model is Newtonian; Kerr formulas describe isolated geometry and visual approximations, not relativistic N-body dynamics.
+
+Sandbox visual-radius collisions are retained deliberately; scientific presets use physical radii. Stellar classification, fragmentation, accretion spin and instant supernova transitions are illustrative approximations. Derived SI properties use physical radii. The supported mass bound can prevent an over-limit merger. There is no claim of conservative or historically reversible dynamics through these model boundaries.
+
+New deterministic regressions cover 100 stable orbits, forward/reverse trajectories, partial cache invalidation, collision barycentre, mass, linear momentum and total angular bookkeeping. Existing SI, Kepler, relativity, frame-partition, extreme-input and 1000-orbit scientific tests remain enforced. Tolerances and measured results are in the release report.
+
+---
+
+# Historical physics and data audit (superseded)
+
 # Aether Gravity — Physics & Data Audit Report
 
 > **Environmental rendering update (September 2026):** The unused GPGPU source files and null visualizer are now removed as well. `components/Environment/DecorativeDust.tsx` replaces the old CPU attraction-based dust with one seeded shader point field, with no physics feedback. Gas/remnants, radiation and reflected ambient light share the existing device tiers and bloom pipeline. Persistent orbit estimates read live state and are explicitly labeled as instantaneous two-body approximations; moon paths use the existing display exaggeration. The only simulation-state handoff fix forwards user-edited satellite `orbit` values through `updateBody` to the live body. No integrator, gravitational constants, physical units, body textures or relativistic calculations were changed. Rendering budgets are documented in `components/Environment/README.md`.

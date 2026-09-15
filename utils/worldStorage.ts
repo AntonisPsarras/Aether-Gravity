@@ -1,5 +1,6 @@
 import { WorldMeta, WorldData, CelestialBodyData, CelestialBody, FolderMeta } from '../types';
 import * as THREE from 'three';
+import { validWorldShape, validId, MAX_ARCHIVE_ENTRIES, savedNumber } from './worldValidation';
 import {
   clampMass,
   clampRadius,
@@ -48,6 +49,11 @@ const V1_BACKUP_PREFIX = 'aether:worlds:v1backup:';
 let worldIndexHealthy = true;
 let folderIndexHealthy = true;
 const loadedWorldRaw = new Map<string, string>();
+const rememberWorld = (id: string, raw: string): void => {
+    // The application opens one editor per tab. Bound retained snapshots to it.
+    loadedWorldRaw.clear();
+    loadedWorldRaw.set(id, raw);
+};
 
 // Annotated on the const, not just the arrow: TypeScript only treats a call as
 // never-returning (and so narrows the code after it) when the callee has an
@@ -66,13 +72,16 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 const parseFolderList = (raw: unknown): FolderMeta[] => {
   if (!Array.isArray(raw)) corrupt(STORAGE_KEYS.FOLDERS, 'The saved folder list is not an array.');
+  if (raw.length > MAX_ARCHIVE_ENTRIES) corrupt(STORAGE_KEYS.FOLDERS, 'The folder list is too large.');
   const out: FolderMeta[] = [];
+  const ids = new Set<string>();
   for (const item of raw) {
     if (!isRecord(item)) corrupt(STORAGE_KEYS.FOLDERS, 'The saved folder list contains an invalid entry.');
     const id = typeof item.id === 'string' ? item.id : '';
     const name = sanitizeName(item.name);
     const createdAt = safeNum(item.createdAt, Date.now());
-    if (!id) corrupt(STORAGE_KEYS.FOLDERS, 'A saved folder is missing its identifier.');
+    if (!validId(id) || ids.has(id)) corrupt(STORAGE_KEYS.FOLDERS, 'A saved folder has an invalid or duplicate identifier.');
+    ids.add(id);
     out.push({ id, name, createdAt });
   }
   return out;
@@ -80,7 +89,9 @@ const parseFolderList = (raw: unknown): FolderMeta[] => {
 
 const parseWorldMetaList = (raw: unknown): WorldMeta[] => {
   if (!Array.isArray(raw)) corrupt(STORAGE_KEYS.INDEX, 'The saved universe index is not an array.');
+  if (raw.length > MAX_ARCHIVE_ENTRIES) corrupt(STORAGE_KEYS.INDEX, 'The universe index is too large.');
   const out: WorldMeta[] = [];
+  const ids = new Set<string>();
   for (const item of raw) {
     if (!isRecord(item)) corrupt(STORAGE_KEYS.INDEX, 'The saved universe index contains an invalid entry.');
     const id = typeof item.id === 'string' ? item.id : '';
@@ -89,7 +100,8 @@ const parseWorldMetaList = (raw: unknown): WorldMeta[] => {
     const lastOpenedAt = safeNum(item.lastOpenedAt, createdAt);
     const folderId = typeof item.folderId === 'string' ? item.folderId : undefined;
     const presetId = typeof item.presetId === 'string' ? item.presetId : undefined;
-    if (!id) corrupt(STORAGE_KEYS.INDEX, 'A saved universe is missing its identifier.');
+    if (!validId(id) || ids.has(id)) corrupt(STORAGE_KEYS.INDEX, 'A saved universe has an invalid or duplicate identifier.');
+    ids.add(id);
     out.push({ id, name, createdAt, lastOpenedAt, folderId, presetId });
   }
   return out;
@@ -108,7 +120,23 @@ export const getFolderList = (): FolderMeta[] => {
 
 const saveFolderList = (list: FolderMeta[]): void => {
     if (!folderIndexHealthy) corrupt(STORAGE_KEYS.FOLDERS, 'The folder list is unreadable and will not be overwritten.');
+    requireArchiveCapacity(STORAGE_KEYS.FOLDERS, list.length);
     writeStorageJsonVerified(STORAGE_KEYS.FOLDERS, list);
+};
+
+const requireArchiveCapacity = (key: string, count: number): void => {
+    if (count <= MAX_ARCHIVE_ENTRIES) return;
+    const issue = { kind: 'quota' as const, key, message: 'The archive entry limit has been reached.' };
+    reportStorageIssue(issue);
+    throw new StorageOperationError(issue);
+};
+
+const requireFolder = (id: string | undefined): void => {
+    if (id === undefined) return;
+    if (getFolderList().some(folder => folder.id === id)) return;
+    const issue = { kind: 'conflict' as const, key: STORAGE_KEYS.FOLDERS, message: 'The destination collection is no longer available.' };
+    reportStorageIssue(issue);
+    throw new StorageOperationError(issue);
 };
 
 export const createFolder = (name: string): string => {
@@ -118,7 +146,7 @@ export const createFolder = (name: string): string => {
     if (folders.some(f => f.name.toLowerCase() === trimmed.toLowerCase())) {
         throw new Error('A folder with this name already exists.');
     }
-    const id = `folder-${Date.now()}`;
+    const id = `folder-${crypto.randomUUID()}`;
     const newFolder: FolderMeta = { id, name: trimmed, createdAt: Date.now() };
     saveFolderList([...folders, newFolder]);
     return id;
@@ -178,6 +206,7 @@ export const getWorldList = (): WorldMeta[] => {
 
 const saveWorldList = (list: WorldMeta[]): void => {
     if (!worldIndexHealthy) corrupt(STORAGE_KEYS.INDEX, 'The universe index is unreadable and will not be overwritten.');
+    requireArchiveCapacity(STORAGE_KEYS.INDEX, list.length);
     writeStorageJsonVerified(STORAGE_KEYS.INDEX, list);
 };
 
@@ -185,7 +214,7 @@ export type SaveWorldResult = 'ok' | 'quota' | 'conflict' | 'error';
 
 /** Validate persisted world JSON before it enters the simulation store. */
 export const parseWorldData = (raw: unknown): WorldData | null => {
-    if (!raw || typeof raw !== 'object') return null;
+    if (!validWorldShape(raw, CURRENT_WORLD_VERSION)) return null;
     const d = raw as Partial<WorldData>;
     if (typeof d.id !== 'string' || !d.id) return null;
     if (!Array.isArray(d.bodies)) return null;
@@ -232,7 +261,7 @@ export const parseWorldData = (raw: unknown): WorldData | null => {
     };
 };
 
-export const getWorld = (id: string): WorldData | null => {
+export const getWorld = (id: string, persistMigration = true): WorldData | null => {
     const key = STORAGE_KEYS.DATA_PREFIX + id;
     const backupKey = V1_BACKUP_PREFIX + id;
     try {
@@ -268,6 +297,8 @@ export const getWorld = (id: string): WorldData | null => {
 
         const world = parseWorldData(parsed);
         if (!world) corrupt(key, `Universe ${id} is missing required saved fields.`);
+        // A viewer may inspect a legacy world but must not modify its owner's data.
+        if (!persistMigration) return world;
 
         if (onDiskVersion < CURRENT_WORLD_VERSION) {
             const migratedRaw = stringifyStorageJson(key, world);
@@ -279,7 +310,7 @@ export const getWorld = (id: string): WorldData | null => {
                     throw new Error('Migrated universe did not validate.');
                 }
                 removeStorageVerified(backupKey);
-                loadedWorldRaw.set(id, migratedRaw);
+                rememberWorld(id, migratedRaw);
                 return world;
             } catch (error) {
                 // setItem replacement is atomic, but restore explicitly if a
@@ -296,7 +327,7 @@ export const getWorld = (id: string): WorldData | null => {
         if (leftoverBackup !== null) {
             try { removeStorageVerified(backupKey); } catch { /* primary is already valid */ }
         }
-        loadedWorldRaw.set(id, raw);
+        rememberWorld(id, raw);
         return world;
     } catch {
         return null;
@@ -321,10 +352,12 @@ export const saveWorld = (world: WorldData): SaveWorldResult => {
         }
 
         const persistedWorld = { ...world, version: CURRENT_WORLD_VERSION };
-        const nextRaw = stringifyStorageJson(key, persistedWorld);
+        const validated = parseWorldData(persistedWorld);
+        if (!validated) corrupt(key, 'The universe is structurally invalid and was not saved.');
+        const nextRaw = stringifyStorageJson(key, validated);
         if (currentRaw === nextRaw) return 'ok';
         writeStorageRawVerified(key, nextRaw);
-        loadedWorldRaw.set(world.id, nextRaw);
+        rememberWorld(world.id, nextRaw);
         return 'ok';
     } catch (e) {
         if (storageFailureKind(e) === 'quota') return 'quota';
@@ -333,6 +366,7 @@ export const saveWorld = (world: WorldData): SaveWorldResult => {
 };
 
 export const createWorld = (name: string, folderId?: string, presetId?: string): string => {
+    requireFolder(folderId);
     const trimmedName = name.trim() ? sanitizeName(name) : `Universe ${Date.now()}`;
     if (isWorldNameTaken(trimmedName)) {
         throw new Error('A universe with this name already exists.');
@@ -375,7 +409,7 @@ export const createWorld = (name: string, folderId?: string, presetId?: string):
         try { removeStorageVerified(dataKey); } catch { /* write failure already reported */ }
         throw error;
     }
-    loadedWorldRaw.set(id, dataRaw);
+    rememberWorld(id, dataRaw);
 
     return id;
 };
@@ -404,7 +438,7 @@ export const deleteWorld = (id: string): void => {
 export const renameWorld = (id: string, newName: string): void => {
     if (!newName.trim()) throw new Error('Universe name cannot be empty.');
     const trimmed = sanitizeName(newName);
-    if (isWorldNameTaken(trimmed)) {
+    if (getWorldList().some(w => w.id !== id && w.name.toLowerCase() === trimmed.toLowerCase())) {
         throw new Error('A universe with this name already exists.');
     }
     const list = getWorldList();
@@ -416,6 +450,7 @@ export const renameWorld = (id: string, newName: string): void => {
 };
 
 export const moveWorldToFolder = (worldId: string, folderId?: string): void => {
+    requireFolder(folderId);
     const list = getWorldList();
     const idx = list.findIndex(w => w.id === worldId);
     if (idx >= 0) {
@@ -534,6 +569,7 @@ export const migrateV1Bodies = (data: CelestialBodyData[]): CelestialBodyData[] 
 };
 
 export const serializeBodies = (bodies: readonly CelestialBody[]): CelestialBodyData[] => {
+    if (bodies.length > PHYSICS_LIMITS.MAX_BODIES) corrupt(STORAGE_KEYS.DATA_PREFIX, 'The universe exceeds the supported body count.');
     return sanitizeCelestialBodies(Array.from(bodies)).map(b => ({
         id: b.id,
         type: b.type,
@@ -555,10 +591,7 @@ export const serializeBodies = (bodies: readonly CelestialBody[]): CelestialBody
     }));
 };
 
-const safeNum = (v: unknown, fallback: number): number => {
-    const n = typeof v === 'number' ? v : parseFloat(String(v));
-    return isFinite(n) ? n : fallback;
-};
+const safeNum = savedNumber;
 
 const VALID_HABITABILITY = new Set<CelestialBody['habitability']>([
     'HABITABLE', 'FROZEN', 'BURNING', 'TOXIC', 'STELLAR', 'SINGULARITY', 'STERILIZED', 'N/A',

@@ -2,7 +2,7 @@
 export const PRIVACY_POLICY_URL =
   'https://www.termsfeed.com/live/cded6b3e-c46c-465e-a562-f1a73cd79f1c';
 
-export const PRIVACY_POLICY_LAST_UPDATED = 'September 9, 2026';
+export const PRIVACY_POLICY_LAST_UPDATED = 'September 14, 2026';
 
 export const PRIVACY_CONTACT_EMAIL = 'antonpsar10@gmail.com';
 
@@ -106,6 +106,7 @@ export const PRIVACY_POLICY_SECTIONS: PrivacyPolicySection[] = [
     title: 'Internet Access',
     icon: 'internet',
     paragraphs: [
+      'The web version downloads its page and bundled assets from its hosting origin. The host and your browser may maintain their own access records; the app includes no analytics or remote save service.',
       'The Android Application does not request Internet or network-state permission. Routine gameplay and universe management do not use a network connection or upload your saves.',
       'The Android Application requests the VIBRATE permission so haptic feedback can run through the device vibrator. It does not request INTERNET or ACCESS_NETWORK_STATE.',
       'If you choose a hosted-policy, GitHub, or email link, the Application hands that action to your browser or email application. The external application may use a network connection under its own privacy practices.',

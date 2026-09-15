@@ -138,7 +138,10 @@ export const classifyImpact = (
   let secondary = a.mass >= b.mass ? b : a;
 
   const escapeSpeed = contactEscapeSpeed(totalMass, contactRadius);
-  const productMass = clampMass(totalMass * COLLISION_PHYSICS.MERGER_EFFICIENCY);
+  // Ordinary collisions redistribute matter; a visual wave cannot dispose of it.
+  // Compact-object radiation remains an explicitly illustrative mass-loss model.
+  const compact = isDegenerate(a.type) || isDegenerate(b.type);
+  const productMass = totalMass * (compact ? COLLISION_PHYSICS.MERGER_EFFICIENCY : 1);
 
   c.relSpeed = Number.isFinite(relSpeed) ? relSpeed : 0;
   c.escapeSpeed = escapeSpeed;
@@ -319,6 +322,7 @@ export const planFragmentation = (
   const desired = Math.round(4 + 8 * (1 - lrFraction));
   const count = Math.min(desired, budget);
   if (count < 2) return null;
+  if (ejectaMass < count * PHYSICS_LIMITS.MIN_MASS) return null;
 
   let norm = 0;
   for (let k = 1; k <= count; k++) norm += Math.pow(k, -CASCADE_EXPONENT);

@@ -11,6 +11,7 @@ import { attachSatellite, propagateSatellites } from './moonSystem';
 import { G_AETHER, circularOrbitalSpeed, M_SUN_IN_EARTH, orbitalPeriodYears } from './units';
 import { scientificStepLimit } from './scientificStep';
 import { simElapsedForFrame } from './simRate';
+import { parseWorldData, serializeBodies } from './worldStorage';
 import type { CelestialBody } from '../types';
 
 const body = (id: string, mass: number, x = 0, vz = 0, type: CelestialBody['type'] = 'Planet') => createSandboxBody({
@@ -24,6 +25,22 @@ function setup() {
 }
 afterEach(() => { unregisterPhysicsBodiesRef(ref); resetVerletCache(); resetAccumulator(); });
 const quarterOrbit = () => { for (let i = 0; i < 256; i++) verletStepInPlace(ref.current, FIXED_DT); setSimTime(.25); };
+
+it('detaches a moon immediately when its paused parent is deleted, preserving a saveable live state', () => {
+  setup();
+  const moon = body('moon', .01, 0, 0, 'Moon');
+  attachSatellite(moon, ref.current[1], elementsFromDegrees(.1, .1, 20, 50, 60, 40), 0);
+  useStore.getState().appendBody(moon);
+  useStore.getState().setPaused(true);
+  const before = clonePhysicsBody(ref.current.find(b => b.id === 'moon')!);
+  useStore.getState().removeBody('earth');
+  const after = ref.current.find(b => b.id === 'moon')!;
+  expect(after.parentId).toBeUndefined();
+  expect(after.orbit).toBeUndefined();
+  expect(after.position.equals(before.position)).toBe(true);
+  expect(after.velocity.equals(before.velocity)).toBe(true);
+  expect(parseWorldData({ id: 'world', version: 2, bodies: serializeBodies(ref.current) })).not.toBeNull();
+});
 
 describe('live state transactions', () => {
   it('preserves current survivors when deleting an unrelated body', () => {

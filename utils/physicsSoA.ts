@@ -69,7 +69,7 @@ const ensureCapacity = (n: number) => {
 
 /** Seed `accelCurr` from the persistent per-id store, defaulting to 0. */
 const primeCurrentAccel = (bodies: CelestialBody[]): boolean => {
-  let anyKnown = false;
+  let allKnown = true;
   for (let i = 0; i < bodies.length; i++) {
     const cached = accelById.get(bodies[i].id);
     const base = i * 3;
@@ -77,14 +77,15 @@ const primeCurrentAccel = (bodies: CelestialBody[]): boolean => {
       accelCurr[base]     = cached[0];
       accelCurr[base + 1] = cached[1];
       accelCurr[base + 2] = cached[2];
-      anyKnown = true;
+
     } else {
+      allKnown = false;
       accelCurr[base] = 0;
       accelCurr[base + 1] = 0;
       accelCurr[base + 2] = 0;
     }
   }
-  return anyKnown;
+  return allKnown;
 };
 
 /** Write computed accelerations back to the persistent store. */
@@ -147,7 +148,7 @@ const computeAccelerationsInArray = (bodies: CelestialBody[], out: Float64Array)
 };
 
 export const verletStepInPlace = (bodies: CelestialBody[], dt: number): CelestialBody[] => {
-  if (!bodies || bodies.length === 0) return [];
+  if (!bodies || bodies.length === 0) return bodies;
   if (!isFinite(dt) || dt === 0) return bodies;
 
   const n = bodies.length;

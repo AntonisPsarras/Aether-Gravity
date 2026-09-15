@@ -71,6 +71,7 @@ export const InspectorPanel: React.FC<{
   onTabVisit?: (tab: 'orbit' | 'analysis') => void;
 }> = ({ onOpen, onTabVisit }) => {
   const breakpoint = useBreakpoint();
+  const worldReadOnly = useStore(s => s.worldReadOnly);
   const isPhone = breakpoint === 'phone';
   const isDesktop = breakpoint === 'desktop';
   const reducedMotion = useReducedMotion();
@@ -249,7 +250,8 @@ export const InspectorPanel: React.FC<{
         <InspectorHeader
           body={body}
           parent={parent}
-          onDelete={() => removeBody(body.id)}
+            onDelete={() => removeBody(body.id)}
+            readOnly={worldReadOnly}
           onDismiss={dismiss}
           showHandle={isPhone}
           handleProps={sheet.handleProps}
@@ -315,7 +317,9 @@ export const InspectorPanel: React.FC<{
                         onToggle={() => toggleSection(section.id, section.defaultOpen)}
                         badge={section.id === 'orbital' && orbitDirty ? <DirtyDot /> : undefined}
                       >
-                        <SectionBody id={section.id} onOrbitDirty={setOrbitDirty} />
+                        <fieldset disabled={worldReadOnly} className="min-w-0 border-0 p-0 m-0">
+                          <SectionBody id={section.id} onOrbitDirty={setOrbitDirty} />
+                        </fieldset>
                       </Collapsible>
                     </div>
                   );

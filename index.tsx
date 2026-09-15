@@ -1,4 +1,5 @@
 import './utils/productionConsole';
+import { reportDiagnostic } from './utils/diagnostics';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -8,8 +9,14 @@ import { isE2EMode } from './utils/e2eConfig';
 if (import.meta.env.DEV && isE2EMode()) installTestBridge();
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('error', event => {
+    reportDiagnostic('render-failed', event.error);
+    if (import.meta.env.PROD) event.preventDefault();
+  });
   window.addEventListener('unhandledrejection', (event) => {
-    console.error('[unhandledrejection]', event.reason);
+    reportDiagnostic('promise-rejected', event.reason);
+    // Prevent WebView's default rejection logger from printing the raw payload.
+    if (import.meta.env.PROD) event.preventDefault();
   });
 }
 

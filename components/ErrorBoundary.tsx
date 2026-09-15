@@ -1,4 +1,5 @@
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportDiagnostic } from '../utils/diagnostics';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 
 type Props = {
@@ -20,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error(`[ErrorBoundary${this.props.label ? `: ${this.props.label}` : ''}]`, error, info.componentStack);
+    reportDiagnostic('render-failed', { error, stack: info.componentStack });
   }
 
   private handleReload = () => {

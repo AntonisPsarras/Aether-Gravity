@@ -4,6 +4,8 @@ const config: CapacitorConfig = {
     appId: 'com.aethergravity.app',
     appName: 'Aether Gravity',
     webDir: 'dist',
+    loggingBehavior: 'none',
+    android: { webContentsDebuggingEnabled: false },
     server: {
         androidScheme: 'https'
     },

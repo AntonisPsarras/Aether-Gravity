@@ -41,7 +41,7 @@ const VALID_BODY_TYPES: readonly BodyType[] = [
 ];
 
 const safeNum = (v: unknown, fallback: number): number => {
-  const n = typeof v === 'number' ? v : parseFloat(String(v));
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
   return isFinite(n) ? n : fallback;
 };
 
@@ -93,7 +93,7 @@ export const sanitizeColor = (color: unknown, fallback = '#ffffff'): string => {
 
 export const sanitizeTexture = (texture: unknown): string => {
   if (typeof texture !== 'string') return 'solid';
-  return texture in TEXTURE_IDS ? texture : 'solid';
+  return Object.hasOwn(TEXTURE_IDS, texture) ? texture : 'solid';
 };
 
 /** Clamp position, velocity, mass, and radius on live physics bodies (no clone). */
@@ -128,6 +128,8 @@ export const clampVelocityVector = (
 /** Clamp each position component to a finite simulation envelope. */
 export const clampPositionVector = (p: THREE.Vector3): THREE.Vector3 => {
   const lim = PHYSICS_LIMITS.MAX_POSITION_ABS;
+  if (Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z) &&
+      Math.abs(p.x) <= lim && Math.abs(p.y) <= lim && Math.abs(p.z) <= lim) return p;
   const x = isFinite(p.x) ? Math.max(-lim, Math.min(lim, p.x)) : 0;
   const y = isFinite(p.y) ? Math.max(-lim, Math.min(lim, p.y)) : 0;
   const z = isFinite(p.z) ? Math.max(-lim, Math.min(lim, p.z)) : 0;
@@ -153,7 +155,7 @@ const VALID_HABITABILITY = new Set<CelestialBody['habitability']>([
 export const sanitizeCelestialBody = (body: CelestialBody): CelestialBody => {
   const position = clampPositionVector(body.position.clone());
   const velocity = clampVelocityVector(body.velocity.clone());
-  const temperature = Math.max(0, safeNum(body.temperature, 300));
+  const temperature = clamp(safeNum(body.temperature, 300), 0, 1e9);
   return {
     ...body,
     id: typeof body.id === 'string' && body.id ? body.id : `body-${Date.now()}`,
@@ -167,7 +169,7 @@ export const sanitizeCelestialBody = (body: CelestialBody): CelestialBody => {
     texture: sanitizeTexture(body.texture),
     trailColor: sanitizeColor(body.trailColor, '#ffffff'),
     habitability: VALID_HABITABILITY.has(body.habitability) ? body.habitability : 'N/A',
-    population: Math.max(0, Math.floor(safeNum(body.population, 0))),
+    population: clamp(Math.floor(safeNum(body.population, 0)), 0, Number.MAX_SAFE_INTEGER),
     properties: sanitizeProperties(body.properties),
     position,
     velocity,
@@ -185,6 +187,9 @@ export const sanitizeProperties = (
 
   const c01 = (v: unknown) => clamp(safeNum(v, 0), 0, 1);
   const out: NonNullable<CelestialBody['properties']> = {};
+  for (const key of ['angularMomentumX', 'angularMomentumY', 'angularMomentumZ'] as const) {
+    if (props[key] !== undefined) out[key] = clamp(safeNum(props[key], 0), -1e30, 1e30);
+  }
   if (typeof props.presetId === 'string') out.presetId = props.presetId.slice(0, 64);
   if (typeof props.scienceNote === 'string') out.scienceNote = props.scienceNote.slice(0, 2000);
   if (typeof props.referencePlane === 'string') out.referencePlane = props.referencePlane.slice(0, 200);
@@ -201,7 +206,7 @@ export const sanitizeProperties = (
   if (props.massLoss !== undefined) out.massLoss = c01(props.massLoss);
   if (props.pulsationSpeed !== undefined) out.pulsationSpeed = clamp(safeNum(props.pulsationSpeed, 0.5), 0, 5);
   if (props.luminosityClass !== undefined) out.luminosityClass = c01(props.luminosityClass);
-  if (props.luminositySolar !== undefined) out.luminositySolar = Math.max(0, safeNum(props.luminositySolar, 1));
+  if (props.luminositySolar !== undefined) out.luminositySolar = clamp(safeNum(props.luminositySolar, 1), 0, 1e20);
   if (props.tectonics !== undefined) out.tectonics = c01(props.tectonics);
   if (props.atmosphere !== undefined) out.atmosphere = c01(props.atmosphere);
   if (props.waterLevel !== undefined) out.waterLevel = c01(props.waterLevel);
@@ -235,15 +240,15 @@ export const sanitizeProperties = (
   }
   if (props.volatileFraction !== undefined) out.volatileFraction = c01(props.volatileFraction);
   if (props.luminositySolarDerived !== undefined) {
-    out.luminositySolarDerived = Math.max(0, safeNum(props.luminositySolarDerived, 0));
+    out.luminositySolarDerived = clamp(safeNum(props.luminositySolarDerived, 0), 0, 1e20);
   }
   if (props.manualRadiusKm !== undefined) out.manualRadiusKm = clampRadiusKm(props.manualRadiusKm);
   if (props.scaleHeight !== undefined) out.scaleHeight = clamp(safeNum(props.scaleHeight, 0.2), 0.01, 1);
   if (props.haze !== undefined) out.haze = c01(props.haze);
   if (props.rotationPeriod !== undefined) out.rotationPeriod = clamp(safeNum(props.rotationPeriod, 24), 0.1, 1000);
-  if (props.bulkDensity !== undefined) out.bulkDensity = Math.max(0, safeNum(props.bulkDensity, 5.5));
-  if (props.surfaceGravity !== undefined) out.surfaceGravity = Math.max(0, safeNum(props.surfaceGravity, 9.8));
-  if (props.escapeVelocity !== undefined) out.escapeVelocity = Math.max(0, safeNum(props.escapeVelocity, 11.2));
+  if (props.bulkDensity !== undefined) out.bulkDensity = clamp(safeNum(props.bulkDensity, 5.5), 0, 1e20);
+  if (props.surfaceGravity !== undefined) out.surfaceGravity = clamp(safeNum(props.surfaceGravity, 9.8), 0, 1e20);
+  if (props.escapeVelocity !== undefined) out.escapeVelocity = clamp(safeNum(props.escapeVelocity, 11.2), 0, 1e20);
   if (props.isTidallyLocked !== undefined) out.isTidallyLocked = Boolean(props.isTidallyLocked);
   if (props.userTempOverride !== undefined) out.userTempOverride = Boolean(props.userTempOverride);
   if (props.manualRadius !== undefined) out.manualRadius = Boolean(props.manualRadius);

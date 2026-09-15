@@ -1,3 +1,5 @@
+import { acquireWorld, mutateArchive, type WorldLease } from './utils/worldOwnership';
+import { manageNativeListener, reportDiagnostic } from './utils/diagnostics';
 import { captureSimulationSnapshot, type SimulationSnapshot } from './utils/simulationSnapshot';
 import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { CelestialBody, BodyType } from './types';
@@ -37,7 +39,7 @@ import {
   enqueueUnseenHelpers, getOnboardingProgress, helperDefinition, markHelperSeen,
   type HelperId, type HelperTrigger, type QueuedHelper,
 } from './utils/onboarding';
-import { storageIssueMessage, subscribeStorageIssues } from './utils/browserStorage';
+import { StorageOperationError, storageIssueMessage, subscribeStorageIssues } from './utils/browserStorage';
 
 // The simulation renderer (shaders, physics visuals) is the bulk of the app
 // bundle; loading it on demand keeps the main menu's cold start light.
@@ -65,6 +67,7 @@ const StorageNotice: React.FC = () => {
 };
 
 const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu }) => {
+  const worldReadOnly = useStore(s => s.worldReadOnly);
   const bodies = useStore((s) => s.bodies);
   const selectedId = useStore((s) => s.selectedId);
   const inspectorBodyId = useStore((s) => s.inspectorBodyId);
@@ -183,12 +186,19 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
 
   const saveCurrentWorld = useCallback((): SaveWorldResult => {
     const state = useStore.getState();
-    if (!state.worldId) return 'ok';
+    if (!state.worldId || state.worldReadOnly) return 'ok';
     const physicsBodies = getPhysicsBodiesSnapshot(state.bodies);
+    let savedBodies;
+    try { savedBodies = serializeBodies(physicsBodies); }
+    catch (error) {
+      if (!(error instanceof StorageOperationError)) throw error;
+      setStorageNotice('This universe exceeds the supported save limits. Its previous save was preserved.');
+      return 'error';
+    }
     const result = saveWorld({
       id: state.worldId,
       version: CURRENT_WORLD_VERSION,
-      bodies: serializeBodies([...physicsBodies]),
+      bodies: savedBodies,
       settings: {
         simTime: getSimTime(),
         speed: state.speed,
@@ -225,16 +235,16 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
     document.addEventListener('visibilitychange', saveWhenHidden);
     window.addEventListener('pagehide', saveOnPageHide);
 
-    let nativeListener: { remove: () => Promise<void> } | undefined;
+    let disposeNative = () => {};
     if (Capacitor.isNativePlatform()) {
-      void CapApp.addListener('appStateChange', ({ isActive }) => {
+      disposeNative = manageNativeListener(CapApp.addListener('appStateChange', ({ isActive }) => {
         if (!isActive) saveCurrentWorld();
-      }).then((handle) => { nativeListener = handle; });
+      }));
     }
     return () => {
       document.removeEventListener('visibilitychange', saveWhenHidden);
       window.removeEventListener('pagehide', saveOnPageHide);
-      void nativeListener?.remove();
+      disposeNative();
     };
   }, [saveCurrentWorld]);
 
@@ -370,12 +380,12 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       </div>
       <div className="absolute inset-0 z-10 pointer-events-none safe-pad">
         <div className="pointer-events-auto">
-          <CreationToolbar
+          {!worldReadOnly && <CreationToolbar
             mode={creationMode}
             setMode={setCreationMode}
             onTriggerGenerate={() => setShowConfirmGenerate(true)}
             mobileHidden={isPhone && (inspectorOpen || outlinerOpen || moonMode)}
-          />
+          />}
         </div>
         {moonMode && (
           <div className="pointer-events-auto">
@@ -418,6 +428,9 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
       />
       {/* Renders nothing until opened; reads `settingsOpen` from the store so
           the control-bar gear and the Android back handler share one source. */}
+      {worldReadOnly && <div role="status" className="fixed top-2 left-1/2 -translate-x-1/2 z-[160] bg-void-navy text-pulsar-white p-3 rounded-lg text-sm">
+        Read-only universe. Close other editing tabs, then return to the menu and reopen to edit. A browser with storage locks is required.
+      </div>}
       <SettingsPanel />
     </div>
   );
@@ -521,66 +534,54 @@ const App: React.FC = () => {
           // Hide splash screen after app is ready
           await SplashScreen.hide();
         } catch (error) {
-          console.warn('Mobile initialization error:', error);
+          reportDiagnostic('native-init-failed', error);
         }
       }
     };
 
-    const preventGesture = (e: Event) => e.preventDefault();
 
     initMobile();
-    // iOS Safari proprietary gesture events (two-finger pinch/rotate chrome layer)
-    document.addEventListener('gesturestart', preventGesture);
-    document.addEventListener('gesturechange', preventGesture);
-    document.addEventListener('gestureend', preventGesture);
-
-    return () => {
-      document.removeEventListener('gesturestart', preventGesture);
-      document.removeEventListener('gesturechange', preventGesture);
-      document.removeEventListener('gestureend', preventGesture);
-    };
   }, []);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
-    let listener: { remove: () => Promise<void> } | undefined;
-    void CapApp.addListener('backButton', () => {
+    return manageNativeListener(CapApp.addListener('backButton', () => {
       if (consumeBackPress()) return;
-      void CapApp.exitApp();
-    }).then((handle) => {
-      listener = handle;
-    });
-
-    return () => {
-      void listener?.remove();
-    };
+      void CapApp.exitApp().catch(error => reportDiagnostic('native-exit-failed', error));
+    }));
   }, []);
 
-  const handleOpenWorld = (id: string) => {
-    const data = getWorld(id);
-    if (data) {
-      try { markWorldOpened(id); } catch { /* global storage notice already reported */ }
-      loadWorld(data);
-      setActiveWorldId(id);
-    }
-  };
-
-  const handleCreateWorld = (id: string, presetId?: string) => {
-    const data = getWorld(id);
-    if (!data) return;
+  const leaseRef = useRef<WorldLease | null>(null);
+  const openSequence = useRef(0);
+  useEffect(() => () => { openSequence.current++; leaseRef.current?.release(); }, []);
+  const openWorld = async (id: string, presetId?: string, populate = false) => {
+    const sequence = ++openSequence.current;
+    const lease = await acquireWorld(id);
+    if (sequence !== openSequence.current) { lease.release(); return; }
+    const data = getWorld(id, lease.writable);
+    if (!data) { lease.release(); return; }
+    leaseRef.current?.release();
+    leaseRef.current = lease;
     loadWorld(data);
+    useStore.setState({ worldReadOnly: !lease.writable, paused: !lease.writable });
     setActiveWorldId(id);
-    // Mount Simulation first, then populate so CameraRecenter runs with live controls.
-    if (data.bodies.length === 0) {
-      deferDoubleFrame(() => {
-        if (presetId) loadRealSystem(presetId);
-        else generateNewSystem();
-      });
-    }
+    if (lease.writable) void mutateArchive(() => markWorldOpened(id)).catch(() => {
+      setStorageNotice('The universe opened, but its last-opened time could not be saved.');
+    });
+    if (populate && lease.writable && data.bodies.length === 0) deferDoubleFrame(() => {
+      if (sequence !== openSequence.current) return;
+      if (presetId) loadRealSystem(presetId);
+      else generateNewSystem();
+    });
   };
+  const handleOpenWorld = (id: string) => { void openWorld(id); };
+  const handleCreateWorld = (id: string, presetId?: string) => { void openWorld(id, presetId, true); };
 
   const handleReturnToMenu = () => {
+    openSequence.current++;
+    leaseRef.current?.release();
+    leaseRef.current = null;
     resetSessionUiState();
     setActiveWorldId(null);
     setBodies([]);

@@ -54,6 +54,7 @@ interface AppState {
   inspectorBodyId: string | null;
   cameraLockedId: string | null;
   worldId: string | null;
+  worldReadOnly: boolean;
 
   // Settings
   paused: boolean;
@@ -168,6 +169,7 @@ export const useStore = create<AppState>((set, get) => ({
   inspectorBodyId: null,
   cameraLockedId: null,
   worldId: null,
+  worldReadOnly: false,
 
   paused: false,
   speed: 1.0,
@@ -305,6 +307,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   appendBody: (body) => {
+    if (get().worldReadOnly) return;
     const sanitized = sanitizeCelestialBody({
       ...body,
       position: body.position.clone(),
@@ -322,6 +325,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   updateBody: (id, updates) => {
+    if (get().worldReadOnly) return;
     // Clamp physics-critical scalars before they enter the store so no code
     // path can introduce NaN, Infinity, or non-positive mass/radius.
     if (updates.mass !== undefined) {
@@ -438,6 +442,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   restoreSimulation: (snapshot) => {
+    if (get().worldReadOnly) return;
     const bodies = sanitizeCelestialBodies(snapshot.bodies.map(clonePhysicsBody));
     resetAccumulator();
     setSimTime(snapshot.simTime);
@@ -451,8 +456,15 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   removeBody: (id) => {
+    if (get().worldReadOnly) return;
     set((state) => ({
-      bodies: getPhysicsBodiesSnapshot(state.bodies).filter((b) => b.id !== id).map(clonePhysicsBody),
+      bodies: getPhysicsBodiesSnapshot(state.bodies).filter((b) => b.id !== id).map(b => {
+        const next = clonePhysicsBody(b);
+        // Paused deletion must not leave a dangling rail until the next tick.
+        // Keep the current inertial state when promoting the child to N-body.
+        if (next.parentId === id) { next.parentId = undefined; next.orbit = undefined; }
+        return next;
+      }),
       selectedId: state.selectedId === id ? null : state.selectedId,
       inspectorBodyId: state.inspectorBodyId === id ? null : state.inspectorBodyId,
       cameraLockedId: state.cameraLockedId === id ? null : state.cameraLockedId,
@@ -473,6 +485,7 @@ export const useStore = create<AppState>((set, get) => ({
       cameraLockedId: null,
       inspectorLocks: {},
       worldId: null,
+      worldReadOnly: false,
       isInteractingWithUI: false,
       storageNotice: null,
       inspectorDetent: 'half',
@@ -512,7 +525,7 @@ export const useStore = create<AppState>((set, get) => ({
   closeInspector: () => set({ inspectorBodyId: null }),
   setCameraLock: (id) => set({ cameraLockedId: id }),
 
-  setPaused: (paused) => set({ paused }),
+  setPaused: (paused) => set({ paused: get().worldReadOnly || paused }),
   setSpeed: (speed) => set({ speed: clampSpeed(speed) }),
   setScientificPacingScale: (scale) => set((state) => {
     const next = Number.isFinite(scale) ? Math.max(0, Math.min(1, scale)) : 1;
@@ -547,6 +560,7 @@ export const useStore = create<AppState>((set, get) => ({
   setSettingsOpen: (open) => set({ settingsOpen: open }),
 
   generateNewSystem: () => {
+    if (get().worldReadOnly) return;
     get().installBodies(generateSystem());
   },
 
@@ -557,6 +571,7 @@ export const useStore = create<AppState>((set, get) => ({
    * other world.
    */
   loadRealSystem: (systemId: string) => {
+    if (get().worldReadOnly) return;
     const system = getRealSystem(systemId);
     if (!system) return;
     get().installBodies(buildRealSystem(system));

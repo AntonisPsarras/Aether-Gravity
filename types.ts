@@ -174,6 +174,11 @@ export interface CelestialBody {
     ringOuterRadius?: number;
 
     // Dynamics
+    /** Unresolved intrinsic angular momentum, M* L*²/year. Accounting only;
+     * not a rigid-body orientation solver or the rendered rotation period. */
+    angularMomentumX?: number;
+    angularMomentumY?: number;
+    angularMomentumZ?: number;
     rotationPeriod?: number;   // Hours
     obliquity?: number;        // Axial tilt of the spin axis, degrees 0-180
     isTidallyLocked?: boolean;
@@ -221,6 +226,8 @@ export interface PhysicsEvent {
   velocity?: THREE.Vector3;
   mass?: number;
   kineticEnergy?: number;
+  /** Angular momentum carried by unresolved ejecta/radiation, M* L*²/year. */
+  angularMomentum?: THREE.Vector3;
   count?: number;
   energy?: number;
   radius?: number;

@@ -18,12 +18,13 @@ export const InspectorHeader: React.FC<{
   body: CelestialBody;
   parent: CelestialBody | null;
   onDelete: () => void;
+  readOnly?: boolean;
   onDismiss: () => void;
   /** Present on phone only; spread on the grab handle. */
   handleProps?: BottomSheetHandleProps;
   showHandle: boolean;
   children?: React.ReactNode;
-}> = ({ body, parent, onDelete, onDismiss, handleProps, showHandle, children }) => {
+}> = ({ body, parent, onDelete, readOnly = false, onDismiss, handleProps, showHandle, children }) => {
   const visual = visualFor(body.type);
   const Icon = visual.icon;
 
@@ -54,6 +55,7 @@ export const InspectorHeader: React.FC<{
             <button
               type="button"
               onClick={onDelete}
+              disabled={readOnly}
               aria-label={`Delete ${body.name}`}
               data-testid="inspector-delete"
               className="touch-target flex items-center justify-center w-11 h-11 text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors active:scale-95"

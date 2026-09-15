@@ -71,7 +71,10 @@ android/app/keystore.properties
 .claude/
 
 # iOS / CocoaPods (not shipped from this repo)
-ios/
+ios/**/build/
+ios/**/Pods/
+ios/**/App/public/
+ios/**/capacitor-cordova-ios-plugins/
 *.xcuserstate
 DerivedData/
 Pods/
@@ -82,4 +85,23 @@ Pods/
 coverage/
 *.hprof
 **/.gradle/
+
+# Local scratch, crash and signing output (keep source assets and fixtures)
+*.tmp
+*.temp
+*.bak
+*.orig
+*.dmp
+*.crash
+*.zip
+*.tar.gz
+*.7z
+*.p12
+*.mobileprovision
+**/keystore.properties
+**/signing.properties
+**/google-services.json
+**/GoogleService-Info.plist
+android/**/.kotlin/
+android/**/local.properties
 

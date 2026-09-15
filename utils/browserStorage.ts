@@ -1,3 +1,5 @@
+import { MAX_STORAGE_CHARS } from './worldValidation';
+
 export type StorageIssueKind =
   | 'quota'
   | 'unavailable'
@@ -56,6 +58,7 @@ export const reportStorageIssue = (issue: StorageIssue): void => {
   lastIssueAt = now;
 
   if (listeners.size === 0) {
+    if (pendingIssues.length >= 16) pendingIssues.shift();
     pendingIssues.push(issue);
     return;
   }
@@ -99,7 +102,9 @@ const storage = (): Storage => {
 
 export const readStorageRaw = (key: string): string | null => {
   try {
-    return storage().getItem(key);
+    const raw = storage().getItem(key);
+    if (raw !== null && raw.length > MAX_STORAGE_CHARS) return fail('corrupt', key, 'Saved record exceeds the supported size.');
+    return raw;
   } catch (error) {
     if (error instanceof StorageOperationError) throw error;
     return fail('unavailable', key, `Could not read ${key}.`, error);
@@ -125,6 +130,7 @@ export const stringifyStorageJson = (key: string, value: unknown): string => {
 };
 
 export const writeStorageRawVerified = (key: string, value: string): void => {
+  if (value.length > MAX_STORAGE_CHARS) fail('quota', key, 'Saved record exceeds the supported size.');
   try {
     storage().setItem(key, value);
   } catch (error) {

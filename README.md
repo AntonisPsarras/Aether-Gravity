@@ -25,7 +25,7 @@
 
 The simulation is the point. Every quantity the app shows you — density, surface gravity, escape velocity, equilibrium temperature, orbital period — is computed from the body's actual mass and composition in a unit system derived from SI constants, not from a lookup table of nice-looking numbers.
 
-Everything runs locally. The app makes **no network requests at all**: no accounts, no analytics, no ads, no crash reporting. Your universes live in your browser's storage or on your device.
+Everything runs locally. The production app has no accounts, analytics, ads, or remote crash reporting. The web version downloads bundled assets from its hosting origin; Android packages those assets locally. External links open only when selected. Your universes live in your browser's storage or on your device.
 
 ![The Solar System preset with both desktop rails](docs/screenshots/solar-system.png)
 
@@ -56,11 +56,11 @@ Everything runs locally. The app makes **no network requests at all**: no accoun
 
 ### Integration
 
-The engine runs **Velocity-Verlet** — a symplectic, second-order, time-reversible integrator — on a **fixed timestep** of `1/1024` years (about 8.5 hours), with a catch-up accumulator capped at 8 steps per frame so a stalled tab cannot blow the simulation apart on resume. Accelerations are cached between the kick and the drift, and bodies live in Structure-of-Arrays `Float32Array` buffers, so a step allocates nothing.
+The engine runs **Velocity-Verlet** — a symplectic, second-order, time-reversible integrator — on a **fixed timestep** of `1/1024` years (about 8.5 hours), with a catch-up accumulator capped at 8 steps per frame so a stalled tab cannot blow the simulation apart on resume. Accelerations are cached between the kick and the drift, and positions and velocities use JavaScript double precision and accelerations use reusable `Float64Array` buffers. Steady-state allocation is regression-tested. Close-encounter and scientific timestep limits can subdivide the base step; the lower bound is `2^-18` years and device frame budgets may slow playback.
 
 Forces are the full O(N²) pairwise sum, each pair evaluated once and applied in both directions. Softening is **Plummer softening sized from the two bodies' real radii** rather than a magic constant, so close encounters stay finite without quietly changing the force law at scales that matter.
 
-Because the integrator is time-symmetric, negative timesteps work: the speed control runs from **−2× to 4×**, and reversing time actually retraces the trajectory.
+Because the integrator is time-symmetric, negative timesteps work: the speed control runs from **−2× to 4×**, and collision-free fixed-step tests retrace trajectories to floating-point tolerance. Mergers, stellar transitions, boundary clamping, and adaptive step selection do not rewind history.
 
 > Energy conservation is asserted, not assumed. `e2e/simulation.spec.ts` runs the three-body fixture for five seconds and fails the build if total energy drifts past a bound, and a dev-only diagnostics HUD samples kinetic and potential energy at 1 Hz while you play.
 
@@ -78,9 +78,9 @@ Physical size and drawn size are deliberately different fields. `radiusKm` is th
 
 ### Mergers, evolution, and relativity
 
-Collisions merge bodies at the barycentre with **exact momentum conservation**, retaining 99% of the combined mass and reporting the deficit as a gravitational-wave event. The remnant's type, radius, and geophysical properties are re-derived from its new mass rather than inherited.
+Ordinary mergers and fragmentation retain total mass and linear momentum and preserve the combined barycentre. Fragmentation is a deterministic sandbox approximation, not a hydrodynamic impact calculation. Sandbox contacts use enlarged visual radii; scientific presets use physical radii. Compact-object encounters retain an illustrative 99% mass fraction, with lost mass, momentum, and angular momentum recorded in the event. Wave intensity is a visual parameter, not a computed gravitational-wave energy. Unresolved collision angular momentum is retained as intrinsic bookkeeping; it does not drive a rigid-body spin solver. Products exceeding the supported mass bound are not merged.
 
-Stars cross real thresholds: 13 Jupiter masses for deuterium burning, 0.075 M☉ for hydrogen burning, 1.4 M☉ (Chandrasekhar) and 2.2 M☉ (TOV) for degenerate remnants, and 8 M☉ for core collapse. Black hole spin is capped at the Thorne limit, a = 0.998.
+Instantaneous mass-based classification uses approximate thresholds, not age-resolved stellar evolution: 13 Jupiter masses for deuterium burning, 0.075 M☉ for hydrogen burning, 1.4 M☉ (Chandrasekhar) and 2.2 M☉ (TOV) for degenerate remnants, and 8 M☉ for core collapse. Black hole spin is capped at the Thorne limit, a = 0.998.
 
 Moons are propagated on **analytic Kepler rails** relative to their parent instead of joining the N-body sum — which is what keeps a 21-body Solar System with 11 major moons stable and fast — and are promoted to full N-body bodies the moment they escape the parent's Hill sphere.
 
@@ -124,7 +124,7 @@ The Inspector separates **primaries** (the degrees of freedom you set) from **de
 | **TRAPPIST-1** | Ultracool dwarf plus seven terrestrial planets | Agol et al. 2021 |
 | **Procedural frontier** | A generated star and planetary family | — |
 
-Orbital periods are reproduced by the physics, not scripted: load the Solar System, select Saturn, and the Inspector reads 29.45 years because that is what the integrator produces.
+The Inspector derives orbital periods from instantaneous two-body elements; numerical orbit tests independently check period consistency. Analytic moon rails use prescribed Kepler elements and exert no gravitational force.
 
 ![The universe creator with all three origins](docs/screenshots/universe-creator.png)
 
@@ -199,11 +199,11 @@ All motion is CSS (`@keyframes` in `index.css`) plus one frame-rate-independent 
 
 ## Privacy and storage
 
-The app has **no backend and makes no network requests**. There is no `fetch`, `XMLHttpRequest`, `WebSocket`, or beacon anywhere in the application source, and `index.html` sets a strict Content-Security-Policy (`default-src 'self'`, `connect-src 'self'`, `object-src 'none'`, `form-action 'none'`) to keep it that way.
+The app has **no backend or telemetry service**. Production assets load from the same origin. Development has a local fixture loader and Vite WebSocket; these are excluded from production behavior. Production CSP restricts connections to the same origin and disables objects, forms, and frames. Source maps and the development test bridge do not ship. Hosting providers, browsers, and user-selected external links have their own privacy behavior.
 
-Worlds are saved to `localStorage` under the `aether:` key prefix, organised into folders, and autosaved every 30 seconds as well as when the app is backgrounded. Saved data is schema-versioned; the v1 → v2 unit migration uses a verified verbatim backup transactionally and removes it after the v2 save is validated. Everything loaded from storage is validated and clamped before it reaches the physics engine. Corruption, concurrent-tab changes, disabled storage, and quota failures preserve the prior save and surface a visible notice rather than silently losing data.
+Worlds are saved to `localStorage` under the `aether:` key prefix, organised into folders, and autosaved every 30 seconds as well as when the app is backgrounded. Saved data is schema-versioned; the v1 → v2 unit migration uses a verified verbatim backup transactionally and removes it after the v2 save is validated. Records are bounded and validated before migration and loading. Unsafe graphs, duplicate identifiers, unsupported versions, and oversized worlds are rejected without truncating the saved original. Web Locks grant one editor per world and serialize archive operations; another tab opens read-only, as does a browser without the locking API. Failed saves are reported visibly. These protections apply to cooperating app tabs and normal browser storage guarantees; they cannot prevent external storage deletion, browser eviction, or a compromised device. Local saves are not an external backup.
 
-This matches the Play Store Data safety declaration: no data collected, no data shared.
+The merged Android manifest disables backups and cleartext traffic and contains no INTERNET permission. Store declarations and the hosted privacy policy require a separate publisher review; they were not verified through Play Console.
 
 ---
 
@@ -213,7 +213,7 @@ You may clone this repository and run it on your own machine for any non-commerc
 
 ### Prerequisites
 
-- **[Node.js](https://nodejs.org/) 18 or newer** and **npm**. CI runs on Node 22, which is the safest choice.
+- **[Node.js](https://nodejs.org/) 22 or newer** and **npm** (Capacitor 8 requires Node 22). CI runs Node 22.
 - A browser with **WebGL2**. The simulation will not start without it.
 - Android work additionally needs JDK 21 and Android Studio — see [`ANDROID_BUILD.md`](./ANDROID_BUILD.md).
 
@@ -233,7 +233,7 @@ cd aether-gravity
 npm install
 ```
 
-This also runs a `postinstall` step (`scripts/fix-proguard.js`) that patches the bundled Capacitor plugins to reference `proguard-android-optimize.txt`. It is harmless on a web-only checkout and required before an Android release build — see [`PROGUARD_FIX.md`](./PROGUARD_FIX.md).
+This also runs a `postinstall` step (`scripts/fix-proguard.js`) that patches the bundled Capacitor plugins to reference `proguard-android-optimize.txt`. It is harmless on a web-only checkout and relevant if native minification is enabled — see [`PROGUARD_FIX.md`](./PROGUARD_FIX.md).
 
 ### 3. Start the development server
 
@@ -254,7 +254,7 @@ Vite serves the app at **`http://127.0.0.1:3000`**.
 | `npm test` | Vitest unit suites (`utils/**/*.test.ts`) |
 | `npm run test:e2e` | Playwright end-to-end suites (`e2e/`) |
 | `npm run test:e2e:ui` | Playwright in interactive UI mode |
-| `npm run test:perf` | Frame-rate soak test only |
+| `npm run test:perf` | Frame-rate and allocation regressions; stress coverage requires `PERF_SOAK_MS=10000` or greater |
 | `npm run android:init` | Add the Capacitor Android platform (first time only) |
 | `npm run android:sync` | Build and sync the web assets into `android/` |
 | `npm run android:open` | Open the Android project in Android Studio |
@@ -281,7 +281,9 @@ The spec skips itself without that environment variable, so it stays out of the 
 
 ## Testing
 
-- **Unit (Vitest — 24 suites, 338 tests, under `utils/`):** integrator fidelity and energy behaviour, unit-system self-consistency, orbital-element conversions, the Kepler solver, relativity formulas (Schwarzschild, Kerr, ISCO, photon sphere, disk efficiency, redshift), mass–radius and classification relations, habitability, all three real-system presets, input bounds, world storage and migration, display-mode gating, and onboarding state.
+See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) for measured results, frozen-dependency findings, and the current release gate. The production preview smoke command is `node scripts/production-smoke.mjs` after building. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
+
+- **Unit (Vitest, under `utils/`):** integrator fidelity and energy behaviour, unit-system self-consistency, orbital-element conversions, the Kepler solver, relativity formulas (Schwarzschild, Kerr, ISCO, photon sphere, disk efficiency, redshift), mass–radius and classification relations, habitability, all three real-system presets, input bounds, world storage and migration, display-mode gating, and onboarding state.
 - **End-to-end (Playwright, `e2e/`):** smoke, simulation controls with a bounded energy-drift assertion, layout across breakpoints including a ≥44 px touch-target check, main menu and world creation, onboarding, inspector edit-locking against the physics sync, shader compilation and WebGL context loss/restore, and an FPS soak across four scene profiles.
 - **CI:** `.github/workflows/playwright.yml` runs both suites on Node 22 for pushes to `main`, pull requests targeting any branch, and manual `workflow_dispatch`.
 

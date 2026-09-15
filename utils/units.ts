@@ -11,7 +11,7 @@
  * from which G* ≈ 7.588 and c* ≈ 2.53 × 10⁶ L*·T*⁻¹ follow exactly. Because G is
  * derived rather than invented, Kepler's third law holds numerically: a body on
  * a circular orbit at r = 40 L* (1 AU) around a 332 946 M* star has
- * v = √(G*M/r) = 251.3 L*·T*⁻¹ and a period of exactly 1.000 T* = 1 year.
+ * v = √(G*M/r) ≈ 251.3 L*·T*⁻¹ and a period of approximately 1 Julian year.
  *
  * The length unit is unchanged from the previous "game units" (1/40 AU), so
  * scene scale, camera limits and every hand-tuned visual constant survive.
@@ -58,7 +58,7 @@ export const R_SUN_KM = 695700;                   // IAU 2015 nominal
 export const L_SUN_W = 3.828e26;                  // IAU 2015 nominal
 export const T_SUN_EFF_K = 5772;
 export const M_JUPITER_KG = 1.89813e27;
-export const R_JUPITER_KM = 69911;                // equatorial, 1 bar
+export const R_JUPITER_KM = 69911;                // volumetric mean
 export const AU_KM = 1.495978707e8;               // exact by definition
 export const JULIAN_YEAR_S = 3.15576e7;           // exact by definition
 

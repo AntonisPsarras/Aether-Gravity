@@ -207,6 +207,8 @@ test.describe('premium main menu', () => {
     await page.getByRole('button', { name: 'Delete Research' }).click();
     await expect(page.getByText(/collection cannot be restored.*universe.*kept/i)).toBeVisible();
     await page.getByRole('button', { name: 'Delete collection' }).click();
+    // Archive writes now wait for an origin-wide lock before committing.
+    await expect(page.getByTestId('folder-section-folder-1')).toHaveCount(0);
 
     const stored = await page.evaluate(() => ({
       folders: JSON.parse(localStorage.getItem('aether:worlds:folders') ?? '[]'),

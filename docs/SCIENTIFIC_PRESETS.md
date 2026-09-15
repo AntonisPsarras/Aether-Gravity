@@ -40,7 +40,7 @@ published mean sidereal periods.
 Scientific bodies use physical contact radii and near-point-mass Newtonian forces;
 legacy sandbox bodies retain their existing collision policy. Double-precision
 acceleration buffers support the compact orbits. A dyadic timestep resolves at least
-256 samples per estimated pericentre orbital timescale, with equal accuracy on low/high
+256 samples per estimated pericentre orbital timescale until the explicit 2^-18 year lower bound is reached, with equal accuracy on low/high
 device tiers. Both modes share this policy. Frame budgets stay fixed; playback slows
 for short periods. The effective rate is displayed in Settings. At unusually low
 frame rates or after a stall, the existing catch-up cap can still discard elapsed time.
@@ -63,7 +63,7 @@ default to elapsed time zero.
 mode/device pacing, and rotation conventions. The TRAPPIST-1 regression runs at least
 1000 inner orbits at the production accuracy limit, then repeats with half and quarter
 timesteps for convergence. The recorded baseline maximum fractional energy error is
-approximately 7.6e-7 (0.000076%).
+approximately 1.85e-7 in the September 2026 production-readiness run (see that report for the fixture and command).
 
 `e2e/presets.spec.ts` exercises both presets at desktop and phone widths, both
 modes, guided views, pause/reverse, selection, and serialized world reload. It also

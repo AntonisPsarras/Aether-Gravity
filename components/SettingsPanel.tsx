@@ -272,6 +272,14 @@ export const SettingsPanel: React.FC = () => {
             />
           </Group>
 
+          <Group title="Model limits">
+            <p className="text-xs text-pulsar-white/70 p-3">
+              Sandbox collisions use enlarged visual contacts. Scientific presets use physical radii.
+              Fragmentation and stellar transitions are approximations; reverse time does not undo them.
+              Black-hole visuals use isolated Kerr geometry, not relativistic N-body dynamics.
+            </p>
+          </Group>
+
           {preset && <Group title="Scientific preset">
             <div data-testid="preset-science" className="text-xs text-pulsar-white/70 p-3 space-y-3">
               <p>Epoch JD {presetBody?.properties?.epochJD} · {presetBody?.properties?.referencePlane}</p>

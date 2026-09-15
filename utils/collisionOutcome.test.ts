@@ -143,11 +143,10 @@ describe('conservation', () => {
     expect(bodies).toHaveLength(1);
     expect(events.find((e) => e.type === 'collision')?.outcome).toBe('merge');
 
-    // Mass is deliberately not conserved — MERGER_EFFICIENCY radiates 1% away —
-    // so compare momentum against the same mass deficit the engine applied.
+    // Ordinary collisions preserve the complete input mass and momentum.
     const after = momentum(bodies);
-    const scale = totalMass(bodies) / initialMass;
-    expect(after.distanceTo(before.clone().multiplyScalar(scale))).toBeLessThan(1e-9);
+    expect(totalMass(bodies)).toBeCloseTo(initialMass, 12);
+    expect(after.distanceTo(before)).toBeLessThan(1e-9);
   });
 
   /** A hypervelocity impact between two Earth-mass planets: 3× the mutual escape speed. */
@@ -173,20 +172,20 @@ describe('conservation', () => {
     // Fibonacci-sphere ejection directions do not sum to zero on their own; the
     // residual is divided out of every product body, so this must be exact.
     const after = momentum(bodies);
-    const scale = totalMass(bodies) / initialMass;
-    expect(after.distanceTo(before.clone().multiplyScalar(scale))).toBeLessThan(1e-9);
+    expect(totalMass(bodies)).toBeCloseTo(initialMass, 12);
+    expect(after.distanceTo(before)).toBeLessThan(1e-9);
   });
 
-  it('conserves mass across a shatter and reports the deficit once', () => {
+  it('conserves mass across an ordinary shatter without fictional radiative loss', () => {
     const { bodies } = shatterPair();
     const initialMass = totalMass(bodies);
 
     const { events } = run(bodies, FIXED_DT);
 
     const waveEvents = events.filter((e) => e.type === 'gravitational_wave');
-    expect(waveEvents).toHaveLength(1);
+    expect(waveEvents).toHaveLength(0);
 
-    const deficit = waveEvents[0].mass ?? 0;
+    const deficit = 0;
     expect(totalMass(bodies) + deficit).toBeCloseTo(initialMass, 10);
   });
 
@@ -440,7 +439,7 @@ describe('fragment hygiene', () => {
 
     // Exactly one contact resolved, and exactly one debris field created.
     expect(events.filter((e) => e.type === 'fragmentation')).toHaveLength(1);
-    expect(events.filter((e) => e.type === 'gravitational_wave')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'gravitational_wave')).toHaveLength(0);
     const count = events.find((e) => e.type === 'fragmentation')!.count!;
     expect(bodies).toHaveLength(1 + count);
   });

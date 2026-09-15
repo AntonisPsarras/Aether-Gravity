@@ -722,12 +722,13 @@ export const scanCollisionsInPlace = (
       const wy = rvy * step;
       const wz = rvz * step;
 
-      const r0Sq = r0x * r0x + r0y * r0y + r0z * r0z;
+
       const wSq = wx * wx + wy * wy + wz * wz;
       const r0w = r0x * wx + r0y * wy + r0z * wz;
       let u = wSq > 0 ? r0w / wSq : 0;
       if (!(u > 0)) u = 0; else if (u > 1) u = 1;
-      const minSepSq = r0Sq - 2 * u * r0w + u * u * wSq;
+      const sx = r0x - u * wx, sy = r0y - u * wy, sz = r0z - u * wz;
+      const minSepSq = sx * sx + sy * sy + sz * sz;
       if (!Number.isFinite(minSepSq)) continue;
 
       const physicalContact = b1.properties?.physicalCollisions || b2.properties?.physicalCollisions;
@@ -736,6 +737,40 @@ export const scanCollisionsInPlace = (
         : CONTACT_FRACTION * (b1.radius + b2.radius);
       if (minSepSq >= contactRadius * contactRadius) continue;
 
+      resolveContact(b1, b2, bodies, events, waveEvents, contactRadius, Math.hypot(rvx, rvy, rvz), maxFragments);
+
+      // b1 is only tested for removal on entry to the outer loop. When b2 was the
+      // heavier body, b1 is the one that just died — and continuing would keep
+      // testing its stale position and stale mass against b3…bn, merging it a
+      // second time and creating mass out of nothing.
+      if (_collisionRemove.has(b1.id)) break;
+    }
+  }
+
+  if (_collisionRemove.size === 0) {
+    return _spawnedThisScan.size > 0;
+  }
+
+  let write = 0;
+  for (let read = 0; read < bodies.length; read++) {
+    if (!_collisionRemove.has(bodies[read].id)) {
+      if (write !== read) bodies[write] = bodies[read];
+      write++;
+    }
+  }
+  bodies.length = write;
+
+  return true;
+};
+
+/** Orbital plus unresolved intrinsic angular momentum, in canonical units. */
+export const angularMomentumOf = (b: CelestialBody): THREE.Vector3 =>
+  new THREE.Vector3().crossVectors(b.position, b.velocity).multiplyScalar(b.mass).add(new THREE.Vector3(
+    b.properties?.angularMomentumX ?? 0, b.properties?.angularMomentumY ?? 0, b.properties?.angularMomentumZ ?? 0,
+  ));
+
+/** Cold contact resolution is separate so the pair scan can optimize independently. */
+const resolveContact = (b1: CelestialBody, b2: CelestialBody, bodies: CelestialBody[], events: PhysicsEvent[], waveEvents: WaveEvent[], contactRadius: number, relSpeed: number, maxFragments: number): void => {
       const totalMass = b1.mass + b2.mass;
       if (totalMass <= 0 || !Number.isFinite(totalMass)) {
         // Degenerate pair. Removing a body with no event is what let one
@@ -749,11 +784,17 @@ export const scanCollisionsInPlace = (
           velocity: b2.velocity.clone(),
           radius: contactRadius,
         });
-        continue;
+        return;
       }
 
-      const relSpeed = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz);
+
       const cls = classifyImpact(b1, b2, relSpeed, contactRadius);
+      // Reject a combined mass outside the supported envelope without silently
+      // deleting matter. The caller can keep the bodies; this is a model limit.
+      if (cls.productMass > PHYSICS_LIMITS.MAX_MASS) return;
+      const inputKineticEnergy = 0.5 * (b1.mass * b2.mass / totalMass) * relSpeed * relSpeed;
+      const inputAngular = angularMomentumOf(b1).add(angularMomentumOf(b2));
+      const firstFragment = bodies.length;
       const survivor = cls.primary;
       const consumed = cls.secondary;
 
@@ -786,12 +827,11 @@ export const scanCollisionsInPlace = (
           velocity: consumed.velocity.clone(),
           radius: contactRadius,
         });
-        continue;
+        return;
       }
 
-      // Momentum is conserved exactly (the barycentric velocity above). The mass
-      // deficit is energy radiated away by the merger rather than matter that
-      // silently disappears, so it is reported as an event.
+      // Resolved products keep the centre-of-mass velocity. Any compact-object
+      // loss carries its proportional momentum and angular momentum in an event.
       const massDeficit = totalMass - productMass;
       const consumedMass = consumed.mass;
 
@@ -835,6 +875,20 @@ export const scanCollisionsInPlace = (
       // must actually change what the body is.
       reconcileBodyDerivedState(survivor);
 
+      // Recenter the entire debris cloud, preserving all relative separations.
+      const offset = new THREE.Vector3();
+      for (let i = firstFragment; i < bodies.length; i++) offset.addScaledVector(bodies[i].position.clone().sub(scratchV3), bodies[i].mass);
+      offset.divideScalar(productMass);
+      survivor.position.sub(offset);
+      for (let i = firstFragment; i < bodies.length; i++) bodies[i].position.sub(offset);
+      const lossAngular = inputAngular.clone().multiplyScalar(massDeficit / totalMass);
+      const retainedAngular = inputAngular.sub(lossAngular);
+      retainedAngular.sub(new THREE.Vector3().crossVectors(survivor.position, survivor.velocity).multiplyScalar(survivor.mass));
+      for (let i = firstFragment; i < bodies.length; i++) retainedAngular.sub(angularMomentumOf(bodies[i]));
+      const props = survivor.properties ?? (survivor.properties = {});
+      props.angularMomentumX = retainedAngular.x;
+      props.angularMomentumY = retainedAngular.y;
+      props.angularMomentumZ = retainedAngular.z;
       _collisionRemove.add(consumed.id);
 
       events.push({
@@ -847,39 +901,21 @@ export const scanCollisionsInPlace = (
         velocity: scratchV2.clone(),
         radius: contactRadius,
         count: fragmentCount,
-        kineticEnergy: 0.5 * ((b1.mass * b2.mass) / totalMass) * relSpeed * relSpeed,
+        kineticEnergy: inputKineticEnergy,
       });
       if (massDeficit > 0) {
         events.push({
           type: 'gravitational_wave',
           position: scratchV3.clone(),
           mass: massDeficit,
+          velocity: scratchV2.clone(),
+          angularMomentum: lossAngular,
+          // Legacy VFX amplitude, not energy in joules.
           energy: massDeficit,
         });
       }
 
-      // b1 is only tested for removal on entry to the outer loop. When b2 was the
-      // heavier body, b1 is the one that just died — and continuing would keep
-      // testing its stale position and stale mass against b3…bn, merging it a
-      // second time and creating mass out of nothing.
-      if (_collisionRemove.has(b1.id)) break;
-    }
-  }
 
-  if (_collisionRemove.size === 0) {
-    return _spawnedThisScan.size > 0;
-  }
-
-  let write = 0;
-  for (let read = 0; read < bodies.length; read++) {
-    if (!_collisionRemove.has(bodies[read].id)) {
-      if (write !== read) bodies[write] = bodies[read];
-      write++;
-    }
-  }
-  bodies.length = write;
-
-  return true;
 };
 
 /**
@@ -898,7 +934,8 @@ const finaliseFragments = (
   for (let i = firstIndex; i < bodies.length; i++) {
     reconcileBodyDerivedState(bodies[i]);
     _spawnedThisScan.add(bodies[i].id);
-    if (bodies[i].radius > maxFragRadius) maxFragRadius = bodies[i].radius;
+    const radius = survivor.properties?.physicalCollisions ? kmToDist(bodies[i].radiusKm) : bodies[i].radius;
+    if (radius > maxFragRadius) maxFragRadius = radius;
   }
 
   const count = bodies.length - firstIndex;
@@ -908,7 +945,7 @@ const finaliseFragments = (
   // apart than their own contact diameter so the debris does not immediately
   // re-collide with itself.
   const required = Math.max(
-    CONTACT_FRACTION * (survivor.radius + maxFragRadius) * 1.25,
+    (survivor.properties?.physicalCollisions ? kmToDist(survivor.radiusKm) + maxFragRadius : CONTACT_FRACTION * (survivor.radius + maxFragRadius)) * 1.25,
     0.6 * count * maxFragRadius,
   );
 
@@ -975,7 +1012,11 @@ export const checkEvolutionInPlace = (bodies: CelestialBody[], events: PhysicsEv
       );
       const remnantType: BodyType =
         remnantMass > EVOLUTION_THRESHOLDS.TOV ? 'Black Hole' : 'Neutron Star';
-      events.push({ type: 'supernova', position: b.position.clone(), radius: 50 });
+      events.push({ type: 'supernova', position: b.position.clone(), velocity: b.velocity.clone(), mass: b.mass - remnantMass, angularMomentum: angularMomentumOf(b).multiplyScalar(1 - remnantMass / b.mass), radius: 50 });
+      const retained = remnantMass / b.mass;
+      if (b.properties) for (const key of ['angularMomentumX', 'angularMomentumY', 'angularMomentumZ'] as const) {
+        if (b.properties[key] !== undefined) b.properties[key]! *= retained;
+      }
       events.push({ type: 'evolution', bodyType: remnantType, position: b.position.clone() });
       b.type = remnantType;
       b.mass = remnantMass;
