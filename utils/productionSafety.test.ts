@@ -69,4 +69,49 @@ describe('asynchronous native ownership', () => {
     expect(ownsWorld('w')).toBe(false);
     const second = await acquireWorld('w'); expect(second.writable).toBe(true); second.release();
   });
+
+  it('does not begin an archive mutation before a delayed lock is granted', async () => {
+    let grant!: () => void;
+    const gate = new Promise<void>(resolve => { grant = resolve; });
+    const operation = vi.fn(() => 7);
+    vi.stubGlobal('navigator', { locks: {
+      request: async (_name: string, callback: () => number) => {
+        await gate;
+        return callback();
+      },
+    } });
+    const pending = mutateArchive(operation);
+    await Promise.resolve();
+    expect(operation).not.toHaveBeenCalled();
+    grant();
+    await expect(pending).resolves.toBe(7);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes concurrent archive writers so each observes the previous commit', async () => {
+    let tail = Promise.resolve();
+    vi.stubGlobal('navigator', { locks: {
+      request: <T>(_name: string, callback: () => T | Promise<T>) => {
+        const run = tail.then(callback);
+        tail = run.then(() => undefined, () => undefined);
+        return run;
+      },
+    } });
+    const metadata: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const first = mutateArchive(async () => {
+      const next = [...metadata, 'first'];
+      await firstGate;
+      metadata.splice(0, metadata.length, ...next);
+    });
+    const second = mutateArchive(() => {
+      metadata.splice(0, metadata.length, ...metadata, 'second');
+    });
+    await Promise.resolve();
+    expect(metadata).toEqual([]);
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(metadata).toEqual(['first', 'second']);
+  });
 });

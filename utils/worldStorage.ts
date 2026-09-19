@@ -139,6 +139,13 @@ const requireFolder = (id: string | undefined): void => {
     throw new StorageOperationError(issue);
 };
 
+const attemptRecovery = (key: string, recover: () => void): void => {
+    try { recover(); }
+    catch {
+        reportStorageIssue({ kind: 'verification', key, message: `Recovery of ${key} failed after an archive operation.` });
+    }
+};
+
 export const createFolder = (name: string): string => {
     if (!name.trim()) throw new Error('Folder name cannot be empty.');
     const trimmed = sanitizeName(name);
@@ -176,12 +183,14 @@ export const deleteFolder = (id: string): void => {
         saveWorldList(worlds);
         saveFolderList(folders);
     } catch (error) {
-        try {
+        attemptRecovery(STORAGE_KEYS.INDEX, () => {
             if (previousWorlds === null) removeStorageVerified(STORAGE_KEYS.INDEX);
             else writeStorageRawVerified(STORAGE_KEYS.INDEX, previousWorlds);
+        });
+        attemptRecovery(STORAGE_KEYS.FOLDERS, () => {
             if (previousFolders === null) removeStorageVerified(STORAGE_KEYS.FOLDERS);
             else writeStorageRawVerified(STORAGE_KEYS.FOLDERS, previousFolders);
-        } catch { /* the original failure has already been reported */ }
+        });
         throw error;
     }
 };
@@ -315,7 +324,7 @@ export const getWorld = (id: string, persistMigration = true): WorldData | null 
             } catch (error) {
                 // setItem replacement is atomic, but restore explicitly if a
                 // hostile/no-op storage implementation failed verification.
-                try { writeStorageRawVerified(key, raw); } catch { /* original backup remains */ }
+                attemptRecovery(key, () => writeStorageRawVerified(key, raw));
                 reportStorageIssue({
                     kind: 'migration', key,
                     message: `Universe ${id} could not be migrated safely.`,
@@ -325,7 +334,7 @@ export const getWorld = (id: string, persistMigration = true): WorldData | null 
         }
 
         if (leftoverBackup !== null) {
-            try { removeStorageVerified(backupKey); } catch { /* primary is already valid */ }
+            attemptRecovery(backupKey, () => removeStorageVerified(backupKey));
         }
         rememberWorld(id, raw);
         return world;
@@ -406,7 +415,7 @@ export const createWorld = (name: string, folderId?: string, presetId?: string):
     try {
         saveWorldList(list);
     } catch (error) {
-        try { removeStorageVerified(dataKey); } catch { /* write failure already reported */ }
+        attemptRecovery(dataKey, () => removeStorageVerified(dataKey));
         throw error;
     }
     rememberWorld(id, dataRaw);
@@ -426,11 +435,13 @@ export const deleteWorld = (id: string): void => {
         if (readStorageRaw(backupKey) !== null) removeStorageVerified(backupKey);
         loadedWorldRaw.delete(id);
     } catch (error) {
-        try {
+        attemptRecovery(dataKey, () => {
+            if (previousData !== null) writeStorageRawVerified(dataKey, previousData);
+        });
+        attemptRecovery(STORAGE_KEYS.INDEX, () => {
             if (previousIndex === null) removeStorageVerified(STORAGE_KEYS.INDEX);
             else writeStorageRawVerified(STORAGE_KEYS.INDEX, previousIndex);
-            if (previousData !== null) writeStorageRawVerified(dataKey, previousData);
-        } catch { /* original failure is already visible */ }
+        });
         throw error;
     }
 };

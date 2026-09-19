@@ -52,39 +52,61 @@ const formatRelativeTime = (timestamp: number): string => {
 const presetNameFor = (presetId?: string): string | null =>
     presetId ? REAL_SYSTEMS.find((system) => system.id === presetId)?.name ?? null : null;
 
+type ArchiveActionResult = { ok: true } | { ok: false; message: string };
+
+const archiveFailureMessage = (error: unknown): string =>
+    error instanceof StorageOperationError
+        ? storageIssueMessage(error)
+        : 'The archive operation could not be completed. Check the name and try again.';
+
 // CreditsPanel replaced by PortfolioPanel
 
 const MoveDestinationSelect: React.FC<{
     world: WorldMeta;
     folders: FolderMeta[];
-    onMove: (worldId: string, folderId?: string) => void;
+    onMove: (worldId: string, folderId?: string) => Promise<ArchiveActionResult>;
     onMoved?: () => void;
     compact?: boolean;
-}> = ({ world, folders, onMove, onMoved, compact = false }) => (
+}> = ({ world, folders, onMove, onMoved, compact = false }) => {
+    const [pending, setPending] = useState(false);
+    const submitting = useRef(false);
+    return (
     <label className={`menu-move-select ${compact ? 'menu-move-select-compact' : ''}`}>
         <FolderInput size={compact ? 14 : 16} aria-hidden />
         <span className="sr-only">Move {world.name} to collection</span>
         <select
             aria-label={`Move ${world.name} to collection`}
             value={world.folderId ?? ''}
-            onChange={(event) => {
-                onMove(world.id, event.currentTarget.value || undefined);
-                onMoved?.();
+            disabled={pending}
+            aria-busy={pending}
+            onChange={async (event) => {
+                if (submitting.current) return;
+                submitting.current = true;
+                const folderId = event.currentTarget.value || undefined;
+                setPending(true);
+                try {
+                    const result = await onMove(world.id, folderId);
+                    if (result.ok) onMoved?.();
+                } finally {
+                    submitting.current = false;
+                    setPending(false);
+                }
             }}
         >
             <option value="">Independent systems</option>
             {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
         </select>
     </label>
-);
+    );
+};
 
 const WorldCard: React.FC<{
     world: WorldMeta;
     folders: FolderMeta[];
     onOpen: (id: string) => void;
-    onRename: (id: string, name: string) => void;
-    onDelete: (id: string) => void | Promise<void>;
-    onMove: (worldId: string, folderId?: string) => void;
+    onRename: (id: string, name: string) => Promise<ArchiveActionResult>;
+    onDelete: (id: string) => Promise<ArchiveActionResult>;
+    onMove: (worldId: string, folderId?: string) => Promise<ArchiveActionResult>;
     onDragStart: (worldId: string) => void;
     onDragEnd: () => void;
     onTouchDragStart: (worldId: string) => void;
@@ -94,27 +116,56 @@ const WorldCard: React.FC<{
     const [editName, setEditName] = useState(world.name);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showActionsMenu, setShowActionsMenu] = useState(false);
+    const [pending, setPending] = useState(false);
+    const submitting = useRef(false);
 
     const [error, setError] = useState<string | null>(null);
 
-    const handleSaveRename = () => {
-        try {
-            if (editName.trim() && editName.trim() !== world.name) {
-                onRename(world.id, editName.trim());
-            }
+    const handleSaveRename = async () => {
+        if (submitting.current) return;
+        const nextName = editName.trim();
+        if (!nextName) {
+            setError('Universe name cannot be empty.');
+            return;
+        }
+        if (nextName === world.name) {
             setIsEditing(false);
             setError(null);
-        } catch (e: any) {
-            setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.');
+            return;
+        }
+        submitting.current = true;
+        setPending(true);
+        try {
+            const result = await onRename(world.id, nextName);
+            if (result.ok) {
+                setIsEditing(false);
+                setError(null);
+            } else {
+                setError(result.message);
+            }
+        } finally {
+            submitting.current = false;
+            setPending(false);
         }
     };
-    const handleCancelEdit = () => { setEditName(world.name); setIsEditing(false); setError(null); };
-    const handleConfirmDelete = async () => { await onDelete(world.id); setShowDeleteConfirm(false); };
+    const handleCancelEdit = () => { if (submitting.current) return; setEditName(world.name); setIsEditing(false); setError(null); };
+    const handleConfirmDelete = async () => {
+        if (submitting.current) return;
+        submitting.current = true;
+        setPending(true);
+        try {
+            if ((await onDelete(world.id)).ok) setShowDeleteConfirm(false);
+        } finally {
+            submitting.current = false;
+            setPending(false);
+        }
+    };
 
     useEffect(() => {
         if (!showDeleteConfirm && !showActionsMenu && !isEditing) return;
         return registerBackHandler(() => {
             if (showDeleteConfirm) {
+                if (submitting.current) return true;
                 setShowDeleteConfirm(false);
                 return true;
             }
@@ -137,8 +188,8 @@ const WorldCard: React.FC<{
                     <Trash2 size={24} className="text-red-400 mb-3" />
                     <p className="text-sm text-pulsar-white/70 text-center mb-4">Permanently delete “{world.name}” from this device? This cannot be undone.</p>
                     <div className="flex gap-2">
-                        <button onClick={() => setShowDeleteConfirm(false)} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg transition-colors">Cancel</button>
-                        <button onClick={handleConfirmDelete} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 rounded-lg transition-colors">Delete</button>
+                        <button onClick={() => setShowDeleteConfirm(false)} disabled={pending} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
+                        <button onClick={handleConfirmDelete} disabled={pending} aria-busy={pending} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 rounded-lg transition-colors disabled:opacity-50">Delete</button>
                     </div>
                 </div>
             )}
@@ -148,8 +199,8 @@ const WorldCard: React.FC<{
                         <div className="flex flex-col gap-1">
                             <div className="flex flex-wrap items-center gap-2">
                                 <input type="text" value={editName} maxLength={64} onChange={(e) => { setEditName(e.target.value); if (error) setError(null); }} onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') handleCancelEdit(); }} autoFocus className={`min-w-0 w-full sm:flex-1 sm:w-auto bg-black/40 border rounded px-2 py-1 text-sm text-pulsar-white font-medium focus:outline-none focus:ring-1 ${error ? 'border-red-500/50 focus:ring-red-500/50' : 'border-nova-gold/40 focus:ring-nova-gold/50'}`} />
-                                <button onClick={handleSaveRename} aria-label="Save name" className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-emerald-400 hover:bg-emerald-500/20 rounded"><Check size={16} /></button>
-                                <button onClick={handleCancelEdit} aria-label="Cancel rename" className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-slate-400 hover:bg-white/10 rounded"><X size={16} /></button>
+                                <button onClick={handleSaveRename} disabled={pending} aria-busy={pending} aria-label="Save name" className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-emerald-400 hover:bg-emerald-500/20 rounded disabled:opacity-50"><Check size={16} /></button>
+                                <button onClick={handleCancelEdit} disabled={pending} aria-label="Cancel rename" className="touch-target inline-flex h-11 w-11 shrink-0 items-center justify-center text-slate-400 hover:bg-white/10 rounded disabled:opacity-50"><X size={16} /></button>
                             </div>
                             {error && <p className="text-[10px] text-red-500 ml-1">{error}</p>}
                         </div>
@@ -246,11 +297,11 @@ const FolderSection: React.FC<{
     worlds: WorldMeta[];
     folders: FolderMeta[];
     onOpen: (id: string) => void;
-    onRenameWorld: (id: string, name: string) => void;
-    onDeleteWorld: (id: string) => void;
-    onRenameFolder: (id: string, name: string) => void;
-    onDeleteFolder: (id: string) => void | Promise<void>;
-    onMoveWorld: (worldId: string, folderId?: string) => void;
+    onRenameWorld: (id: string, name: string) => Promise<ArchiveActionResult>;
+    onDeleteWorld: (id: string) => Promise<ArchiveActionResult>;
+    onRenameFolder: (id: string, name: string) => Promise<ArchiveActionResult>;
+    onDeleteFolder: (id: string) => Promise<ArchiveActionResult>;
+    onMoveWorld: (worldId: string, folderId?: string) => Promise<ArchiveActionResult>;
     draggedWorldId: string | null;
     onWorldDragStart: (worldId: string) => void;
     onWorldDragEnd: () => void;
@@ -263,22 +314,42 @@ const FolderSection: React.FC<{
     const [editName, setEditName] = useState(folder.name);
     const [error, setError] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [pending, setPending] = useState(false);
+    const submitting = useRef(false);
 
-    const handleSaveRename = () => {
-        try {
-            if (editName.trim() && editName.trim() !== folder.name) {
-                onRenameFolder(folder.id, editName.trim());
-            }
+    const handleCancelEdit = () => { if (submitting.current) return; setEditName(folder.name); setIsEditing(false); setError(null); };
+    const handleSaveRename = async () => {
+        if (submitting.current) return;
+        const nextName = editName.trim();
+        if (!nextName) {
+            setError('Folder name cannot be empty.');
+            return;
+        }
+        if (nextName === folder.name) {
             setIsEditing(false);
             setError(null);
-        } catch (e: any) {
-            setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.');
+            return;
+        }
+        submitting.current = true;
+        setPending(true);
+        try {
+            const result = await onRenameFolder(folder.id, nextName);
+            if (result.ok) {
+                setIsEditing(false);
+                setError(null);
+            } else {
+                setError(result.message);
+            }
+        } finally {
+            submitting.current = false;
+            setPending(false);
         }
     };
 
     useEffect(() => {
         if (!showDeleteConfirm) return;
         return registerBackHandler(() => {
+            if (submitting.current) return true;
             setShowDeleteConfirm(false);
             return true;
         });
@@ -299,8 +370,14 @@ const FolderSection: React.FC<{
                         Delete the “{folder.name}” collection? The collection cannot be restored, but its {worlds.length} {worlds.length === 1 ? 'universe' : 'universes'} will be kept under Independent systems.
                     </p>
                     <div className="flex gap-2">
-                        <button onClick={() => setShowDeleteConfirm(false)} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg">Cancel</button>
-                        <button onClick={async () => { await onDeleteFolder(folder.id); setShowDeleteConfirm(false); }} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 rounded-lg">Delete collection</button>
+                        <button onClick={() => setShowDeleteConfirm(false)} disabled={pending} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-white/5 hover:bg-white/10 text-pulsar-white/70 rounded-lg disabled:opacity-50">Cancel</button>
+                        <button onClick={async () => {
+                            if (submitting.current) return;
+                            submitting.current = true;
+                            setPending(true);
+                            try { if ((await onDeleteFolder(folder.id)).ok) setShowDeleteConfirm(false); }
+                            finally { submitting.current = false; setPending(false); }
+                        }} disabled={pending} aria-busy={pending} className="touch-target min-h-[2.75rem] px-4 py-2 text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 rounded-lg disabled:opacity-50">Delete collection</button>
                     </div>
                 </div>
             )}
@@ -315,14 +392,16 @@ const FolderSection: React.FC<{
                             type="text"
                             value={editName}
                             maxLength={64}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') setIsEditing(false); }}
+                            onChange={(e) => { setEditName(e.target.value); if (error) setError(null); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') handleCancelEdit(); }}
                             className="min-w-[6.5rem] w-36 sm:w-44 max-w-[12rem] bg-transparent px-2.5 py-1.5 text-base font-medium text-pulsar-white placeholder-pulsar-white/30 focus:outline-none"
                             autoFocus
                         />
                         <button
                             type="button"
                             onClick={handleSaveRename}
+                            disabled={pending}
+                            aria-busy={pending}
                             className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-emerald-400/50 bg-emerald-500/30 text-emerald-200 hover:bg-emerald-500/45 hover:text-white transition-colors"
                             aria-label="Save folder name"
                         >
@@ -330,7 +409,8 @@ const FolderSection: React.FC<{
                         </button>
                         <button
                             type="button"
-                            onClick={() => setIsEditing(false)}
+                            onClick={handleCancelEdit}
+                            disabled={pending}
                             className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-white/25 bg-white/15 text-pulsar-white hover:bg-white/25 transition-colors"
                             aria-label="Cancel rename"
                         >
@@ -494,12 +574,12 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     };
 
     const handleRename = async (id: string, name: string) => {
-        try { await mutateArchive(() => renameWorld(id, name)); setWorlds(getWorldList()); setError(null); }
-        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
+        try { await mutateArchive(() => renameWorld(id, name)); setWorlds(getWorldList()); setError(null); return { ok: true } as const; }
+        catch (e: unknown) { const message = archiveFailureMessage(e); setError(message); return { ok: false, message } as const; }
     };
     const handleRenameFolder = async (id: string, name: string) => {
-        try { await mutateArchive(() => renameFolder(id, name)); setFolders(getFolderList()); setError(null); }
-        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
+        try { await mutateArchive(() => renameFolder(id, name)); setFolders(getFolderList()); setError(null); return { ok: true } as const; }
+        catch (e: unknown) { const message = archiveFailureMessage(e); setError(message); return { ok: false, message } as const; }
     };
     const handleMoveWorld = async (worldId: string, folderId?: string) => {
         try {
@@ -509,8 +589,9 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
             setError(null);
             const destination = folderId ? folders.find((folder) => folder.id === folderId)?.name ?? 'collection' : 'Independent systems';
             setMoveNotice(`${world?.name ?? 'Universe'} moved to ${destination}.`);
+            return { ok: true } as const;
         }
-        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
+        catch (e: unknown) { const message = archiveFailureMessage(e); setError(message); return { ok: false, message } as const; }
     };
     const handleWorldDragStart = (worldId: string) => {
         draggedWorldRef.current = worldId;
@@ -532,12 +613,12 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
         handleWorldDragEnd();
     };
     const handleDelete = async (id: string) => {
-        try { await mutateClosedWorld(id, () => deleteWorld(id)); setWorlds(getWorldList()); setError(null); }
-        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
+        try { await mutateClosedWorld(id, () => deleteWorld(id)); setWorlds(getWorldList()); setError(null); return { ok: true } as const; }
+        catch (e: unknown) { const message = archiveFailureMessage(e); setError(message); return { ok: false, message } as const; }
     };
     const handleDeleteFolder = async (id: string) => {
-        try { await mutateArchive(() => deleteFolder(id)); setFolders(getFolderList()); setWorlds(getWorldList()); setError(null); }
-        catch (e: any) { setError(e instanceof StorageOperationError ? storageIssueMessage(e) : 'The archive operation could not be completed. Check the name and try again.'); }
+        try { await mutateArchive(() => deleteFolder(id)); setFolders(getFolderList()); setWorlds(getWorldList()); setError(null); return { ok: true } as const; }
+        catch (e: unknown) { const message = archiveFailureMessage(e); setError(message); return { ok: false, message } as const; }
     };
     const closeTutorial = () => {
         markTutorialSeen();
@@ -688,6 +769,13 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                                 <button onClick={() => { openCreator(); scrollToHero(); }} className="menu-secondary-button touch-target px-4"><Plus size={17} /> New universe</button>
                             </div>
                         </header>
+
+                        {!isCreating && error && (
+                            <div role="alert" data-testid="archive-error" className="mb-5 flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                                <span>{error}</span>
+                                <button type="button" onClick={() => setError(null)} className="touch-target -m-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-white/10" aria-label="Dismiss archive error"><X size={16} /></button>
+                            </div>
+                        )}
 
                         {worlds.length === 0 && folders.length === 0 ? (
                             <div className="menu-empty-state"><div className="menu-empty-orbit"><Globe2 size={34} /></div><h3>Your first universe is waiting</h3><p>Launch a measured system or generate something no one has seen before.</p><button onClick={() => { openCreator(); scrollToHero(); }} className="menu-primary-button touch-target"><Sparkles size={17} /> Begin creating</button></div>

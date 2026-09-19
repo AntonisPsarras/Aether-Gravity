@@ -12,7 +12,7 @@ if (import.meta.env.PROD && typeof console !== 'undefined') {
     const original = console[method].bind(console);
     console[method] = (...args: unknown[]) => {
       const code = args[0];
-      const allowed = typeof code === 'string' && /^Aether: (render-failed|promise-rejected|native-init-failed|native-listener-failed|native-exit-failed)$/.test(code);
+      const allowed = typeof code === 'string' && /^Aether: (render-failed|promise-rejected|native-init-failed|native-listener-failed|native-exit-failed|native-haptic-failed)$/.test(code);
       original(allowed ? code : `Aether: runtime-${method}`);
     };
   }

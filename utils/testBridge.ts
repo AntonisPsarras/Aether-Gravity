@@ -55,6 +55,7 @@ export interface PerfReport {
   fps: PerfStats;
   frameTimeMs: { avg: number; p95: number };
   jsHeapMb: { start: number; peak: number; end: number };
+  retainedJsHeapMb?: { start: number; end: number; delta: number };
   bodyCount: number;
   deviceTier: string;
   renderProfile: string;

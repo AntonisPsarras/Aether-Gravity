@@ -31,17 +31,17 @@ const canVibrate = (): boolean => {
   return typeof navigator !== 'undefined' && 'vibrate' in navigator && navigator.maxTouchPoints > 0;
 };
 
-const fire = (call: () => Promise<void>): void => {
+export const fireOptionalHaptic = (call: () => Promise<void>): void => {
   if (!canVibrate()) return;
   try {
-    call().catch(() => {});
+    call().catch(() => { console.warn('Aether: native-haptic-failed'); });
   } catch {
-    // Feedback is optional.
+    console.warn('Aether: native-haptic-failed');
   }
 };
 
 export function hapticImpact(weight: HapticWeight): void {
-  fire(() => Haptics.impact({ style: IMPACT_STYLE[weight] }));
+  fireOptionalHaptic(() => Haptics.impact({ style: IMPACT_STYLE[weight] }));
 }
 
 /**
@@ -49,15 +49,15 @@ export function hapticImpact(weight: HapticWeight): void {
  * between a start and an end, so bracket the drag with these.
  */
 export function hapticSelectionStart(): void {
-  fire(() => Haptics.selectionStart());
+  fireOptionalHaptic(() => Haptics.selectionStart());
 }
 
 export function hapticSelectionTick(): void {
-  fire(() => Haptics.selectionChanged());
+  fireOptionalHaptic(() => Haptics.selectionChanged());
 }
 
 export function hapticSelectionEnd(): void {
-  fire(() => Haptics.selectionEnd());
+  fireOptionalHaptic(() => Haptics.selectionEnd());
 }
 
 /**

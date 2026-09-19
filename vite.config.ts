@@ -69,6 +69,33 @@ function e2eFixturesPlugin(): Plugin {
   };
 }
 
+/** Contain the frozen Vite editor-launch advisory on this loopback dev server. */
+function blockEditorEndpoint(): Plugin {
+  return {
+    name: 'block-open-in-editor',
+    apply: 'serve',
+    configureServer(server) {
+      // configureServer middleware runs before Vite's installed editor handler.
+      server.middlewares.use((req, res, next) => {
+        let pathname: string;
+        try {
+          pathname = decodeURIComponent((req.url ?? '').split('?')[0]);
+        } catch {
+          res.statusCode = 400;
+          res.end();
+          return;
+        }
+        if (pathname !== '/__open-in-editor') {
+          next();
+          return;
+        }
+        res.statusCode = 404;
+        res.end();
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   return {
     // Keep tooling caches out of the installed dependency tree.
@@ -77,6 +104,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: '127.0.0.1',
+      cors: false,
     },
     build: {
       outDir: 'dist',
@@ -101,7 +129,7 @@ export default defineConfig(({ mode }) => {
     esbuild: {
       drop: mode === 'production' ? ['debugger'] : [],
     },
-    plugins: [react(), thirdPartyNotices(), e2eFixturesPlugin(), {
+    plugins: [react(), thirdPartyNotices(), blockEditorEndpoint(), e2eFixturesPlugin(), {
       name: 'development-csp',
       apply: 'serve',
       transformIndexHtml(html) {

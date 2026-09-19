@@ -291,6 +291,62 @@ test.describe('premium main menu', () => {
     await expect(page.getByText('Orbit studies', { exact: true })).toBeVisible();
   });
 
+  test('keeps a world rename draft open when the asynchronous archive lock fails', async ({ page }) => {
+    await page.goto(menuUrl('low'));
+    await page.evaluate(() => {
+      localStorage.setItem('aether:worlds:index', JSON.stringify([
+        { id: 'world-1', name: 'Original world', createdAt: 1, lastOpenedAt: 1 },
+      ]));
+    });
+    await page.reload();
+    await page.evaluate(() => Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request: () => Promise.reject(new Error('lock unavailable')) },
+    }));
+    const directRename = page.getByRole('button', { name: 'Rename Original world' });
+    if (await directRename.isVisible()) {
+      await directRename.click();
+    } else {
+      await page.getByTestId('world-card-world-1').getByRole('button', { name: 'World actions' }).click();
+      await page.getByRole('dialog', { name: 'Actions for Original world' }).getByRole('button', { name: 'Rename' }).click();
+    }
+    const input = page.getByTestId('world-card-world-1').locator('input[type="text"]');
+    await input.fill('Retained draft');
+    await page.getByRole('button', { name: 'Save name' }).click();
+    await expect(input).toBeVisible();
+    await expect(input).toHaveValue('Retained draft');
+    await expect(page.getByRole('alert')).toContainText(/archive operation|storage|lock/i);
+  });
+
+  test('keeps folder rename and deletion UI open after asynchronous persistence failures', async ({ page }) => {
+    await page.goto(menuUrl('low'));
+    await page.evaluate(() => {
+      localStorage.setItem('aether:worlds:folders', JSON.stringify([
+        { id: 'folder-1', name: 'Original folder', createdAt: 1 },
+      ]));
+    });
+    await page.reload();
+    await page.evaluate(() => Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request: () => Promise.reject(new Error('lock unavailable')) },
+    }));
+    await page.getByRole('button', { name: 'Rename Original folder' }).click();
+    const input = page.getByTestId('folder-section-folder-1').locator('input[type="text"]');
+    await input.fill('Retained folder draft');
+    await page.getByRole('button', { name: 'Save folder name' }).click();
+    await expect(input).toBeVisible();
+    await expect(input).toHaveValue('Retained folder draft');
+
+    await page.getByRole('button', { name: 'Cancel rename' }).click();
+    await page.getByRole('button', { name: 'Rename Original folder' }).click();
+    await expect(page.getByTestId('folder-section-folder-1').locator('input[type="text"]')).toHaveValue('Original folder');
+    await page.getByRole('button', { name: 'Cancel rename' }).click();
+    await page.getByRole('button', { name: 'Delete Original folder' }).click();
+    await page.getByRole('button', { name: 'Delete collection' }).click();
+    await expect(page.getByText(/Delete the .*Original folder.* collection/i)).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText(/archive operation|storage|lock/i);
+  });
+
   test('shows uninstall loss guidance and blocks leaving after a failed save', async ({ page }) => {
     await page.goto(menuUrl('low'));
     await page.getByTestId('menu-new-universe').click();

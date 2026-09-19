@@ -35,6 +35,7 @@ export function formatPerfSummary(meta: PerfRunMeta, report: PerfReport): string
     `  FPS p50 / p95 / min: ${report.fps.p50.toFixed(1)} / ${report.fps.p95.toFixed(1)} / ${report.fps.min.toFixed(1)}`,
     `  Frame time avg / p95: ${report.frameTimeMs.avg.toFixed(2)} ms / ${report.frameTimeMs.p95.toFixed(2)} ms`,
     `  JS heap start / peak / end: ${report.jsHeapMb.start.toFixed(1)} / ${report.jsHeapMb.peak.toFixed(1)} / ${report.jsHeapMb.end.toFixed(1)} MB`,
+    `  Retained heap after GC start / end / delta: ${report.retainedJsHeapMb?.start.toFixed(1) ?? 'n/a'} / ${report.retainedJsHeapMb?.end.toFixed(1) ?? 'n/a'} / ${report.retainedJsHeapMb?.delta.toFixed(1) ?? 'n/a'} MB`,
     `  device tier: ${report.deviceTier} · context lost: ${report.contextLostCount}`,
     '─'.repeat(60),
   ];

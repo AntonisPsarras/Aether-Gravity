@@ -6,13 +6,13 @@
 
 ## Executive evidence
 
-Implemented storage/ownership, production privacy, physics/cache/conservation, performance, lifecycle, build and native configuration fixes without changing dependencies. Final local evidence: **560 unit tests**, **139 browser tests** (29 classified skips), **5 serial performance tests**, production build/smoke, offline unsigned Android release/lint and one native unit test passed. The complete browser run precedes the final PostCSS-only mitigation; its unit, build and production-smoke checks pass independently. There are no unexplained outstanding test failures.
+Implemented storage/ownership, production privacy, physics/cache/conservation, performance, lifecycle, build and native configuration fixes without changing dependencies. Latest 19 September local evidence: **574 unit tests**, **144 browser tests** (29 classified skips), **four serial 10-minute desktop soaks plus the allocation test**, production build/smoke, refreshed offline unsigned Android release/lint and one freshly rerun native unit test passed. The earlier two-worker grid-ratio failure and subsequent unchanged isolated/one-worker passes are documented in the continuation below; it is not silently erased.
 
 The release gate remains **BLOCKED**: tar, sharp, the affected nested Capacitor CLI/assets chain and Vite Windows tooling vulnerabilities remain unresolved under frozen versions. PostCSS exposure is mitigated in the configured build; Vitest's vulnerable server is not enabled. No signed/device/store certification or exhaustive third-party source clearance is claimed.
 
 ## Constraints and baseline
 
-No dependency installation, version change, lockfile regeneration, commit, push, or destructive cleanup is authorized. Preserve the untracked `thumbnail.png`. The tracked working tree was clean before implementation.
+No dependency installation, version change, lockfile regeneration, push, or destructive cleanup is authorized. On 19 September the user separately authorized committing the accumulated changes, without signing or publishing. Preserve `thumbnail.png` unchanged; the earlier “untracked” description is stale because Git currently tracks it. The tracked working tree was clean before implementation.
 
 - Entry path: `index.html` → `index.tsx` → `App.tsx`; Vite emits `dist`, consumed by Capacitor.
 - Inventory: 271 tracked files, 185 TypeScript files, 37 unit-test files, 17 E2E specifications. Inventory is not proof of review.
@@ -173,7 +173,7 @@ Verified facts are command results, inspected configuration, measured bundle pat
 
 ## File review checklist
 
-The checklist records actual review level. Checked entries mean the named static inventory/scan completed; they do not imply manual semantic sign-off. Focused review and changed-file reasons are described in the sections above. The working tree contains no commits from this task.
+The checklist records actual review level. Checked entries mean the named static inventory/scan completed; they do not imply manual semantic sign-off. “Focused semantic review” below names the path inspected, not whole-file or device-level clearance. Focused review and changed-file reasons are described in the sections above. The implementation initially remained uncommitted; the user authorized a commit on 19 September.
 
 - [x] `docs/PRODUCTION_READINESS.md` — whole-file static scan; changed for the remediation described above.
 - [x] `e2e/storageOwnership.spec.ts` — whole-file static scan; changed for the remediation described above.
@@ -259,7 +259,7 @@ The checklist records actual review level. Checked entries mean the named static
 - [x] `components/HabitableZoneVisual.tsx` — whole-file static scan; preserved.
 - [x] `components/InfoModal.tsx` — whole-file static scan; preserved.
 - [x] `components/LiveHelper.tsx` — whole-file static scan; preserved.
-- [x] `components/MainMenu.tsx` — whole-file static scan; changed for the remediation described above.
+- [x] `components/MainMenu.tsx` — whole-file static scan plus focused semantic review of archive async callbacks/draft and confirmation lifecycle; changed for the remediation described above.
 - [x] `components/MenuBlackHole.tsx` — whole-file static scan; preserved.
 - [x] `components/MenuSpaceBackground.tsx` — whole-file static scan; preserved.
 - [x] `components/MoonCreator.tsx` — whole-file static scan; preserved.
@@ -327,6 +327,7 @@ The checklist records actual review level. Checked entries mean the named static
 - [x] `docs/screenshots/solar-system.png` — binary packaging inventory; preserved.
 - [x] `docs/screenshots/universe-creator.png` — binary packaging inventory; preserved.
 - [x] `e2e/editlock.spec.ts` — whole-file static scan; preserved.
+- [x] `e2e/devServerSecurity.spec.ts` — new focused Vite endpoint/CORS browser regression; reviewed in full.
 - [x] `e2e/environment.spec.ts` — whole-file static scan; preserved.
 - [x] `e2e/fixtures/compact-impact.json` — whole-file static scan; preserved.
 - [x] `e2e/fixtures/minimal-3body.json` — whole-file static scan; preserved.
@@ -338,13 +339,13 @@ The checklist records actual review level. Checked entries mean the named static
 - [x] `e2e/gridMobileVisual.spec.ts` — whole-file static scan; preserved.
 - [x] `e2e/gridMobileVisual.spec.ts-snapshots/grid-performance-phone-chromium-win32.png` — binary packaging inventory; preserved.
 - [x] `e2e/gridMobileVisual.spec.ts-snapshots/grid-quality-phone-chromium-win32.png` — binary packaging inventory; preserved.
-- [x] `e2e/helpers.ts` — whole-file static scan; preserved.
+- [x] `e2e/helpers.ts` — whole-file static scan plus focused review of CDP forced-GC soak instrumentation; changed in this continuation.
 - [x] `e2e/layout.spec.ts` — whole-file static scan; preserved.
 - [x] `e2e/menu.spec.ts` — whole-file static scan; changed for the remediation described above.
 - [x] `e2e/moonCreation.spec.ts` — whole-file static scan; preserved.
 - [x] `e2e/onboarding.spec.ts` — whole-file static scan; preserved.
-- [x] `e2e/perf.spec.ts` — whole-file static scan; preserved.
-- [x] `e2e/perfReport.ts` — whole-file static scan; preserved.
+- [x] `e2e/perf.spec.ts` — whole-file static scan plus focused review of serial timeout/FPS/retained-heap gates; changed in this continuation.
+- [x] `e2e/perfReport.ts` — whole-file static scan plus focused review of retained-heap reporting; changed in this continuation.
 - [x] `e2e/presets.spec.ts` — whole-file static scan; preserved.
 - [x] `e2e/release.spec.ts` — whole-file static scan; preserved.
 - [x] `e2e/screenshots.spec.ts` — whole-file static scan; preserved.
@@ -403,7 +404,8 @@ The checklist records actual review level. Checked entries mean the named static
 - [x] `utils/gridWells.ts` — whole-file static scan; preserved.
 - [x] `utils/habitability.test.ts` — whole-file static scan; preserved.
 - [x] `utils/habitabilityState.ts` — whole-file static scan; preserved.
-- [x] `utils/haptics.ts` — whole-file static scan; preserved.
+- [x] `utils/haptics.ts` — whole-file static scan plus focused semantic review of optional native rejection and fixed diagnostics; changed in this continuation.
+- [x] `utils/haptics.test.ts` — new focused synchronous/asynchronous native diagnostic regressions; reviewed in full.
 - [x] `utils/hitTarget.test.ts` — whole-file static scan; preserved.
 - [x] `utils/hitTarget.ts` — whole-file static scan; preserved.
 - [x] `utils/inspectorSections.test.ts` — whole-file static scan; preserved.
@@ -445,16 +447,16 @@ The checklist records actual review level. Checked entries mean the named static
 - [x] `utils/simRate.ts` — whole-file static scan; preserved.
 - [x] `utils/simulationSnapshot.ts` — whole-file static scan; preserved.
 - [x] `utils/store.ts` — whole-file static scan; changed for the remediation described above.
-- [x] `utils/testBridge.ts` — whole-file static scan; preserved.
+- [x] `utils/testBridge.ts` — whole-file static scan plus focused review of test-only retained-heap report interface; changed in this continuation.
 - [x] `utils/timeState.test.ts` — whole-file static scan; preserved.
 - [x] `utils/timeState.ts` — whole-file static scan; preserved.
 - [x] `utils/units.ts` — whole-file static scan; changed for the remediation described above.
 - [x] `utils/webgl2Support.test.ts` — whole-file static scan; preserved.
 - [x] `utils/webgl2Support.ts` — whole-file static scan; preserved.
-- [x] `utils/worldStorage.test.ts` — whole-file static scan; preserved.
-- [x] `utils/worldStorage.ts` — whole-file static scan; changed for the remediation described above.
+- [x] `utils/worldStorage.test.ts` — whole-file static scan plus focused review of capacity, failure-boundary and spin round-trip regressions; changed in this continuation.
+- [x] `utils/worldStorage.ts` — whole-file static scan plus focused semantic review of capacity, migration, multi-key ordering and rollback boundaries; changed for the remediation described above.
 - [x] `vite-env.d.ts` — whole-file static scan; preserved.
-- [x] `vite.config.ts` — whole-file static scan; changed for the remediation described above.
+- [x] `vite.config.ts` — whole-file static scan plus focused semantic review of middleware ordering, loopback binding and development CORS; changed for the remediation described above.
 - [x] `vitest.config.ts` — whole-file static scan; changed for the remediation described above.
 
 ## Final verification update
@@ -479,7 +481,7 @@ The checklist records actual review level. Checked entries mean the named static
 - Final `npm run build`: PASS, including typecheck, after PostCSS mitigation; final `node scripts/production-smoke.mjs`: PASS.
 - Final Android assets recopied; offline `:app:assembleRelease :app:lintRelease :app:testDebugUnitTest --console=plain` PASS again (401 tasks, 8 executed, 393 up-to-date). The unsigned APK has 22 public asset files, includes third-party notices and matches final dist/index.html. No .map, .git, .env or e2e fixture files were found in its public assets. APK SHA-256: `4bc6c53946f161c7dd971c0f7c112ec318bf4c79638fa414a0f2649cf185cc89` (3,836,482 bytes). This is an unsigned validation artifact, not a publishable release.
 - Final static scan: 282 files including 33 binaries (the untracked user thumbnail included), zero detected secret patterns and zero accidental machine-path matches. The scanner itself accounts for its one provenance and one executable-input pattern match. Final dependency tree has no npm-reported problems; ignore allow/deny checks pass. Local .cache evidence is disposable and not shipped.
-- Final diff review includes all changed source/configuration/test files and this report. No dependency declaration/version or lockfile byte changed; no commit, push, history rewrite or installed-package patch occurred. The user's thumbnail is preserved.
+- Final diff review includes all changed source/configuration/test files and this report. No dependency declaration/version or lockfile byte changed; no push, history rewrite or installed-package patch occurred. The user's thumbnail is preserved. The subsequent commit was explicitly authorized on 19 September.
 
 The latest results above supersede intermediate counts while retaining the failure history. Readiness is conditional on resolving the named blockers and external release checks; no claim of full security or scientific exactness is made.
 
@@ -496,3 +498,31 @@ User requested more fixes plus a prompt for a separate chat. Rechecked git statu
 Changed `utils/worldStorage.ts` and `utils/worldStorage.test.ts`; added `docs/NEXT_CHAT_PROMPT.md` with the requested handoff, frozen-dependency constraints and outstanding review work. The new tests initially failed (both expected throws absent); after fixes `npm test` passed **562 tests / 40 files**. Remaining UI review includes async rename draft preservation; deeper semantic/device/long-session coverage remains explicitly outstanding. Release is still BLOCKED, not certified complete.
 
 Continuation validation: `npm run build` PASS (includes typecheck); `npm run test:e2e -- e2e/menu.spec.ts e2e/storageOwnership.spec.ts --workers=2` PASS **33/33**, no skips; `node scripts/production-smoke.mjs` PASS. Both package hashes still match the original baseline. The last complete browser/performance/Android runs remain those dated above; the existing unsigned APK predates this continuation and must be recopied/rebuilt before release. No claim is made that it includes today's two fixes.
+
+## Continuation — 19 September 2026
+
+Release gate remains **BLOCKED**. This continuation started from a clean `release-readiness-fixes` checkout and preserved `thumbnail.png`, which Git currently identifies as tracked (the older inventory's “untracked” description is stale). No package declaration, lockfile or installed dependency was changed. The freeze remains in force.
+
+The file checklist above records whole-file static scanning, not a claim that each listed file has received semantic review. This continuation semantically traced archive callbacks through `components/MainMenu.tsx`, `utils/worldOwnership.ts`, `utils/worldStorage.ts` and `utils/browserStorage.ts`; optional native haptic failure flow; Vite middleware ordering; the `gridWells`/`gridLattice` profile comparison; and the indicated numerical collision and performance paths. Shader and UI searches plus existing WebGL compilation tests are useful evidence, but they do not amount to exhaustive per-device shader or UI semantic review. In particular, no assertion of such exhaustive completion is made here.
+
+Confirmed regressions were observed failing before fixes: asynchronous rename drafts were dismissed on a rejected archive lock; Vite served `__open-in-editor` with HTTP 200; and a failed index rollback skipped restoration of deleted world data. Archive rename, move and delete callbacks now return explicit success/failure results. Failed rename drafts and deletion confirmations stay open, errors remain in an archive-level alert, cancellation restores original names, and pending controls reject duplicate submission. Rollback now attempts each captured key independently and reports secondary recovery failures. Per-key localStorage writes are still not a durable multi-key transaction; process termination can leave an interrupted operation, so backups and recovery remain essential.
+
+Both metadata lists have a 10,000-entry read/write cap. New tests cover world-index capacity, folder capacity, delayed and unavailable Web Locks, concurrent archive writers, create/delete boundaries, quota/no-op verification and migration-backup preservation. Numerical additions test unchanged bodies and conserved quantities on over-limit contact and intrinsic angular accounting through consecutive mergers; Settings now explicitly notes that over-limit products do not merge or truncate. Existing reverse-playback, dyadic-step, high-speed and snapshot tests remain active, but their coverage is not presented as proof of every physical edge case.
+
+The development server remains bound to `127.0.0.1`. A pre-Vite middleware now returns 404 for `__open-in-editor`, and permissive development CORS is disabled. A browser regression first reproduced the installed endpoint returning 200, then passed with the guard. This is configuration-scoped containment, not remediation of frozen Vite 6.4.2; bypassing this config remains unsafe. Native haptic failures now emit only the fixed `Aether: native-haptic-failed` diagnostic, without exception text; synchronous and rejected-promise paths are unit tested.
+
+Primary advisories rechecked 19 September: Vite 6.4.2 remains below 6.4.3 for the [Windows file-deny issue](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) and [editor UNC issue](https://github.com/advisories/GHSA-v6wh-96g9-6wx3). Installed Sharp 0.32.6 remains below the patched releases for [libvips](https://github.com/advisories/GHSA-f88m-g3jw-g9cj) and [libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c). Installed tar paths remain subject to [hardlink traversal](https://github.com/advisories/GHSA-34x7-hfp2-rc4v) and [recursion DoS](https://github.com/advisories/GHSA-r292-9mhp-454m) among the previously documented findings. Installed root `cap copy android` copies built assets without tar extraction; `@capacitor/assets` directly processes images with vulnerable Sharp, and asset generation, platform addition, migration and other tar-consuming commands stay prohibited until an authorized dependency remediation. Neither scoped command use nor the configured Vite guard makes the audit clean.
+
+Android lint's 20 existing warnings were reviewed by resource: five unused items (`activity_main`, Cordova `config`, `package_name`, `custom_url_scheme`, `AppTheme.NoActionBar`); five density variants of square legacy launcher artwork; two adaptive icon monochrome omissions; one landscape splash DIP-size mismatch; one generic/land-mdpi identical splash; one bitmap in the densityless drawable folder; five density variants where launcher and foreground icon art are identical. The unused XML/strings/style may be Capacitor/Cordova integration resources; deleting them without a generator/device check is not justified. Icon and splash warnings are real artwork/placement risks, but no replacement art or provably safe relocation was established. None was suppressed or deleted merely to clear lint.
+
+Validation chronology and final results:
+
+- Pre-soak unit run: 572 tests / 41 files PASS; typecheck/build and production smoke PASS. Focused archive/Vite browser regressions: 5/5 PASS. Short serial performance instrumentation: 5/5 PASS, forced-GC retained-heap deltas 0.7–1.8 MiB, zero context losses.
+- A complete two-worker browser run had 143 passed, 29 conditional skips and one phone-grid well-core ratio failure (2.089 > 1.75). Both grid tests passed unchanged in isolation. A complete one-worker rerun with stable application sources passed **144 tests, 29 conditional skips, zero failures**. This supports a concurrency-sensitive/intermittent observation, not a claim that the first failure never occurred; screenshot baselines were not regenerated and no assertion was relaxed.
+- `PERF_SOAK_MS=600000`, one Playwright worker: **5/5 PASS**, including four 10-minute scenarios plus the original hot-path allocation assertion. Minimal: 3 bodies, 65.4 average FPS, p95 frame time 18.10 ms, retained heap 22.4→23.5 MiB (+1.1). Stress: 20 bodies, 60.3 FPS, p95 17.90 ms, 24.6→25.3 MiB (+0.7). Solar System: 21 bodies, 60.2 FPS, p95 17.90 ms, 24.8→25.7 MiB (+0.9). Performance graphics: 3 bodies, 60.3 FPS, p95 18.00 ms, 22.3→23.4 MiB (+1.2). Each had zero WebGL context losses and met its existing FPS floor. The new retained-heap gate is delta ≤ max(32 MiB, 50% of start), measured with forced Chromium GC. `perf-metrics-report-600000.json` preserves the full JSON after the complete browser suite overwrote its default short-run report; its SHA-256 is `56DCBDD00F6295E6DB82695BB502759B9FFFBE91D2A6D9E165A75F3067B5A4DD`. These are long desktop/headless runs, not physical Android evidence.
+- Additional test-only fixtures cover core-collapse lost angular momentum, intrinsic spin in compact accretion, undo snapshot copies, serialized/storage-reloaded spin and the exact dyadic timestep floor. Final `npm test`: **574 tests / 41 files PASS**. Final `npm run build` (including typecheck): PASS; `node scripts/production-smoke.mjs`: PASS with local-only requests, CSP, no maps/test bridge and redacted rejection. Application sources were not edited during the final browser or soak runs.
+- Final `dist` was copied with the installed root Capacitor CLI using `cap copy android`; no asset generation or tar extraction was invoked. Offline Gradle `:app:assembleRelease :app:lintRelease :app:testDebugUnitTest --no-daemon --console=plain` passed, 401 actionable tasks (23 executed, 378 up-to-date). Since the native unit task was initially up-to-date with an older XML result, `:app:testDebugUnitTest --offline --no-daemon --console=plain --rerun-tasks` was then run: PASS, 112/112 tasks executed, current XML dated 19 September, one test / zero failures. Release lint remains 0 errors / 20 warnings with the resource dispositions above; existing newDsl and flatDir Gradle warnings remain.
+- The rebuilt unsigned APK is 3,837,162 bytes, SHA-256 `A0E09622FAB33A1A06EADC0E50D31DF8D97B731A53D27C52B6BAB3002526FE04`. All 20 final `dist` files are byte-identical to packaged `assets/public` entries; two additional packaged files are Cordova bootstrap scripts. No source maps, env, Git or E2E fixture assets were found in public entries. The merged release manifest requires ES 3.0, includes VIBRATE, disables backup and cleartext, has a non-exported FileProvider and no INTERNET permission. The artifact is unsigned, untested on a physical device and not publishable.
+- Final `git diff --check` passed. Both package hashes match the original baseline (`package.json` `09587B0A3D275246359E513A36BFDB651EA1FF4FC598B74792AE26BC95D6677F`; lockfile `B4388531BCE0369E9E9F55997969069E288F5792504542FC715C9F1C100B1566`); `git diff --numstat -- package.json package-lock.json` is empty. `thumbnail.png` remains tracked and unchanged (SHA-256 `BA4BCE4F1778A9C7A7D0B00DB8B468BB0DD42B9245FD69AA1E9275A800956483`). No push, reset, cleanup, signing, publication or dependency installation occurred. A commit was subsequently authorized on 19 September.
+
+The remaining release actions require explicit authorization for dependency remediation (Sharp, tar, nested Capacitor assets/CLI, Vite), followed by repeat validation; signed/device/instrumentation and thermal testing; store/Data Safety review; and GitHub protection/security checks with suitable access. Static file scans and the focused semantic paths above do not prove exhaustive UI/shader review. Unverified external checks remain assumptions, not passes. Final status stays **BLOCKED**.

@@ -18,7 +18,13 @@ const SOAK_MS = Number(process.env.PERF_SOAK_MS ?? 5_000);
 const MIN_FPS = Number(process.env.PERF_MIN_FPS ?? 30);
 
 test.describe('Performance soak', () => {
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: 'serial', timeout: Math.max(120_000, SOAK_MS + 90_000) });
+
+  const expectRetainedHeapBound = (report: Awaited<ReturnType<typeof runPerfSoak>>) => {
+    expect(report.retainedJsHeapMb).toBeDefined();
+    const retained = report.retainedJsHeapMb!;
+    expect(retained.delta).toBeLessThanOrEqual(Math.max(32, retained.start * 0.5));
+  };
 
   test.beforeAll(() => {
     resetPerfRunBuffer();
@@ -45,6 +51,7 @@ test.describe('Performance soak', () => {
 
     expect(report.sampleCount).toBeGreaterThan(10);
     expect(report.contextLostCount).toBe(0);
+    expectRetainedHeapBound(report);
     // CI VMs use software WebGL; MIN_FPS is lowered via workflow env (see playwright.yml).
     expect(report.fps.avg).toBeGreaterThan(MIN_FPS);
 
@@ -76,6 +83,7 @@ test.describe('Performance soak', () => {
     bufferPerfRun(meta, report);
 
     expect(report.contextLostCount).toBe(0);
+    expectRetainedHeapBound(report);
     expect(report.fps.avg).toBeGreaterThan(stressMinFps);
 
     test.info().attach('perf-stress-20b.json', {
@@ -105,6 +113,7 @@ test.describe('Performance soak', () => {
     bufferPerfRun(meta, report);
 
     expect(report.contextLostCount).toBe(0);
+    expectRetainedHeapBound(report);
     expect(report.fps.avg).toBeGreaterThan(MIN_FPS);
 
     test.info().attach('perf-solar-system.json', {
@@ -139,6 +148,7 @@ test.describe('Performance soak', () => {
     bufferPerfRun(meta, report);
 
     expect(report.contextLostCount).toBe(0);
+    expectRetainedHeapBound(report);
     expect(report.fps.avg).toBeGreaterThan(Number(process.env.PERF_LOW_TIER_MIN_FPS ?? 25));
 
     test.info().attach('perf-performance-profile.json', {

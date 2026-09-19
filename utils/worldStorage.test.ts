@@ -7,6 +7,7 @@ import {
   createFolder,
   moveWorldToFolder,
   deleteFolder,
+  deleteWorld,
   getFolderList,
   getWorld,
   getWorldList,
@@ -36,13 +37,15 @@ describe('world persistence sanitization', () => {
       habitability: 'N/A',
       population: 0,
       name: 'Planet 1',
-      properties: { atmosphere: 0.55, tectonics: 0.3, rotationPeriod: 24 },
+      properties: { atmosphere: 0.55, tectonics: 0.3, rotationPeriod: 24, angularMomentumX: 12, angularMomentumY: -3 },
     };
 
     const [restored] = deserializeBodies(serializeBodies([body]));
     expect(restored.properties?.atmosphere).toBe(0.55);
     expect(restored.properties?.tectonics).toBe(0.3);
     expect(restored.properties?.rotationPeriod).toBe(24);
+    expect(restored.properties?.angularMomentumX).toBe(12);
+    expect(restored.properties?.angularMomentumY).toBe(-3);
   });
 
   it('clamps corrupt save data and simulation speed', () => {
@@ -100,12 +103,14 @@ describe('world metadata', () => {
 
 describe('world storage reliability', () => {
   const values = new Map<string, string>();
-  let rejectWrites: ((key: string) => Error | null) | null = null;
+  let rejectWrites: ((key: string, value: string) => Error | null) | null = null;
+  let rejectRemovals: ((key: string) => Error | null) | null = null;
   let noOpWrites = false;
 
   beforeEach(() => {
     values.clear();
     rejectWrites = null;
+    rejectRemovals = null;
     noOpWrites = false;
     resetWorldStorageStateForTests();
     Object.defineProperty(globalThis, 'localStorage', {
@@ -115,11 +120,15 @@ describe('world storage reliability', () => {
         key: (index: number) => Array.from(values.keys())[index] ?? null,
         getItem: (key: string) => values.get(key) ?? null,
         setItem: (key: string, value: string) => {
-          const failure = rejectWrites?.(key);
+          const failure = rejectWrites?.(key, value);
           if (failure) throw failure;
           if (!noOpWrites) values.set(key, value);
         },
-        removeItem: (key: string) => values.delete(key),
+        removeItem: (key: string) => {
+          const failure = rejectRemovals?.(key);
+          if (failure) throw failure;
+          values.delete(key);
+        },
       },
     });
   });
@@ -144,7 +153,7 @@ describe('world storage reliability', () => {
     habitability: 'HABITABLE' as const,
     population: 0,
     name: 'Earth',
-    properties: { atmosphere: 0.55, rotationPeriod: 24 },
+    properties: { atmosphere: 0.55, rotationPeriod: 24, angularMomentumZ: 7 },
   });
 
   const world = (id = 'round-trip') => ({
@@ -169,6 +178,8 @@ describe('world storage reliability', () => {
     const persisted = JSON.parse(values.get('aether:worlds:data:round-trip')!);
     expect(persisted.version).toBe(CURRENT_WORLD_VERSION);
     expect(getWorld('round-trip')?.settings).toMatchObject({ speed: 2, showHabitable: true });
+    resetWorldStorageStateForTests();
+    expect(getWorld('round-trip')?.bodies[0].properties?.angularMomentumZ).toBe(7);
   });
 
   it('preserves malformed JSON rather than overwriting it', () => {
@@ -189,6 +200,17 @@ describe('world storage reliability', () => {
     expect(() => createFolder('Overflow')).toThrow();
     expect(values.get('aether:worlds:folders')).toBe(raw);
     expect(getFolderList()).toHaveLength(10000);
+  });
+
+  it('rejects world-index growth beyond its readable limit and removes the unindexed draft', () => {
+    const raw = JSON.stringify(Array.from({ length: 10000 }, (_, i) => ({
+      id: `w${i}`, name: `World ${i}`, createdAt: 1, lastOpenedAt: 1,
+    })));
+    values.set('aether:worlds:index', raw);
+    expect(() => createWorld('Overflow')).toThrow();
+    expect(values.get('aether:worlds:index')).toBe(raw);
+    expect(Array.from(values.keys()).filter(key => key.startsWith('aether:worlds:data:'))).toEqual([]);
+    expect(getWorldList()).toHaveLength(10000);
   });
 
   it('rejects stale folder destinations without altering a world archive', () => {
@@ -214,6 +236,69 @@ describe('world storage reliability', () => {
     noOpWrites = true;
     expect(saveWorld({ ...world('quota-world'), settings: { ...world().settings, speed: 4 } })).toBe('error');
     expect(values.get('aether:worlds:data:quota-world')).toBe(original);
+  });
+
+  it('rolls back create, folder deletion, and world deletion when a later storage step fails', () => {
+    rejectWrites = key => key.startsWith('aether:worlds:data:')
+      ? new DOMException('full', 'QuotaExceededError')
+      : null;
+    expect(() => createWorld('No data')).toThrow();
+    expect(getWorldList()).toEqual([]);
+
+    rejectWrites = key => key === 'aether:worlds:index'
+      ? new DOMException('full', 'QuotaExceededError')
+      : null;
+    expect(() => createWorld('No index')).toThrow();
+    expect(getWorldList()).toEqual([]);
+    expect(Array.from(values.keys()).filter(key => key.startsWith('aether:worlds:data:'))).toEqual([]);
+
+    rejectWrites = null;
+    values.set('aether:worlds:folders', JSON.stringify([{ id: 'folder', name: 'Lab', createdAt: 1 }]));
+    values.set('aether:worlds:index', JSON.stringify([{ id: 'world', name: 'World', createdAt: 1, lastOpenedAt: 1, folderId: 'folder' }]));
+    const foldersBefore = values.get('aether:worlds:folders');
+    const worldsBefore = values.get('aether:worlds:index');
+    rejectWrites = key => key === 'aether:worlds:folders'
+      ? new DOMException('full', 'QuotaExceededError')
+      : null;
+    expect(() => deleteFolder('folder')).toThrow();
+    rejectWrites = null;
+    expect(values.get('aether:worlds:folders')).toBe(foldersBefore);
+    expect(values.get('aether:worlds:index')).toBe(worldsBefore);
+
+    const dataRaw = JSON.stringify({ ...world('world'), id: 'world', version: CURRENT_WORLD_VERSION });
+    values.set('aether:worlds:data:world', dataRaw);
+    rejectRemovals = key => key === 'aether:worlds:data:world' ? new Error('blocked') : null;
+    expect(() => deleteWorld('world')).toThrow();
+    rejectRemovals = null;
+    expect(values.get('aether:worlds:index')).toBe(worldsBefore);
+    expect(values.get('aether:worlds:data:world')).toBe(dataRaw);
+  });
+
+  it('preserves the original legacy record when creating its migration backup fails', () => {
+    const legacy = JSON.stringify({ ...world('legacy-failure'), id: 'legacy-failure', version: 1 });
+    values.set('aether:worlds:data:legacy-failure', legacy);
+    rejectWrites = key => key === 'aether:worlds:v1backup:legacy-failure'
+      ? new DOMException('full', 'QuotaExceededError')
+      : null;
+    expect(getWorld('legacy-failure')).toBeNull();
+    expect(values.get('aether:worlds:data:legacy-failure')).toBe(legacy);
+    expect(values.has('aether:worlds:v1backup:legacy-failure')).toBe(false);
+  });
+
+  it('restores world data even if a prior index rollback write also fails', () => {
+    const indexKey = 'aether:worlds:index';
+    const dataKey = 'aether:worlds:data:rollback';
+    const backupKey = 'aether:worlds:v1backup:rollback';
+    const originalIndex = JSON.stringify([{ id: 'rollback', name: 'Rollback', createdAt: 1, lastOpenedAt: 1 }]);
+    const originalData = JSON.stringify({ ...world('rollback'), version: CURRENT_WORLD_VERSION });
+    values.set(indexKey, originalIndex);
+    values.set(dataKey, originalData);
+    values.set(backupKey, 'protected backup');
+    rejectRemovals = key => key === backupKey ? new Error('backup locked') : null;
+    rejectWrites = (key, value) => key === indexKey && value === originalIndex ? new Error('rollback locked') : null;
+    expect(() => deleteWorld('rollback')).toThrow();
+    expect(values.get(dataKey)).toBe(originalData);
+    expect(values.get(backupKey)).toBe('protected backup');
   });
 
   it('migrates a real v1 shape once, verifies it, and removes the temporary backup', () => {

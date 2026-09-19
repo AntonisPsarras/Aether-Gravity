@@ -41,12 +41,22 @@ export async function runPerfSoak(
   page: Page,
   durationMs: number,
 ): Promise<PerfReport> {
-  await page.evaluate((ms) => {
-    window.__AETHER_TEST__!.setPaused(false);
-    window.__AETHER_TEST__!.setSpeed(1);
-    window.__AETHER_TEST__!.startMetricsCollection();
-    return ms;
-  }, durationMs);
-  await page.waitForTimeout(durationMs);
-  return page.evaluate(() => window.__AETHER_TEST__!.stopMetricsCollection());
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('HeapProfiler.enable');
+    await session.send('HeapProfiler.collectGarbage');
+    const start = (await session.send('Runtime.getHeapUsage')).usedSize / 1048576;
+    await page.evaluate(() => {
+      window.__AETHER_TEST__!.setPaused(false);
+      window.__AETHER_TEST__!.setSpeed(1);
+      window.__AETHER_TEST__!.startMetricsCollection();
+    });
+    await page.waitForTimeout(durationMs);
+    const report = await page.evaluate(() => window.__AETHER_TEST__!.stopMetricsCollection());
+    await session.send('HeapProfiler.collectGarbage');
+    const end = (await session.send('Runtime.getHeapUsage')).usedSize / 1048576;
+    return { ...report, retainedJsHeapMb: { start, end, delta: end - start } };
+  } finally {
+    await session.detach();
+  }
 }

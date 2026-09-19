@@ -83,9 +83,11 @@ describe('live state transactions', () => {
     useStore.getState().appendBody(moon);
     setSimTime(.123);
     propagateSatellites(ref.current, new Map(ref.current.map(b => [b.id, b])), getSimTime());
+    ref.current[1].properties = { ...ref.current[1].properties, angularMomentumZ: 9 };
     const snapshot = captureSimulationSnapshot();
     ref.current[3].orbit!.m0 += 1;
     ref.current[1].properties!.rotationPeriod = 2;
+    ref.current[1].properties!.angularMomentumZ = 3;
     quarterOrbit();
     useStore.getState().restoreSimulation(snapshot);
     propagateSatellites(ref.current, new Map(ref.current.map(b => [b.id, b])), getSimTime());
@@ -93,6 +95,7 @@ describe('live state transactions', () => {
     expect(ref.current[3].position.distanceTo(snapshot.bodies[3].position)).toBeLessThan(1e-12);
     expect(ref.current[1].properties!.rotationPeriod).toBe(snapshot.bodies[1].properties!.rotationPeriod);
     expect(ref.current[3].orbit).not.toBe(snapshot.bodies[3].orbit);
+    expect(ref.current[1].properties?.angularMomentumZ).toBe(9);
   });
   it('treats an empty registered world as authoritative', () => {
     registerPhysicsBodiesRef(ref); ref.current = [];
@@ -147,6 +150,15 @@ describe('sandbox accuracy and pacing', () => {
     const local = { current: bodies };
     runFixedSteps(local, .001, (bs, dt) => { scanCollisionsInPlace(bs, [], [], dt); return bs; });
     expect(local.current.every(b => [...b.position.toArray(), ...b.velocity.toArray()].every(Number.isFinite))).toBe(true);
+  });
+  it('keeps the encounter policy dyadic and bounded at its documented floor', () => {
+    const bodies = [body('a', 1e10, 0), body('b', 1, 1e-6, 1e10)];
+    expect(scientificStepLimit(bodies)).toBe(2 ** -18);
+    bodies[1].position.x = 30;
+    bodies[1].velocity.z = 0;
+    const limit = scientificStepLimit(bodies);
+    expect(limit).toBeGreaterThanOrEqual(2 ** -18);
+    expect(Number.isInteger(Math.log2(limit))).toBe(true);
   });
   it('matches 30/60/120 fps trajectories through tier changes and reverse playback', () => {
     const run = (fps: number) => {
