@@ -1,5 +1,5 @@
 /** Only fixed codes cross the production console boundary. Never pass user data. */
-export type DiagnosticCode = 'render-failed' | 'promise-rejected' | 'native-init-failed' | 'native-listener-failed' | 'native-exit-failed';
+export type DiagnosticCode = 'render-failed' | 'promise-rejected' | 'native-init-failed' | 'native-listener-failed' | 'native-exit-failed' | 'native-haptic-failed';
 export function reportDiagnostic(code: DiagnosticCode, detail?: unknown): void {
   if (import.meta.env.DEV) console.error(`[${code}]`, detail);
   else console.error(`Aether: ${code}`);

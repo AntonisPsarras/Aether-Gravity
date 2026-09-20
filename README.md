@@ -255,6 +255,8 @@ Vite serves the app at **`http://127.0.0.1:3000`**.
 | `npm run test:e2e` | Playwright end-to-end suites (`e2e/`) |
 | `npm run test:e2e:ui` | Playwright in interactive UI mode |
 | `npm run test:perf` | Frame-rate and allocation regressions; stress coverage requires `PERF_SOAK_MS=10000` or greater |
+| `npm run audit:gate` | Registry, integrity, no sharp/assets, and allowlisted npm advisories |
+| `npm run android:manifest-gate` | Source (and merged, if built) Android manifest has no INTERNET/cleartext |
 | `npm run android:init` | Add the Capacitor Android platform (first time only) |
 | `npm run android:sync` | Build and sync the web assets into `android/` |
 | `npm run android:open` | Open the Android project in Android Studio |
@@ -281,7 +283,7 @@ The spec skips itself without that environment variable, so it stays out of the 
 
 ## Testing
 
-See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) for measured results, frozen-dependency findings, and the current release gate. The production preview smoke command is `node scripts/production-smoke.mjs` after building. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
+See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) for measured results and the current release gate. After `npm run build`, run `node scripts/production-smoke.mjs` and `npm run audit:gate`. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
 
 - **Unit (Vitest, under `utils/`):** integrator fidelity and energy behaviour, unit-system self-consistency, orbital-element conversions, the Kepler solver, relativity formulas (Schwarzschild, Kerr, ISCO, photon sphere, disk efficiency, redshift), mass–radius and classification relations, habitability, all three real-system presets, input bounds, world storage and migration, display-mode gating, and onboarding state.
 - **End-to-end (Playwright, `e2e/`):** smoke, simulation controls with a bounded energy-drift assertion, layout across breakpoints including a ≥44 px touch-target check, main menu and world creation, onboarding, inspector edit-locking against the physics sync, shader compilation and WebGL context loss/restore, and an FPS soak across four scene profiles.

@@ -1,20 +1,20 @@
-# Production readiness — 14 September 2026
+# Production readiness — 20 September 2026
 
 ## Release status
 
-**BLOCKED — unresolved frozen-dependency toolchain vulnerabilities.** Application remediation and available local validation are documented below; this is not a release certificate.
+**READY WITH DOCUMENTED NON-BLOCKING RISKS.** The 14–19 September frozen-dependency blockers (nested tar/sharp via unused `@capacitor/assets`, Vite 6.4.2) are remediated. Remaining items are publisher console/device steps and accepted build-only advisories in `scripts/audit-allowlist.json`. This is not a signed Play or physical-device certificate.
 
 ## Executive evidence
 
-Implemented storage/ownership, production privacy, physics/cache/conservation, performance, lifecycle, build and native configuration fixes without changing dependencies. Latest 19 September local evidence: **574 unit tests**, **144 browser tests** (29 classified skips), **four serial 10-minute desktop soaks plus the allocation test**, production build/smoke, refreshed offline unsigned Android release/lint and one freshly rerun native unit test passed. The earlier two-worker grid-ratio failure and subsequent unchanged isolated/one-worker passes are documented in the continuation below; it is not silently erased.
+20 September targeted remediation plus application/repo follow-up. Latest local evidence: **575 unit tests** in 42 files, **144 browser tests** (29 classified skips, 0 failures) on `--workers=2` including the previously flaky grid-ratio spec, serial 5-second performance soaks plus the allocation test, production build/smoke, `npm run audit:gate`, source and merged Android manifest gates, unsigned APK and AAB, lintRelease 0 errors / 18 warnings, and a freshly rerun native unit-test task. The 19 September 10-minute desktop soaks and the earlier two-worker grid-ratio failure remain in the historical ledger; they are not silently erased.
 
-The release gate remains **BLOCKED**: tar, sharp, the affected nested Capacitor CLI/assets chain and Vite Windows tooling vulnerabilities remain unresolved under frozen versions. PostCSS exposure is mitigated in the configured build; Vitest's vulnerable server is not enabled. No signed/device/store certification or exhaustive third-party source clearance is claimed.
+Named toolchain blockers are gone: Vite **6.4.3**, `@capacitor/assets` and sharp removed from the lockfile, tar overridden to **7.5.22**, PostCSS pinned to **8.5.28**. Production `npm audit --omit=dev --audit-level=high` is clean (fflate remains moderate, not in the measured production bundle). Full-tree high/critical leftovers are allowlisted build-only findings (Vitest API off, xmldom/browserslist/brace-expansion with repository-controlled inputs). No signed/device/store certification or exhaustive third-party source clearance is claimed.
 
-## Constraints and baseline
+## Constraints and baseline (14 September freeze, historical)
 
-No dependency installation, version change, lockfile regeneration, push, or destructive cleanup is authorized. On 19 September the user separately authorized committing the accumulated changes, without signing or publishing. Preserve `thumbnail.png` unchanged; the earlier “untracked” description is stale because Git currently tracks it. The tracked working tree was clean before implementation.
+The 14–19 September work froze package versions. On 20 September the publisher authorized a **targeted** remediation (remove unused `@capacitor/assets`, pin patched Vite 6.x and related build tools, keep React/Three/Capacitor runtime frozen). Preserve `thumbnail.png` unchanged. No push, signing, or Play upload is authorized from this work.
 
-- Entry path: `index.html` → `index.tsx` → `App.tsx`; Vite emits `dist`, consumed by Capacitor.
+14 September baseline (superseded for the release gate, retained as history):
 - Inventory: 271 tracked files, 185 TypeScript files, 37 unit-test files, 17 E2E specifications. Inventory is not proof of review.
 - `npm run typecheck`: PASS.
 - `npm test`: PASS, 539 tests in 37 files.
@@ -525,4 +525,68 @@ Validation chronology and final results:
 - The rebuilt unsigned APK is 3,837,162 bytes, SHA-256 `A0E09622FAB33A1A06EADC0E50D31DF8D97B731A53D27C52B6BAB3002526FE04`. All 20 final `dist` files are byte-identical to packaged `assets/public` entries; two additional packaged files are Cordova bootstrap scripts. No source maps, env, Git or E2E fixture assets were found in public entries. The merged release manifest requires ES 3.0, includes VIBRATE, disables backup and cleartext, has a non-exported FileProvider and no INTERNET permission. The artifact is unsigned, untested on a physical device and not publishable.
 - Final `git diff --check` passed. Both package hashes match the original baseline (`package.json` `09587B0A3D275246359E513A36BFDB651EA1FF4FC598B74792AE26BC95D6677F`; lockfile `B4388531BCE0369E9E9F55997969069E288F5792504542FC715C9F1C100B1566`); `git diff --numstat -- package.json package-lock.json` is empty. `thumbnail.png` remains tracked and unchanged (SHA-256 `BA4BCE4F1778A9C7A7D0B00DB8B468BB0DD42B9245FD69AA1E9275A800956483`). No push, reset, cleanup, signing, publication or dependency installation occurred. A commit was subsequently authorized on 19 September.
 
-The remaining release actions require explicit authorization for dependency remediation (Sharp, tar, nested Capacitor assets/CLI, Vite), followed by repeat validation; signed/device/instrumentation and thermal testing; store/Data Safety review; and GitHub protection/security checks with suitable access. Static file scans and the focused semantic paths above do not prove exhaustive UI/shader review. Unverified external checks remain assumptions, not passes. Final status stays **BLOCKED**.
+The remaining 19 September actions required explicit authorization for dependency remediation (Sharp, tar, nested Capacitor assets/CLI, Vite), followed by repeat validation. That authorization was given on 20 September. The 19 September status at the time of that freeze remained **BLOCKED**.
+
+## Continuation — 20 September 2026
+
+Publisher authorized targeted supply-chain remediation: remove unused `@capacitor/assets`, pin patched Vite 6.x, keep React / Three / R3F / Capacitor runtime frozen. `npm install --ignore-scripts` was used; the known local `postinstall` ProGuard patch was then run once.
+
+### Supply chain
+
+- Removed `@capacitor/assets` (303 nested packages, including sharp 0.32.6 and tar 6.2.1). Icons remain committed; regeneration is Icon Kitchen / manual only ([ICONS_README.md](../ICONS_README.md)).
+- Pinned `vite` to **6.4.3** (GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3). Loopback bind, CORS off, and `__open-in-editor` 404 remain as defense in depth.
+- Overrode `tar` to **7.5.22** (Capacitor CLI 8 still needs tar; 7.5.15 was in the critical range `<=7.5.20`).
+- Pinned `postcss` to **8.5.28**. Existing `map: false` regression still passes.
+- Pinned `@types/react` / `@types/react-dom` to 18.3.x matching `react@18.3.1`.
+- App version aligned to **1.6.0** (`package.json` and Android `versionName`); `versionCode` **5**.
+- `npm run audit:gate` PASS: all lock `resolved` URLs are `registry.npmjs.org`, integrity present, no sharp/`@capacitor/assets`, production audit has no high/critical, remaining findings match [scripts/audit-allowlist.json](../scripts/audit-allowlist.json).
+- `npm audit --omit=dev`: fflate moderate only (not in `.cache/audit/bundled-packages.json`).
+- Full tree: 9 findings (2 low, 3 moderate, 3 high, 1 critical). Critical is Vitest with `api: false`. High leftovers are `@xmldom/xmldom`, `brace-expansion`, `browserslist` (repository-controlled tooling inputs).
+
+CI freeze-diff replaced with the audit gate, Dependabot (majors ignored for React/Three/R3F/Capacitor), [SECURITY.md](../SECURITY.md), `engines.node >= 22`, and [scripts/android-manifest-gate.mjs](../scripts/android-manifest-gate.mjs).
+
+### Application
+
+- Read-only viewers: `setSpeed` is a no-op; ControlBar disables undo/redo/pause/speed; unit + two-tab e2e coverage.
+- Grid-ratio flake: `e2e/gridMobileVisual.spec.ts` polls consecutive well snapshots instead of a 700 ms sleep. `--workers=2` run passed (including that spec). `MAX_CORE_RATIO` was not relaxed.
+- Haptic failures go through `reportDiagnostic('native-haptic-failed')`.
+- SpaceCanvas: debris `BufferGeometry` is now disposed on budget change/unmount. Context-loss, grid geometry, body-group, and window listeners already cleaned up; no shader rewrite.
+
+### Android / Play packaging
+
+- Adaptive monochrome vector added; lint warnings **20 → 18** (the two monochrome omissions are gone). Unused Cordova strings and launcher-shape/density warnings kept.
+- `minifyEnabled false` unchanged.
+- Data safety sheet in [ANDROID_BUILD.md](../ANDROID_BUILD.md). Publisher checklist in [docs/NEXT_CHAT_PROMPT.md](NEXT_CHAT_PROMPT.md).
+
+### 20 September validation
+
+- `npm test`: **575 tests / 42 files PASS**.
+- `npm run build` (typecheck + Vite 6.4.3): PASS. fflate not in bundled notices.
+- `node scripts/production-smoke.mjs`: PASS.
+- `node scripts/repository-audit.mjs`: 0 secret patterns, 0 machine paths, no unusual lock sources.
+- `npm run test:e2e -- --workers=2`: **144 passed / 29 skipped / 0 failed**.
+- Serial `e2e/perf.spec.ts`: 4 passed, stress skipped (`PERF_SOAK_MS` default). Minimal 60.5 FPS heap delta +0.7 MiB; Solar System 60.6 FPS +0.3 MiB; performance profile 60.5 FPS +0.9 MiB; allocation assertion passed. 10-minute soaks were not rerun (physics hot path unchanged).
+- `cap copy android` via root CLI 8: PASS, no tar extraction.
+- Offline Gradle `:app:assembleRelease :app:bundleRelease :app:lintRelease`: PASS, 410 tasks. Lint **0 errors / 18 warnings**.
+- `:app:testDebugUnitTest --rerun-tasks`: PASS, 112/112 tasks executed.
+- Merged release manifest: versionCode 5 / 1.6.0, ES 3.0, VIBRATE, no INTERNET, cleartext false, backup false, FileProvider not exported.
+- Unsigned APK 3,838,030 bytes, SHA-256 `988BFADE8B537A6EAA083853CC3513ADC333E86516F2EFB08BCE07E9FA325470`. Unsigned AAB 3,676,235 bytes, SHA-256 `3C93D49624150D0953193F4FCB6BD7696280BCA0A8546DC8ADD7CD2C51890E33`.
+- package.json SHA-256 `274C498ABB94E34B2BD0C54DE973E6E543AF07C67C387C3DDF0B64BABB0A39F4`; lockfile `B0861B2639C30163C65D884B9B112E4AD373983C4EFAA0520FECE8197207EBD4`.
+- `thumbnail.png` unchanged (`BA4BCE4F1778A9C7A7D0B00DB8B468BB0DD42B9245FD69AA1E9275A800956483`).
+- `git diff --check` reported only CRLF normalization warnings on edited text files.
+
+### Remaining publisher-only gates (not claimed passed)
+
+- Sign the AAB with the existing Play upload key (outside the repo).
+- Physical-device / thermal / instrumentation matrix on the signed artifact.
+- Play Console Data safety, listing assets, hosted TermsFeed eyeball-check.
+- GitHub branch protection, secret scanning, push protection, 2FA.
+- Exhaustive per-device shader/UI review.
+
+Unverified external checks remain assumptions. In-repo status: **READY WITH DOCUMENTED NON-BLOCKING RISKS**.
+
+- [x] `SECURITY.md` — new private-report policy.
+- [x] `.github/dependabot.yml` — weekly npm (majors ignored for runtime) and monthly Actions.
+- [x] `scripts/audit-gate.mjs`, `scripts/audit-allowlist.json`, `scripts/android-manifest-gate.mjs`.
+- [x] `utils/storeReadOnly.test.ts`.
+- [x] `android/app/src/main/res/drawable/ic_launcher_monochrome.xml`.

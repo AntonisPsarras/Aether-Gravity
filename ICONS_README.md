@@ -4,6 +4,8 @@
 
 Custom icons and splash screens are **already generated and committed**. There is nothing to do here for a normal build — this document exists for when you want to change the artwork.
 
+`@capacitor/assets` is **not** a project dependency. It pulled vulnerable nested `sharp` and `tar` copies; do not add it back or run `npx capacitor-assets generate`.
+
 What is in the repo today, under `android/app/src/main/res/`:
 
 | Resource | Location |
@@ -11,6 +13,7 @@ What is in the repo today, under `android/app/src/main/res/`:
 | Legacy launcher icon | `mipmap-{m,h,x,xx,xxx}hdpi/ic_launcher.png` |
 | Adaptive icon foreground | `mipmap-{m,h,x,xx,xxx}hdpi/ic_launcher_foreground.png` |
 | Adaptive icon definition | `mipmap-anydpi-v26/ic_launcher.xml`, `ic_launcher_round.xml` |
+| Adaptive icon monochrome | `drawable/ic_launcher_monochrome.xml` referenced from the adaptive icon XML |
 | Adaptive icon background colour | `values/ic_launcher_background.xml` — currently `#0a0a0a` |
 | Splash screens | `drawable/`, `drawable-{land,port}-{m,h,x,xx,xxx}hdpi/splash.png` |
 
@@ -18,23 +21,18 @@ The splash screen's own background and behaviour (duration, scale type, fullscre
 
 ## Regenerating the icons
 
-`@capacitor/assets` is already a devDependency — no install step is needed.
+Use [Icon Kitchen](https://icon.kitchen/) (or an equivalent local image editor) and drop the density set into the matching `mipmap-*` and `drawable-*` folders by hand. Review the diff under `android/app/src/main/res/` before committing.
 
-1. Create a `resources/` directory at the repo root (it is not checked in):
-   - `resources/icon.png` — 1024×1024, square, no transparency at the edges
-   - `resources/icon-foreground.png` and `resources/icon-background.png` — optional, for finer control over the Android adaptive icon
-   - `resources/splash.png` — 2732×2732, subject centred well inside the safe area
-   - `resources/splash-dark.png` — optional
+Do not install `@capacitor/assets` or Sharp to regenerate artwork.
 
-2. Generate:
+Source files you would typically prepare:
 
-   ```bash
-   npx capacitor-assets generate --android
-   ```
+- `resources/icon.png` — 1024×1024, square, no transparency at the edges
+- `resources/icon-foreground.png` and `resources/icon-background.png` — optional, for finer control over the Android adaptive icon
+- `resources/splash.png` — 2732×2732, subject centred well inside the safe area
+- `resources/splash-dark.png` — optional
 
-3. Review the diff under `android/app/src/main/res/` before committing — the generator overwrites every density at once.
-
-If you would rather not run the generator, [Icon Kitchen](https://icon.kitchen/) produces the same Android density set by hand; drop the output into the matching `mipmap-*` folders.
+`resources/` is not checked in.
 
 ## Required sizes (manual route)
 

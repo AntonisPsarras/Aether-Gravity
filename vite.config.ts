@@ -69,7 +69,7 @@ function e2eFixturesPlugin(): Plugin {
   };
 }
 
-/** Contain the frozen Vite editor-launch advisory on this loopback dev server. */
+/** Contain the Vite editor-launch endpoint on this loopback dev server. */
 function blockEditorEndpoint(): Plugin {
   return {
     name: 'block-open-in-editor',

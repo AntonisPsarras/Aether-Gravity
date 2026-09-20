@@ -526,7 +526,10 @@ export const useStore = create<AppState>((set, get) => ({
   setCameraLock: (id) => set({ cameraLockedId: id }),
 
   setPaused: (paused) => set({ paused: get().worldReadOnly || paused }),
-  setSpeed: (speed) => set({ speed: clampSpeed(speed) }),
+  setSpeed: (speed) => {
+    if (get().worldReadOnly) return;
+    set({ speed: clampSpeed(speed) });
+  },
   setScientificPacingScale: (scale) => set((state) => {
     const next = Number.isFinite(scale) ? Math.max(0, Math.min(1, scale)) : 1;
     return Math.abs(state.scientificPacingScale - next) < 0.001 ? state : { scientificPacingScale: next };

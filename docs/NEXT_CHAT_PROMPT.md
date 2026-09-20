@@ -1,16 +1,30 @@
-Continue the Aether Gravity production-readiness implementation in this repository. Act as production engineer, application-security reviewer, release engineer and numerical-physics reviewer. Implement and test fixes, not just recommendations.
+# Publisher release checklist
 
-First read docs/PRODUCTION_READINESS.md, including its 15 September continuation, and inspect git status and git diff. Preserve all existing changes and the untracked thumbnail.png. These are accumulated authorized work, not disposable edits. Use the file-review checklist honestly: whole-file static scanning is not completed semantic review.
+The in-repo production work for 1.6.0 is in `docs/PRODUCTION_READINESS.md`. This file is only the remaining **console and device** steps that cannot be completed from source.
 
-Non-negotiable: do not run npm install/update/ci, yarn or pnpm; do not change package versions, dependency declarations, lockfile bytes or installed packages. Do not commit, push, reset, clean, checkout, rewrite history, sign or publish. Never expose secrets. Add no telemetry or application network services. Do not weaken assertions, disable tests or swallow failures. The dependency freeze remains active unless I explicitly change it.
+## GitHub (repository Settings)
 
-Continue with these priorities:
-1. Review remaining UI, shaders, storage and lifecycle code semantically, especially files only statically scanned. Investigate asynchronous rename failure handling: editor callbacks currently do not await parent rename promises, so failed saves may dismiss drafts. Add regression coverage before fixing confirmed defects.
-2. Extend archive concurrency/failure tests: multiple metadata writers, delayed locks, unavailable locks, interrupted multi-key operations, quota failures and preservation of drafts/backups. Verify world-index capacity as well as folder capacity. Preserve valid data and make failures visible.
-3. Reassess frozen dependency reachability using installed source and current primary advisories. Unresolved tar/sharp, nested Capacitor assets/CLI and Windows Vite tooling findings remain release blockers. PostCSS automatic previous-map loading is disabled and tested; Vitest API is disabled. Do not call npm audit clean or resolve blockers by silently upgrading. Implement demonstrably effective configuration mitigations where feasible; explicitly identify anything requiring later authorized dependency changes.
-4. Audit numerical/model edge cases, especially over-limit mergers, intrinsic angular-momentum accounting across subsequent events and snapshot/storage round trips, bounded timestep limits and UI approximation labels. Preserve canonical SI conversions and sandbox visual contacts versus scientific physical contacts.
-5. Run a longer serial performance/memory soak using existing instrumentation. Ten-second desktop soaks are not long-session or physical-Android evidence. Review the 20 existing Android lint warnings without deleting intentional artwork or required sources. Device, signing, store and GitHub protection checks remain unverified unless actually performed.
+- Protect `main`: require the Playwright workflow, dismiss stale reviews, no force-push, no deletion.
+- Enable secret scanning and push protection.
+- Confirm 2FA on the owner account.
+- Do not commit keystores, `.env` files, or Play Console JSON keys.
 
-Before final Android validation, copy the latest dist assets and rebuild offline: the existing unsigned APK predates the 15 September storage fixes.
+## Play Console
 
-Keep docs/PRODUCTION_READINESS.md current. Latest unit baseline is 562 passing tests in 40 files; consult the report for exact browser/build/Android results and their dates. Do not edit application sources during browser validation: HMR previously invalidated a run. Run targeted regressions after each fix, then relevant final validation with unchanged sources. Use only installed dependencies and offline Gradle where available; record exact environmental failures. Finish with an evidence-based READY / READY WITH DOCUMENTED NON-BLOCKING RISKS / BLOCKED report, clear remaining actions and verified facts versus assumptions.
+- Sign the AAB from `:app:bundleRelease` with the existing upload key (outside this repo).
+- Upload versionCode **5** / versionName **1.6.0**.
+- Fill Data safety using the sheet in `ANDROID_BUILD.md`.
+- Confirm the hosted privacy policy URL still matches `content/privacyPolicy.ts`.
+- Supply Play listing assets (feature graphic is not in this repo).
+
+## Device matrix (signed artifact)
+
+On at least one low-end and one representative phone:
+
+- Cold launch offline, create / save / reopen a world
+- Second-tab / lock behaviour if the WebView supports Web Locks (otherwise the session must stay read-only)
+- Pause, background, resume, Android Back, rotation
+- WebGL context loss if you can trigger it
+- Long session (well beyond the desktop 10-minute soak)
+
+Do not add telemetry, INTERNET, or `@capacitor/assets` to “fix” store or lint warnings.

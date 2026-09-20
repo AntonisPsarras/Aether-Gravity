@@ -1,0 +1,64 @@
+{
+  "packages": {
+    "@babel/core": {
+      "maxSeverity": "low",
+      "reason": "Build-only source-map input is repository-controlled; no public transform endpoint.",
+      "advisories": ["GHSA-4x5r-pxfx-6jf8"]
+    },
+    "@vitest/mocker": {
+      "maxSeverity": "moderate",
+      "reason": "Vitest browser redirect-mock/API server is not enabled. vitest.config.ts sets api: false.",
+      "advisories": ["GHSA-82fw-gwwq-j7x9"]
+    },
+    "@xmldom/xmldom": {
+      "maxSeverity": "high",
+      "reason": "Native/config tooling reads repository-controlled XML; no public XML input boundary.",
+      "advisories": [
+        "GHSA-6gmq-8vp8-gcm6",
+        "GHSA-w2rr-34g9-rvrj",
+        "GHSA-4w3w-2rp5-g8jm",
+        "GHSA-c7q8-3ch8-vqpv",
+        "GHSA-27p8-2357-5qqv",
+        "GHSA-6h8r-xr42-gp59",
+        "GHSA-8344-3jmq-59r6",
+        "GHSA-x4fp-j954-r2f4",
+        "GHSA-965w-775f-mr7g",
+        "GHSA-93r5-fhx6-vmg9"
+      ]
+    },
+    "baseline-browser-mapping": {
+      "maxSeverity": "moderate",
+      "reason": "Build-only fixed target query; no public arbitrary target input.",
+      "advisories": ["GHSA-w5vr-8v7q-w6rv"]
+    },
+    "brace-expansion": {
+      "maxSeverity": "high",
+      "reason": "Repository-owned tooling globs only; not a public pattern service.",
+      "advisories": [
+        "GHSA-3jxr-9vmj-r5cp",
+        "GHSA-mh99-v99m-4gvg",
+        "GHSA-rgw5-rvv9-x895"
+      ]
+    },
+    "browserslist": {
+      "maxSeverity": "high",
+      "reason": "Build-time bounded fixed queries and no external stats input.",
+      "advisories": ["GHSA-c83g-rgw3-j3cx", "GHSA-73wf-gq98-2v4g"]
+    },
+    "fflate": {
+      "maxSeverity": "moderate",
+      "reason": "Not a public ZIP import path. Production-bundle retention is rechecked by the production smoke/notices plugin.",
+      "advisories": ["GHSA-px8p-9vwx-vf98"]
+    },
+    "postcss-selector-parser": {
+      "maxSeverity": "low",
+      "reason": "Repository-controlled build CSS; no runtime selector parser service.",
+      "advisories": ["GHSA-w9m9-85wc-3x92"]
+    },
+    "vitest": {
+      "maxSeverity": "critical",
+      "reason": "Run-only unit tests with api:false. The critical advisory requires the listening UI/API server.",
+      "advisories": ["GHSA-5xrq-8626-4rwp", "GHSA-82fw-gwwq-j7x9"]
+    }
+  }
+}

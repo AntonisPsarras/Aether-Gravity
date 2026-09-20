@@ -54,8 +54,11 @@ jobs:
       - name: Production preview smoke test
         run: node scripts/production-smoke.mjs
 
-      - name: Verify frozen dependency files
-        run: git diff --exit-code -- package.json package-lock.json
+      - name: Supply-chain audit gate
+        run: node scripts/audit-gate.mjs
+
+      - name: Android source manifest gate
+        run: node scripts/android-manifest-gate.mjs
 
       - name: Run Playwright E2E tests
         run: npm run test:e2e

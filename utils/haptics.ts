@@ -13,6 +13,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { reportDiagnostic } from './diagnostics';
 import type { TimeState } from './timeState';
 
 export type HapticWeight = 'light' | 'medium' | 'heavy';
@@ -34,9 +35,9 @@ const canVibrate = (): boolean => {
 export const fireOptionalHaptic = (call: () => Promise<void>): void => {
   if (!canVibrate()) return;
   try {
-    call().catch(() => { console.warn('Aether: native-haptic-failed'); });
-  } catch {
-    console.warn('Aether: native-haptic-failed');
+    call().catch((error) => { reportDiagnostic('native-haptic-failed', error); });
+  } catch (error) {
+    reportDiagnostic('native-haptic-failed', error);
   }
 };
 

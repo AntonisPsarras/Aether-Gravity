@@ -23,10 +23,20 @@ test('a second tab cannot overwrite the editor and can acquire ownership after c
   await second.goto('/?e2e=1&onboarding=seen');
   await second.getByTestId('menu-open-recent').click();
   await expect(second.getByRole('status').filter({ hasText: 'Read-only universe' })).toBeVisible();
-  expect(await second.evaluate(() => {
+  await expect(second.getByTestId('control-pause')).toBeDisabled();
+  await expect(second.getByTestId('control-undo')).toBeDisabled();
+  await expect(second.getByTestId('control-speed')).toBeDisabled();
+  const viewer = await second.evaluate(() => {
     const store = window.__AETHER_TEST__!.getStore();
-    return store;
-  })).toBeDefined();
+    window.__AETHER_TEST__!.setPaused(false);
+    window.__AETHER_TEST__!.setSpeed(2);
+    const after = window.__AETHER_TEST__!.getStore();
+    return { before: store, after };
+  });
+  expect(viewer.before.worldReadOnly).toBe(true);
+  expect(viewer.before.paused).toBe(true);
+  expect(viewer.after.paused).toBe(true);
+  expect(viewer.after.speed).toBe(viewer.before.speed);
   const before = await second.evaluate(() => localStorage.getItem('aether:worlds:index'));
   await second.reload();
   expect(await second.evaluate(() => localStorage.getItem('aether:worlds:index'))).toBe(before);

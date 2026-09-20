@@ -258,13 +258,13 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
   }, [bodies, selectedId, inspectorBodyId, selectBody, closeInspector]);
 
   const handleUndo = () => {
-    if (!history.length) return;
+    if (worldReadOnly || !history.length) return;
     setRedoStack(prev => [...prev, captureSimulationSnapshot(useStore.getState().bodies)]);
     useStore.getState().restoreSimulation(history[history.length - 1]);
     setHistory(prev => prev.slice(0, -1));
   };
   const handleRedo = () => {
-    if (!redoStack.length) return;
+    if (worldReadOnly || !redoStack.length) return;
     setHistory(prev => [...prev.slice(-19), captureSimulationSnapshot(useStore.getState().bodies)]);
     useStore.getState().restoreSimulation(redoStack[redoStack.length - 1]);
     setRedoStack(prev => prev.slice(0, -1));
@@ -411,7 +411,7 @@ const Simulation: React.FC<{ onReturnToMenu: () => void; }> = ({ onReturnToMenu 
         <div className="pointer-events-auto">
           <ControlBar
             creationMode={creationMode}
-            onUndo={handleUndo} onRedo={handleRedo} canUndo={history.length > 0} canRedo={redoStack.length > 0}
+            onUndo={handleUndo} onRedo={handleRedo} canUndo={!worldReadOnly && history.length > 0} canRedo={!worldReadOnly && redoStack.length > 0}
             onReturnToMenu={handleReturnToMenu}
           />
         </div>

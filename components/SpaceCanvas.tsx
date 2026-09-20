@@ -1083,6 +1083,9 @@ const PhysicsEngine = ({
   // many BODIES a collision creates and therefore what the simulation does.
   const physicsBudget = useMemo(() => physicsBudgetForTier(physicsTier), [physicsTier]);
   const debrisGeometry = useDebrisGeometry(effectQuality.debrisParticles);
+  useEffect(() => () => {
+    debrisGeometry.dispose();
+  }, [debrisGeometry]);
 
   // Static lattice geometry for this tier's budget (utils/gridLattice.ts). The
   // disc geometry is a unit disc shared by every secondary lattice.

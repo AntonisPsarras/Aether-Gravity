@@ -15,10 +15,18 @@ async function settleGrid(page: Page, graphics: 'quality' | 'performance') {
     // Match the unobscured canvas in the reported Android screenshots so the
     // baseline exercises the entire curvature surface, not a sheet behind UI.
     (window as any).__AETHER_VISUAL_TEST__.getStore().setOutlinerOpen(false);
+    (window as any).__AETHER_GRID_SETTLE__ = '';
   });
-  // Let the canvas, grid uniforms, and post-processing settle on the frozen
-  // Solar System frame before taking a visual baseline.
-  await page.waitForTimeout(700);
+  // Poll until two consecutive well snapshots match. A fixed timeout raced
+  // the lattice LOD under parallel workers.
+  await page.waitForFunction(() => {
+    const grid = window.__AETHER_TEST__?.getGridSnapshot();
+    if (!grid) return false;
+    const signature = JSON.stringify(grid.wells.map((well) => [well.bodyId, well.core, well.peak]));
+    const previous = (window as any).__AETHER_GRID_SETTLE__;
+    (window as any).__AETHER_GRID_SETTLE__ = signature;
+    return previous === signature && signature.length > 2;
+  }, undefined, { timeout: 8_000 });
   return page.evaluate(() => {
     const m = window.__AETHER_TEST__!.getMetrics();
     return {

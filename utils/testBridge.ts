@@ -33,6 +33,7 @@ export interface StoreSnapshot {
   showOrbitPaths: boolean;
   uiMode: UiMode;
   worldId: string | null;
+  worldReadOnly: boolean;
 }
 
 export interface PhysicsEnergySample {
@@ -229,6 +230,7 @@ function buildApi(): AetherTestAPI {
         showOrbitPaths: s.showOrbitPaths,
         uiMode: s.uiMode,
         worldId: s.worldId,
+        worldReadOnly: s.worldReadOnly,
       };
     },
 

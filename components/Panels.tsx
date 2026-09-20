@@ -153,12 +153,13 @@ const TRACK_ZONES = `linear-gradient(to right, rgba(167,139,250,0.35) 0%, rgba(1
  * and supplies the thumb and the 44px hit area — the decoration is inset by
  * half a thumb so the percentages line up with where the thumb actually sits.
  */
-const TimeScrubber: React.FC<{ speed: number; state: TimeState; effectiveSpeed: number; resolvingEncounter: boolean }> = ({ speed, state, effectiveSpeed, resolvingEncounter }) => {
+const TimeScrubber: React.FC<{ speed: number; state: TimeState; effectiveSpeed: number; resolvingEncounter: boolean; disabled?: boolean }> = ({ speed, state, effectiveSpeed, resolvingEncounter, disabled = false }) => {
   const setSpeed = useStore((s) => s.setSpeed);
   const color = TIME_STATE_VISUALS[state].color;
   const at = speedPercent(speed);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const { speed: prev, paused } = useStore.getState();
     const next = snapSpeed(parseFloat(e.target.value));
     if (next === prev) return;
@@ -202,13 +203,15 @@ const TimeScrubber: React.FC<{ speed: number; state: TimeState; effectiveSpeed: 
           ? TIME_STATE_VISUALS[state].label
           : `${TIME_STATE_VISUALS[state].label}, ${formatSpeedReadout(speed, state)}${resolvingEncounter ? `, currently ${formatEncounterSpeedReadout(effectiveSpeed)} while resolving a close encounter` : ''}`}
         onPointerDown={() => {
+          if (disabled) return;
           useStore.getState().setInteractingWithUI(true);
           hapticSelectionStart();
         }}
         onPointerUp={endInteraction}
         onPointerCancel={endInteraction}
         onChange={handleChange}
-        className="speed-slider relative w-full h-11 cursor-pointer"
+        disabled={disabled}
+        className={`speed-slider relative w-full h-11 ${disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
       />
     </div>
   );
@@ -228,6 +231,7 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
   const showHabitable = useStore((s) => s.showHabitable);
   const toggleHabitable = useStore((s) => s.toggleHabitable);
   const setPaused = useStore((s) => s.setPaused);
+  const worldReadOnly = useStore((s) => s.worldReadOnly);
   const setCameraLock = useStore((s) => s.setCameraLock);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const moonParentId = useMoonDraft((s) => s.parentId);
@@ -298,18 +302,18 @@ export const ControlBar: React.FC<{ creationMode: BodyType | null, onReturnToMen
 
         {/* History */}
         <div className="flex items-center gap-0 md:gap-1 shrink-0">
-          <button onClick={onUndo} disabled={!canUndo} data-testid="control-undo" title="Undo" aria-label="Undo" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 ${canUndo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
-          <button onClick={onRedo} disabled={!canRedo} data-testid="control-redo" title="Redo" aria-label="Redo" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors rotate-180 active:scale-90 ${canRedo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          <button onClick={onUndo} disabled={worldReadOnly || !canUndo} data-testid="control-undo" title="Undo" aria-label="Undo" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 ${!worldReadOnly && canUndo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
+          <button onClick={onRedo} disabled={worldReadOnly || !canRedo} data-testid="control-redo" title="Redo" aria-label="Redo" className={`touch-target p-1.5 md:p-2 rounded-full transition-colors rotate-180 active:scale-90 ${!worldReadOnly && canRedo ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-slate-700 cursor-not-allowed'}`}><RotateCcw size={16} className="md:w-[18px] md:h-[18px]" /></button>
         </div>
 
         <div className={divider}></div>
 
         {/* Time */}
         <div className="order-first md:order-none basis-full md:basis-auto flex items-center gap-2 md:gap-3 min-w-0">
-          <button onClick={() => setPaused(!paused)} data-testid="control-pause" aria-label={paused ? 'Resume' : 'Pause'} title={paused ? 'Resume' : 'Pause'} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 shrink-0 ${paused ? 'bg-orange-500/20 text-orange-400' : 'hover:bg-white/10 text-slate-200'}`}>
+          <button onClick={() => setPaused(!paused)} disabled={worldReadOnly} data-testid="control-pause" aria-label={paused ? 'Resume' : 'Pause'} title={paused ? 'Resume' : 'Pause'} className={`touch-target p-1.5 md:p-2 rounded-full transition-colors active:scale-90 shrink-0 ${worldReadOnly ? 'text-slate-700 cursor-not-allowed' : paused ? 'bg-orange-500/20 text-orange-400' : 'hover:bg-white/10 text-slate-200'}`}>
             {paused ? <Play size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" /> : <Pause size={18} className="md:w-[20px] md:h-[20px]" fill="currentColor" />}
           </button>
-          <TimeScrubber speed={speed} state={timeState} effectiveSpeed={effectiveSpeed} resolvingEncounter={resolvingEncounter} />
+          <TimeScrubber speed={speed} state={timeState} effectiveSpeed={effectiveSpeed} resolvingEncounter={resolvingEncounter} disabled={worldReadOnly} />
           <span
             data-testid="control-speed-readout"
             className="flex flex-col items-end justify-center shrink-0 min-w-[3.75rem] text-[11px] md:text-sm font-mono font-bold tabular-nums transition-colors duration-200 leading-tight"
