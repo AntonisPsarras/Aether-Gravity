@@ -27,7 +27,7 @@ The simulation is the point. Every quantity the app shows you — density, surfa
 
 Everything runs locally. The production app has no accounts, analytics, ads, or remote crash reporting. The web version downloads bundled assets from its hosting origin; Android packages those assets locally. External links open only when selected. Your universes live in your browser's storage or on your device.
 
-![The Solar System preset with both desktop rails](docs/screenshots/solar-system.png)
+![The Solar System preset with the desktop outliner](docs/screenshots/solar-system.png)
 
 ### Core capabilities
 
@@ -122,11 +122,11 @@ The Inspector separates **primaries** (the degrees of freedom you set) from **de
 |---|---|---|
 | **The Solar System** | Sun, 8 planets, Pluto, 11 major moons | NASA/JPL planetary fact sheets, J2000 elements |
 | **TRAPPIST-1** | Ultracool dwarf plus seven terrestrial planets | Agol et al. 2021 |
-| **Procedural frontier** | A generated star and planetary family | — |
+| **Random system** | A generated star and planetary family | — |
 
 The Inspector derives orbital periods from instantaneous two-body elements; numerical orbit tests independently check period consistency. Analytic moon rails use prescribed Kepler elements and exert no gravitational force.
 
-![The universe creator with all three origins](docs/screenshots/universe-creator.png)
+![The universe creator with Random system, Solar System, and TRAPPIST-1](docs/screenshots/universe-creator.png)
 
 ---
 
@@ -143,8 +143,8 @@ The mode switch changes **presentation and pacing only**. It never changes the p
 | **Inspector** | Advanced-audience fields hidden; Composition and Dynamics sections collapsed out | Every section |
 
 <table>
-<tr><td width="50%"><img src="docs/screenshots/beginner-mode.png" alt="Beginner mode"><br><em>Beginner: inflated bodies, exaggerated wells</em></td>
-<td width="50%"><img src="docs/screenshots/advanced-mode.png" alt="Advanced mode"><br><em>Advanced: true scale, true-ratio potential, extra outliner controls</em></td></tr>
+<tr><td width="50%"><img src="docs/screenshots/beginner-mode.png" alt="Beginner mode creation dock"><br><em>Beginner: 7 creation tools, inflated bodies, exaggerated wells</em></td>
+<td width="50%"><img src="docs/screenshots/advanced-mode.png" alt="Advanced mode creation dock"><br><em>Advanced: all 14 creation tools, true scale, true-ratio potential</em></td></tr>
 </table>
 
 Existing bodies are never removed by a mode change — a pulsar you made in Advanced mode keeps working, keeps its Inspector entry, and stays saveable in Beginner mode. The preference is stored globally and seeded from whether you have finished the tutorial.

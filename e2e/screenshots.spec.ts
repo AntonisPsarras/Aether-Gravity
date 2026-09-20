@@ -16,6 +16,10 @@ const OUT = 'docs/screenshots';
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
+/** Body-type tools offered in Beginner vs Advanced (Select + Gen are extra). */
+const BEGINNER_TOOL_COUNT = 7;
+const ADVANCED_TOOL_COUNT = 14;
+
 test.skip(
   !process.env.CAPTURE_SCREENSHOTS,
   'Set CAPTURE_SCREENSHOTS=1 to regenerate the README images.',
@@ -55,6 +59,25 @@ async function bodyIdByName(page: Page, name: string): Promise<string> {
   return id;
 }
 
+/**
+ * Make sure the creation dock is expanded and shows the expected body-type
+ * count so Beginner (7) vs Advanced (14) is visible in the README shots.
+ */
+async function ensureCreationDockVisible(page: Page, expectedToolCount: number): Promise<void> {
+  const toolbar = page.getByTestId('creation-toolbar');
+  await expect(toolbar).toBeVisible();
+
+  const expandBtn = page.getByRole('button', { name: 'Expand creation toolbar' });
+  if (await expandBtn.isVisible()) {
+    await expandBtn.click();
+  }
+  await expect(toolbar).toHaveAttribute('data-expanded', 'true');
+
+  // Select + N body tools + Gen
+  const buttons = toolbar.locator('.creation-toolbar-tools > button');
+  await expect(buttons).toHaveCount(expectedToolCount + 2);
+}
+
 test('main menu', async ({ page }) => {
   await page.setViewportSize(DESKTOP);
   await page.goto('/?e2e=1&onboarding=seen');
@@ -69,6 +92,14 @@ test('universe creator with the real-system presets', async ({ page }) => {
   await page.goto('/?e2e=1&onboarding=seen');
   await page.getByTestId('menu-new-universe').click();
   await expect(page.getByTestId('menu-composer')).toBeVisible();
+
+  // Live origins: Random system + Solar System + TRAPPIST-1 (no Alpha Centauri).
+  await expect(page.getByTestId('menu-preset-procedural')).toBeVisible();
+  await expect(page.getByTestId('menu-preset-procedural')).toContainText('Random system');
+  await expect(page.getByTestId('menu-preset-solar-system')).toBeVisible();
+  await expect(page.getByTestId('menu-preset-trappist-1')).toBeVisible();
+  await expect(page.getByTestId('menu-preset-alpha-centauri')).toHaveCount(0);
+
   await page.waitForTimeout(1200);
   await page.screenshot({ path: `${OUT}/universe-creator.png` });
 });
@@ -98,13 +129,16 @@ test('beginner and advanced creation docks', async ({ page }) => {
   await page.getByTestId('open-settings').click();
   await page.getByTestId('ui-mode-beginner').click();
   await page.getByTestId('settings-close').click();
-  await page.waitForTimeout(1500);
+  await ensureCreationDockVisible(page, BEGINNER_TOOL_COUNT);
+  // Extra settle so exaggerated beginner wells read clearly in the frame.
+  await page.waitForTimeout(2000);
   await page.screenshot({ path: `${OUT}/beginner-mode.png` });
 
   await page.getByTestId('open-settings').click();
   await page.getByTestId('ui-mode-advanced').click();
   await page.getByTestId('settings-close').click();
-  await page.waitForTimeout(1500);
+  await ensureCreationDockVisible(page, ADVANCED_TOOL_COUNT);
+  await page.waitForTimeout(2000);
   await page.screenshot({ path: `${OUT}/advanced-mode.png` });
 });
 
@@ -114,24 +148,30 @@ test('black hole created with the slingshot gesture', async ({ page }) => {
   await waitForSimulationReady(page);
   await settle(page, 1500);
 
-  // The creation dock is centred in the unobstructed canvas between the rails.
-  await page.getByRole('button', { name: 'Hole' }).click();
+  // Clear the left rail and freeze time so the placement ray hits empty space.
+  await page.evaluate(() => {
+    window.__AETHER_TEST__!.setPaused(true);
+    (window as any).__AETHER_VISUAL_TEST__.getStore().setOutlinerOpen(false);
+  });
 
-  // Press to place, drag to aim, release to launch.
-  const canvas = page.locator('.canvas-viewport');
+  await page.getByRole('button', { name: 'Hole' }).click();
+  await expect(page.getByText(/BLACK HOLE/i)).toBeVisible();
+
+  // Place off-centre — the star sits near the middle of the minimal fixture.
+  const canvas = page.locator('[data-testid="sim-canvas"] canvas');
   const box = (await canvas.boundingBox())!;
-  const cx = box.x + box.width * 0.42;
-  const cy = box.y + box.height * 0.5;
+  const cx = box.x + box.width * 0.65;
+  const cy = box.y + box.height * 0.4;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.mouse.move(cx + 90, cy + 40, { steps: 12 });
+  await page.mouse.move(cx + 120, cy + 55, { steps: 16 });
   await page.mouse.up();
 
   await expect
-    .poll(() => page.evaluate(() => window.__AETHER_TEST__!.getStore().bodyCount))
+    .poll(() => page.evaluate(() => window.__AETHER_TEST__!.getStore().bodyCount), { timeout: 10_000 })
     .toBeGreaterThan(3);
 
-  await settle(page, 2500);
+  await settle(page, 3000);
   await page.screenshot({ path: `${OUT}/black-hole.png` });
 });
 
