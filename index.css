@@ -586,6 +586,15 @@ canvas {
   scroll-snap-type: y proximity;
 }
 
+/* Opening the creator remounts a tall panel where the landing CTA was.
+   Chromium overflow-anchoring and proximity snap otherwise pin the scroller
+   onto the library one viewport down. Keep the composer in the hero. */
+.main-menu-scroll:has(.menu-hero.is-composing) {
+  overflow-anchor: none;
+  scroll-snap-type: none;
+  scroll-behavior: auto;
+}
+
 /* CSS-only impression of the WebGL black hole, anchored where MenuBlackHole
    places it (layoutFor), for the lazy-load frame and after a lost context. */
 .menu-space-fallback {

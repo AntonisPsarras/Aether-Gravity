@@ -1,30 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { SHEET_DETENTS, type SheetDetent } from '../../utils/store';
+import { type SheetDetent } from '../../utils/store';
+import {
+  detentHeight,
+  resolveSheetRelease,
+} from '../../utils/sheetDetents';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-
-/** Fraction of the dynamic viewport each detent occupies. */
-export const DETENT_FRACTION: Record<SheetDetent, number> = {
-  peek: 0.34,
-  half: 0.60,
-  full: 0.86,
-};
-
-/**
- * `peek` is capped in absolute terms as well as proportionally: its whole job
- * is to show the header and the key-stat strip, and a third of a tall phone is
- * considerably more than that — the surplus reads as a dead grey band. The
- * fraction still governs on short viewports, where 12rem would be too much.
- */
-export const PEEK_MAX_PX = 192; // 12rem
-
-/** Resolved pixel height of a detent for a given viewport height. */
-function detentHeight(detent: SheetDetent, vh: number): number {
-  const proportional = DETENT_FRACTION[detent] * vh;
-  return detent === 'peek' ? Math.min(proportional, PEEK_MAX_PX) : proportional;
-}
-
-/** Fling speed above which the drag direction, not the position, picks the detent. */
-const FLING_PX_PER_MS = 0.5;
 
 /**
  * The same quantity the CSS detents are written against.
@@ -38,24 +18,6 @@ const FLING_PX_PER_MS = 0.5;
 function viewportHeight(): number {
   if (typeof window === 'undefined') return 800;
   return window.visualViewport?.height ?? window.innerHeight;
-}
-
-/** Detent whose height is closest to `height` pixels. */
-function nearestDetent(height: number, vh: number): SheetDetent {
-  let best: SheetDetent = 'peek';
-  let bestDelta = Infinity;
-  for (const d of SHEET_DETENTS) {
-    const delta = Math.abs(detentHeight(d, vh) - height);
-    if (delta < bestDelta) { bestDelta = delta; best = d; }
-  }
-  return best;
-}
-
-/** One step toward the top / bottom of the detent ladder. */
-function stepDetent(from: SheetDetent, direction: 1 | -1): SheetDetent {
-  const i = SHEET_DETENTS.indexOf(from);
-  const next = Math.max(0, Math.min(SHEET_DETENTS.length - 1, i + direction));
-  return SHEET_DETENTS[next];
 }
 
 export interface BottomSheetHandleProps {
@@ -95,7 +57,18 @@ export function useBottomSheet({
   // the three call sites used to sample it independently, so a viewport change
   // mid-drag silently moved the target geometry — and `visualViewport.height`
   // also shrinks when the software keyboard opens over an inspector field.
-  const drag = useRef({ active: false, startY: 0, startHeight: 0, lastY: 0, lastT: 0, velocity: 0, vh: 0 });
+  // `liveHeight` lives on the ref so pointerup can finish with the last move
+  // even if React has not committed that state's render yet.
+  const drag = useRef({
+    active: false,
+    startY: 0,
+    startHeight: 0,
+    lastY: 0,
+    lastT: 0,
+    velocity: 0,
+    vh: 0,
+    liveHeight: 0,
+  });
 
   // A detent change from elsewhere (the back handler, say) must cancel a drag.
   useEffect(() => { if (!enabled) setDragHeight(null); }, [enabled]);
@@ -120,31 +93,34 @@ export function useBottomSheet({
     if (target.closest('button, input, select, textarea, [data-no-drag]')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const vh = viewportHeight();
+    const startHeight = detentHeight(detent, vh);
     drag.current = {
       active: true,
       startY: e.clientY,
-      startHeight: detentHeight(detent, vh),
+      startHeight,
       lastY: e.clientY,
-      lastT: performance.now(),
+      lastT: e.timeStamp,
       velocity: 0,
       vh,
+      liveHeight: startHeight,
     };
-    setDragHeight(drag.current.startHeight);
+    setDragHeight(startHeight);
   }, [enabled, detent]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!drag.current.active) return;
-    const now = performance.now();
-    const dt = now - drag.current.lastT;
+    const dt = e.timeStamp - drag.current.lastT;
     if (dt > 0) drag.current.velocity = (e.clientY - drag.current.lastY) / dt;
     drag.current.lastY = e.clientY;
-    drag.current.lastT = now;
+    drag.current.lastT = e.timeStamp;
 
     const vh = drag.current.vh;
     // Dragging down shrinks the sheet. A little rubber-band above `full`.
     const raw = drag.current.startHeight - (e.clientY - drag.current.startY);
     const max = detentHeight('full', vh);
-    setDragHeight(raw > max ? max + (raw - max) * 0.25 : Math.max(0, raw));
+    const height = raw > max ? max + (raw - max) * 0.25 : Math.max(0, raw);
+    drag.current.liveHeight = height;
+    setDragHeight(height);
   }, []);
 
   const finish = useCallback((e: React.PointerEvent) => {
@@ -153,26 +129,24 @@ export function useBottomSheet({
     if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    const height = dragHeight ?? drag.current.startHeight;
+    const height = drag.current.liveHeight;
     const vh = drag.current.vh;
+    const velocity = drag.current.velocity;
     setDragHeight(null);
 
-    // Dragged well below the smallest detent: dismiss.
-    if (height < detentHeight('peek', vh) * 0.6) {
+    const result = resolveSheetRelease({
+      height,
+      velocity,
+      from: detent,
+      vh,
+      reducedMotion,
+    });
+    if (result.action === 'dismiss') {
       onDismiss();
       return;
     }
-
-    // A deliberate fling moves one detent in the direction of travel. Under
-    // reduced motion, fall back to nearest-detent so the result is
-    // deterministic rather than gesture-speed dependent.
-    const v = drag.current.velocity;
-    if (!reducedMotion && Math.abs(v) > FLING_PX_PER_MS) {
-      onDetentChange(stepDetent(detent, v > 0 ? -1 : 1));
-      return;
-    }
-    onDetentChange(nearestDetent(height, vh));
-  }, [dragHeight, detent, onDetentChange, onDismiss, reducedMotion]);
+    onDetentChange(result.detent);
+  }, [detent, onDetentChange, onDismiss, reducedMotion]);
 
   const handleProps: BottomSheetHandleProps = {
     onPointerDown,

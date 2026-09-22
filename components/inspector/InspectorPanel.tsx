@@ -14,7 +14,8 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 
 import { Collapsible } from '../ui/Collapsible';
 import { TabBar, tabDirection, type TabItem } from '../ui/Tabs';
-import { useBottomSheet, DETENT_FRACTION, PEEK_MAX_PX } from '../ui/Sheet';
+import { useBottomSheet } from '../ui/Sheet';
+import { DETENT_FRACTION, PEEK_MAX_PX } from '../../utils/sheetDetents';
 import { cn } from '../ui/cn';
 import { InspectorProvider, LOCK_SETS, type InspectorCtx } from './InspectorContext';
 import { InspectorHeader } from './InspectorHeader';

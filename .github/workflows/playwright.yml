@@ -18,7 +18,7 @@ jobs:
   test:
     name: Unit & E2E Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     env:
       CI: true
@@ -62,6 +62,9 @@ jobs:
 
       - name: Android source manifest gate
         run: node scripts/android-manifest-gate.mjs
+
+      - name: Secret pattern scan
+        run: node scripts/secret-scan.mjs
 
       - name: Run Playwright E2E tests
         run: npm run test:e2e

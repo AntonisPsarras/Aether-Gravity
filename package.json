@@ -24,6 +24,7 @@
     "test:perf": "playwright test e2e/perf.spec.ts",
     "test:perf:soak": "playwright test e2e/perf.spec.ts",
     "audit:gate": "node scripts/audit-gate.mjs",
+    "secret:scan": "node scripts/secret-scan.mjs",
     "android:manifest-gate": "node scripts/android-manifest-gate.mjs"
   },
   "dependencies": {

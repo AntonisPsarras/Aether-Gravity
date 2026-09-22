@@ -255,6 +255,7 @@ Vite serves the app at **`http://127.0.0.1:3000`**.
 | `npm run test:e2e:ui` | Playwright in interactive UI mode |
 | `npm run test:perf` | Frame-rate and allocation regressions; stress coverage requires `PERF_SOAK_MS=10000` or greater |
 | `npm run audit:gate` | Registry, integrity, no sharp/assets, and allowlisted npm advisories |
+| `npm run secret:scan` | Fail if tracked files look like keys, keystores, or service-account JSON |
 | `npm run android:manifest-gate` | Source (and merged, if built) Android manifest has no INTERNET/cleartext |
 | `npm run android:init` | Add the Capacitor Android platform (first time only) |
 | `npm run android:sync` | Build and sync the web assets into `android/` |
@@ -282,7 +283,7 @@ The spec skips itself without that environment variable, so it stays out of the 
 
 ## Testing
 
-For a release candidate, run `npm run lint:deadcode`, `npm test`, `npm run build`, `node scripts/production-smoke.mjs`, and `npm run audit:gate`. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
+For a release candidate, run `npm run lint:deadcode`, `npm test`, `npm run build`, `node scripts/production-smoke.mjs`, `npm run audit:gate`, and `npm run secret:scan`. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
 
 - **Unit (Vitest, under `utils/`):** integrator fidelity and energy behaviour, unit-system self-consistency, orbital-element conversions, the Kepler solver, relativity formulas (Schwarzschild, Kerr, ISCO, photon sphere, disk efficiency, redshift), mass–radius and classification relations, habitability, all three real-system presets, input bounds, world storage and migration, display-mode gating, and onboarding state.
 - **End-to-end (Playwright, `e2e/`):** smoke, simulation controls with a bounded energy-drift assertion, layout across breakpoints including a ≥44 px touch-target check, main menu and world creation, onboarding, inspector edit-locking against the physics sync, shader compilation and WebGL context loss/restore, and an FPS soak across four scene profiles.

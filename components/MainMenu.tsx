@@ -519,12 +519,24 @@ const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id
     const draggedWorldRef = useRef<string | null>(null);
 
     useLayoutEffect(() => {
-        if (isCreating) {
-            // Replacing the landing content with the taller composer can make
-            // Chromium preserve the removed button as a scroll anchor. Reset
-            // after the creator has committed so it always opens in the hero.
-            scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-        }
+        if (!isCreating) return;
+        const node = scrollRef.current;
+        if (!node) return;
+        const reset = () => node.scrollTo({ top: 0, behavior: 'auto' });
+        reset();
+        node.querySelector<HTMLInputElement>('#new-universe-name, #new-folder-name')
+            ?.focus({ preventScroll: true });
+        // Autofocus / late overflow-anchoring can still run after this layout
+        // effect. Re-assert the hero origin on the next two frames.
+        let inner = 0;
+        const outer = requestAnimationFrame(() => {
+            reset();
+            inner = requestAnimationFrame(reset);
+        });
+        return () => {
+            cancelAnimationFrame(outer);
+            cancelAnimationFrame(inner);
+        };
     }, [isCreating]);
 
     useEffect(() => {
@@ -731,7 +743,6 @@ const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id
                                                     onChange={(event) => { setNewWorldName(event.target.value); if (error) setError(null); }}
                                                     onKeyDown={(event) => { if (event.key === 'Enter') handleCreateWorld(); if (event.key === 'Escape') closeCreator(); }}
                                                     placeholder={`${selectedSystem?.name ?? 'Random System'} Universe`}
-                                                    autoFocus
                                                     className={error ? 'has-error' : ''}
                                                 />
                                                 <button onClick={handleCreateWorld} data-testid="menu-launch-universe" className="menu-primary-button touch-target"><Rocket size={18} /> Launch universe</button>
@@ -749,7 +760,7 @@ const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id
                                         <p className="menu-step-copy">Group related simulations without changing their local save data.</p>
                                         <div className="menu-name-row mt-6">
                                             <label className="sr-only" htmlFor="new-folder-name">Folder name</label>
-                                            <input id="new-folder-name" type="text" value={newWorldName} maxLength={64} onChange={(event) => setNewWorldName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleCreateFolder(); if (event.key === 'Escape') closeCreator(); }} placeholder={`Collection ${folders.length + 1}`} autoFocus />
+                                            <input id="new-folder-name" type="text" value={newWorldName} maxLength={64} onChange={(event) => setNewWorldName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleCreateFolder(); if (event.key === 'Escape') closeCreator(); }} placeholder={`Collection ${folders.length + 1}`} />
                                             <button onClick={handleCreateFolder} className="menu-primary-button touch-target"><Folder size={18} /> Create collection</button>
                                         </div>
                                         {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}

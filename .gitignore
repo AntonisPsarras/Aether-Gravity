@@ -70,6 +70,7 @@ android/app/keystore.properties
 
 # Agent / local IDE
 .claude/
+.cursor/
 
 # iOS / CocoaPods (not shipped from this repo)
 ios/**/build/
@@ -98,11 +99,15 @@ coverage/
 *.tar.gz
 *.7z
 *.p12
+*.p8
+*.pem
 *.mobileprovision
 **/keystore.properties
 **/signing.properties
 **/google-services.json
 **/GoogleService-Info.plist
+*credentials*.json
+*-service-account.json
 android/**/.kotlin/
 android/**/local.properties
 

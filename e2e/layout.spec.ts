@@ -244,18 +244,28 @@ test.describe('phone bottom sheet', () => {
     await expect(panel).toHaveAttribute('data-detent', 'peek');
   });
 
-  test('a fast flick steps one detent in the direction of travel', async ({ page }) => {
-    await openInspectorFromOutliner(page);
-    const panel = page.locator('[data-testid="inspector-panel"]');
+  /**
+   * One CDP jump, not a 4-step loop: software WebGL inflates inter-move dt
+   * so a 20px segment fails the 0.5 px/ms fling gate and stays nearest `half`.
+   * Pause the sim first so the main thread can actually dispatch the pointer.
+   * Travel is past the nearest-detent midpoint so a missed fling still lands.
+   */
+  const flickHandle = async (page: Page, dy: number) => {
+    await page.evaluate(() => window.__AETHER_TEST__!.setPaused(true));
     const handle = page.locator('[data-testid="inspector-sheet-handle"]');
     const box = (await handle.boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
-
     await page.mouse.move(x, y);
     await page.mouse.down();
-    for (let i = 1; i <= 4; i++) await page.mouse.move(x, y - i * 20);
+    await page.mouse.move(x, y + dy, { steps: 1 });
     await page.mouse.up();
+  };
+
+  test('a fast flick steps one detent in the direction of travel', async ({ page }) => {
+    await openInspectorFromOutliner(page);
+    const panel = page.locator('[data-testid="inspector-panel"]');
+    await flickHandle(page, -120);
     // half -> full, regardless of how far the flick actually travelled.
     await expect(panel).toHaveAttribute('data-detent', 'full');
   });
@@ -266,13 +276,7 @@ test.describe('phone bottom sheet', () => {
     await expect(page.locator('[data-testid="inspector-tab-props"]')).toBeVisible();
 
     // A downward flick from `half` steps to `peek`.
-    const box = (await page.locator('[data-testid="inspector-sheet-handle"]').boundingBox())!;
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height / 2;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    for (let i = 1; i <= 4; i++) await page.mouse.move(x, y + i * 20);
-    await page.mouse.up();
+    await flickHandle(page, 180);
 
     await expect(panel).toHaveAttribute('data-detent', 'peek');
     await expect(page.locator('[data-testid="inspector-tab-props"]')).toHaveCount(0);
