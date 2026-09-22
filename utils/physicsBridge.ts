@@ -1,6 +1,6 @@
 import type { MutableRefObject } from 'react';
 import type { CelestialBody } from '../types';
-import { sanitizeCelestialBody, sanitizeProperties } from './physicsBounds';
+import { sanitizeCelestialBody } from './physicsBounds';
 import { resetVerletCache } from './physicsSoA';
 
 let bodiesRef: MutableRefObject<CelestialBody[]> | null = null;
@@ -18,21 +18,6 @@ export const clonePhysicsBody = (b: CelestialBody): CelestialBody => ({
   properties: b.properties ? { ...b.properties } : undefined,
   orbit: b.orbit ? { ...b.orbit } : undefined,
 });
-export const patchPhysicsBody = (id: string, updates: Partial<CelestialBody>) => {
-  const list = bodiesRef?.current;
-  const index = list?.findIndex(b => b.id === id) ?? -1;
-  if (!list || index < 0) return;
-  const prev = list[index];
-  const next = sanitizeCelestialBody({
-    ...prev, ...updates,
-    properties: updates.properties ? sanitizeProperties({ ...prev.properties, ...updates.properties }) : prev.properties,
-  });
-  const changedForce = next.mass !== prev.mass || next.radiusKm !== prev.radiusKm ||
-    !next.position.equals(prev.position) || next.parentId !== prev.parentId || next.orbit !== prev.orbit ||
-    next.properties?.physicalCollisions !== prev.properties?.physicalCollisions;
-  Object.assign(prev, next);
-  if (changedForce || updates.velocity) resetVerletCache();
-};
 export const replacePhysicsBodies = (bodies: readonly CelestialBody[]) => {
   resetVerletCache();
   if (bodiesRef) {

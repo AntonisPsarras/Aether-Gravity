@@ -10,7 +10,6 @@ import {
 } from '../../utils/relativity';
 import { displayDiskTemperatureK } from '../../utils/bodyAppearance';
 import { relativityChunk } from '../Planet/PlanetShaders';
-import type { RenderProfile } from '../../utils/graphicsQuality';
 import { environmentReflectionGLSL, useEnvironment } from '../Environment/EnvironmentContext';
 
 export type BlackHoleRigProps = {
@@ -21,7 +20,6 @@ export type BlackHoleRigProps = {
   onSelect: () => void;
   interactive: boolean;
   lensTexture?: THREE.Texture | null;
-  profile: RenderProfile;
 };
 
 const horizonVertex = `
@@ -54,20 +52,6 @@ void main() {
   vec3 rimGlow = u_rimColor * rim * (0.6 + u_accretion * 0.8) * pulse;
   vec3 core = vec3(0.0);
   gl_FragColor = vec4(core + rimGlow, 1.0);
-}
-`;
-
-const horizonFragmentLow = `
-precision highp float;
-uniform float u_spin;
-uniform vec3 u_rimColor;
-varying vec3 vNormal;
-varying vec3 vViewPosition;
-void main() {
-  vec3 normal = normalize(vNormal);
-  vec3 viewDir = normalize(vViewPosition);
-  float rim = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-  gl_FragColor = vec4(u_rimColor * rim * (0.35 + u_spin * 0.25), 1.0);
 }
 `;
 
@@ -275,7 +259,6 @@ export default function BlackHoleRig({
   onSelect,
   interactive,
   lensTexture,
-  profile,
 }: BlackHoleRigProps): React.ReactElement {
   const environment = useEnvironment();
   // Fill-rate knob for the accretion disk, replacing the old billboard swap.
@@ -403,7 +386,7 @@ export default function BlackHoleRig({
     return () => registerBlackHoleVisual(obj, false);
   }, []);
 
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     if (!environment.reducedMotion) decorativeTime.current += Math.min(delta, 0.05);
     const t = decorativeTime.current;
 
@@ -477,19 +460,12 @@ export default function BlackHoleRig({
    *    sphere, which is the wrong shape at every spin.
    */
   const rgPerHorizon = 1 / (1 + Math.sqrt(Math.max(0, 1 - spin * spin)));
-  const iscoRg = iscoRadiusRg(spin, true);
 
   // The disk's outer extent is held constant in gravitational radii, so it does
   // not appear to shrink merely because the horizon does. The 2 * rgPerHorizon
   // factor is exactly 1 at zero spin, so a static hole renders identically to
   // before this change.
   const diskScale = radius * 2.8 * (2 * rgPerHorizon);
-
-  // Inner edge of the disk, as a fraction of the quad. Anchored so a static
-  // hole keeps its existing 0.20 hole and scaled by the ISCO's real motion:
-  // 6 r_g when static, 1.24 r_g at the Thorne limit, so a rapidly spinning
-  // hole's disk reaches almost to the horizon.
-  const diskInnerFraction = Math.max(0.03, 0.20 * (iscoRg / 6));
 
   // Equatorial static limit is always R_s = 2 r_g; the poles sit on the
   // horizon. Expressed as a multiple of the drawn horizon radius.

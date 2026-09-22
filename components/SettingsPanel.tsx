@@ -102,7 +102,7 @@ const Group: React.FC<{ title: string; children: React.ReactNode }> = ({ title, 
   </section>
 );
 
-export const SettingsPanel: React.FC = () => {
+const SettingsPanel: React.FC = () => {
   const bodies = useStore(s => s.bodies);
   const paused = useStore(s => s.paused);
   const tier = useDeviceTier();

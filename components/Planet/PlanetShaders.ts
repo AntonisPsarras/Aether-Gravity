@@ -275,7 +275,7 @@ float specularGGX(vec3 n, vec3 v, vec3 l, float roughness, float f0) {
 export { relativityChunk };
 
 // --- ATMOSPHERE SCATTERING MATERIAL ---
-export const PlanetAtmosphereMaterial = shaderMaterial(
+const PlanetAtmosphereMaterial = shaderMaterial(
     {
         uColor: new THREE.Color(0.5, 0.7, 1.0),
         uBoundingRadius: 1.0,
@@ -404,7 +404,7 @@ export const PlanetAtmosphereMaterial = shaderMaterial(
 );
 
 // --- SELECTION HALO MATERIAL ---
-export const SelectionHaloMaterial = shaderMaterial(
+const SelectionHaloMaterial = shaderMaterial(
     { uColor: new THREE.Color(0.2, 1.0, 0.5), uTime: 0 },
     `
   varying vec3 vNormal;
@@ -433,7 +433,7 @@ export const SelectionHaloMaterial = shaderMaterial(
 );
 
 // --- STAR SURFACE MATERIAL ---
-export const StarSurfaceMaterial = shaderMaterial(
+const StarSurfaceMaterial = shaderMaterial(
     {
         uTime: 0,
         uColor: new THREE.Color(1, 0.8, 0),
@@ -978,7 +978,7 @@ void main() {
  * skips the mesh entirely on the low tier and the surface shader draws a flat
  * cloud bed instead.
  */
-export const PlanetCloudMaterial = shaderMaterial(
+const PlanetCloudMaterial = shaderMaterial(
     {
         uTime: 0,
         uCover: 0.4,
@@ -1083,7 +1083,7 @@ void main() {
  * shader works in that unit throughout, which makes the planet-shadow test a
  * ray against the unit sphere.
  */
-export const PlanetRingMaterial = shaderMaterial(
+const PlanetRingMaterial = shaderMaterial(
     {
         uTime: 0,
         uInner: 1.4,
@@ -1187,7 +1187,7 @@ void main() {
 }`
 );
 
-export const PlanetTerrainMaterial = shaderMaterial(
+const PlanetTerrainMaterial = shaderMaterial(
     {
         uTime: 0,
         uColor1: new THREE.Color(1, 1, 1),
@@ -1254,7 +1254,7 @@ export const PlanetTerrainMaterial = shaderMaterial(
   `
 );
 
-export const NeutronStarMaterial = shaderMaterial(
+const NeutronStarMaterial = shaderMaterial(
     {
         uColor: new THREE.Color(0.2, 0.5, 1.0),
         uMagneticField: 1.0,
@@ -1286,7 +1286,7 @@ export const NeutronStarMaterial = shaderMaterial(
     `
 );
 
-export const RelativisticDiskMaterial = shaderMaterial(
+const RelativisticDiskMaterial = shaderMaterial(
     {
         uColorInner: new THREE.Color(1.0, 0.8, 0.2),
         uColorOuter: new THREE.Color(0.6, 0.1, 0.05),
@@ -1325,7 +1325,7 @@ export const RelativisticDiskMaterial = shaderMaterial(
     `
 );
 
-export const KerrEventHorizonMaterial = shaderMaterial(
+const KerrEventHorizonMaterial = shaderMaterial(
     {
         uColor: new THREE.Color(0, 0, 0),
         uRimColor: new THREE.Color(1.0, 0.5, 0.0),
@@ -1358,7 +1358,7 @@ export const KerrEventHorizonMaterial = shaderMaterial(
     `
 );
 
-export const ErgosphereMaterial = shaderMaterial(
+const ErgosphereMaterial = shaderMaterial(
     {
         uColor: new THREE.Color(0.2, 0.4, 1.0),
         uSpin: 0.0,

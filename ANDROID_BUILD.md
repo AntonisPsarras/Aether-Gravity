@@ -52,4 +52,8 @@ Use the publisher's existing signing identity through Android Studio or an exter
 
 Before release, test the **signed** AAB/APK on low-end and representative Android hardware: launch offline, create/edit/save/reopen, pause/background/resume, Android Back, rotation, WebView context loss, touch targets, screen reader, large text, storage-full recovery, and a long session. Verify that device/browser locking allows editing on the target WebView. Without Web Locks the app deliberately opens read-only.
 
-See [the readiness report](docs/PRODUCTION_READINESS.md) for measured checks and remaining publisher-only gates (Play upload, GitHub branch protection, physical devices).
+## Final publisher checklist
+
+- Run the source checks documented in the root README and confirm the signed artifact passes the device gate above.
+- Upload the signed AAB with the current `versionCode` / `versionName`, then re-check the Data safety answers and hosted privacy policy.
+- Keep the upload key and Play service credentials outside the repository; confirm repository branch protection, secret scanning, and owner 2FA separately in GitHub.

@@ -1,4 +1,3 @@
-import React from 'react';
 import { useStore } from '../../../utils/store';
 
 /** Iron / silicate / water fraction. See NumberInput on the edit-lock contract. */

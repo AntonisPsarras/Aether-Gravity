@@ -4,7 +4,7 @@ export const PRIVACY_POLICY_URL =
 
 export const PRIVACY_POLICY_LAST_UPDATED = 'September 14, 2026';
 
-export const PRIVACY_CONTACT_EMAIL = 'antonpsar10@gmail.com';
+const PRIVACY_CONTACT_EMAIL = 'antonpsar10@gmail.com';
 
 /**
  * Icon identifier for a section — kept as a plain string (rather than a JSX

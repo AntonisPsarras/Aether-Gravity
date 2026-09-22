@@ -46,11 +46,6 @@ export function useMediaQuery(query: string): boolean {
 const PHONE_QUERY = `(max-width: ${BREAKPOINTS.phone}px)`;
 const TABLET_QUERY = `(min-width: ${BREAKPOINTS.phone + 1}px) and (max-width: ${BREAKPOINTS.tablet}px)`;
 
-/** True below the `md` boundary — the bottom-sheet layout. */
-export function useIsPhone(): boolean {
-  return useMediaQuery(PHONE_QUERY);
-}
-
 /** Current layout tier. Desktop (>= 1280) is the only tier with docked rails. */
 export function useBreakpoint(): Breakpoint {
   const isPhone = useMediaQuery(PHONE_QUERY);

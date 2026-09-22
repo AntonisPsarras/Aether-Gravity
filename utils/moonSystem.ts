@@ -29,12 +29,11 @@
 
 import * as THREE from 'three';
 import type { CelestialBody, OrbitalElements } from '../types';
-import { G_AETHER, kmToDist, visualRadiusFromKm } from './units';
+import { kmToDist, visualRadiusFromKm } from './units';
 import { visualScaleFor, bodyVisualRadius, type UiMode } from './displayMode';
 import {
   elementsFromState,
   gravitationalParameter,
-  meanMotion,
   periodFromElements,
   propagateOrbit,
 } from './keplerOrbit';
@@ -136,7 +135,7 @@ export const hillRadius = (parent: CelestialBody, grandparent: CelestialBody | n
  * Convert a satellite back into a free N-body body, giving it the velocity it
  * actually had on its Kepler orbit so the transition is continuous.
  */
-export const promoteToFreeBody = (satellite: CelestialBody): void => {
+const promoteToFreeBody = (satellite: CelestialBody): void => {
   satellite.parentId = undefined;
   satellite.orbit = undefined;
 };
@@ -218,15 +217,3 @@ export const promoteEscapedMoons = (
 };
 
 const EMPTY_IDS: string[] = [];
-
-/** Mean motion in radians per year, for UI read-outs. */
-export const satelliteMeanMotion = (
-  satellite: CelestialBody,
-  parent: CelestialBody,
-): number =>
-  satellite.orbit
-    ? meanMotion(satellite.orbit.a, gravitationalParameter(parent.mass, satellite.mass))
-    : 0;
-
-/** Gravitational parameter helper re-exported for callers that need it. */
-export { gravitationalParameter, G_AETHER };

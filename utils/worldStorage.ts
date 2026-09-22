@@ -64,9 +64,6 @@ const corrupt: (key: string, message: string) => never = (key, message) => {
   throw new StorageOperationError(issue);
 };
 
-/** Maximum character length enforced on all user-visible name fields. */
-const MAX_NAME_LENGTH = 64;
-
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   v != null && typeof v === 'object' && !Array.isArray(v);
 
@@ -195,7 +192,7 @@ export const deleteFolder = (id: string): void => {
     }
 };
 
-export const isWorldNameTaken = (name: string): boolean => {
+const isWorldNameTaken = (name: string): boolean => {
     const worlds = getWorldList();
     return worlds.some(w => w.name.toLowerCase() === name.trim().toLowerCase());
 };
@@ -521,7 +518,7 @@ const migrateMass = (type: string, oldMass: number): number => {
  * √(G₂M₂ / G₁M₁) about each body's dominant parent so systems stay bound
  * instead of unravelling at the new G.
  */
-export const migrateV1Bodies = (data: CelestialBodyData[]): CelestialBodyData[] => {
+const migrateV1Bodies = (data: CelestialBodyData[]): CelestialBodyData[] => {
     if (!Array.isArray(data) || data.length === 0) return data;
 
     const oldMasses = new Map<string, number>();

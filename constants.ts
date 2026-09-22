@@ -1,6 +1,5 @@
 import type { BodyType } from './types';
 import {
-  C_AETHER,
   G_AETHER,
   M_JUPITER_IN_EARTH,
   M_SUN_IN_EARTH,
@@ -13,13 +12,6 @@ import {
  * masses, which is what the pre-2.0 engine got wrong.
  */
 export const G_CONSTANT = G_AETHER;
-
-/** Speed of light in Aether units (≈ 2.53 × 10⁶ L*·T*⁻¹). */
-export const SPEED_OF_LIGHT = C_AETHER;
-
-/** Convenience aliases for authoring masses in familiar units. */
-export const M_SUN = M_SUN_IN_EARTH;       // ≈ 332 946 M⊕
-export const M_JUP = M_JUPITER_IN_EARTH;   // ≈ 317.83 M⊕
 
 /**
  * Physically meaningful classification / evolution boundaries, all in M⊕.

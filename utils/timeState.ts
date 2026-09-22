@@ -14,11 +14,11 @@ import { clampSpeed } from './physicsBounds';
 export type TimeState = 'reverse' | 'stopped' | 'slow' | 'normal' | 'fast';
 
 /** |speed| below this is indistinguishable from stopped on screen. */
-export const STOPPED_EPSILON = 0.05;
+const STOPPED_EPSILON = 0.05;
 /** Half-width of the band around 1x that still reads as "normal pace". */
-export const NORMAL_BAND = 0.05;
+const NORMAL_BAND = 0.05;
 /** Half-width of the sticky detents at 0x and 1x on the slider. */
-export const SNAP_RADIUS = 0.15;
+const SNAP_RADIUS = 0.15;
 
 export const timeStateFor = (speed: number, paused: boolean): TimeState => {
   if (paused || !Number.isFinite(speed) || Math.abs(speed) < STOPPED_EPSILON) return 'stopped';

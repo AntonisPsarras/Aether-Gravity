@@ -18,7 +18,7 @@ export const DETENT_FRACTION: Record<SheetDetent, number> = {
 export const PEEK_MAX_PX = 192; // 12rem
 
 /** Resolved pixel height of a detent for a given viewport height. */
-export function detentHeight(detent: SheetDetent, vh: number): number {
+function detentHeight(detent: SheetDetent, vh: number): number {
   const proportional = DETENT_FRACTION[detent] * vh;
   return detent === 'peek' ? Math.min(proportional, PEEK_MAX_PX) : proportional;
 }
@@ -41,7 +41,7 @@ function viewportHeight(): number {
 }
 
 /** Detent whose height is closest to `height` pixels. */
-export function nearestDetent(height: number, vh: number): SheetDetent {
+function nearestDetent(height: number, vh: number): SheetDetent {
   let best: SheetDetent = 'peek';
   let bestDelta = Infinity;
   for (const d of SHEET_DETENTS) {
@@ -52,7 +52,7 @@ export function nearestDetent(height: number, vh: number): SheetDetent {
 }
 
 /** One step toward the top / bottom of the detent ladder. */
-export function stepDetent(from: SheetDetent, direction: 1 | -1): SheetDetent {
+function stepDetent(from: SheetDetent, direction: 1 | -1): SheetDetent {
   const i = SHEET_DETENTS.indexOf(from);
   const next = Math.max(0, Math.min(SHEET_DETENTS.length - 1, i + direction));
   return SHEET_DETENTS[next];

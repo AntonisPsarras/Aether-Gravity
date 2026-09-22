@@ -1,4 +1,3 @@
-import React from 'react';
 
 /** Read-only ring gauge (ESI / RSI). */
 export const Gauge = ({

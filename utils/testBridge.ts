@@ -1,6 +1,6 @@
 import { G_CONSTANT } from '../constants';
 import type { CelestialBody, WorldData } from '../types';
-import { getE2EConfig, isE2EMode } from './e2eConfig';
+import { isE2EMode } from './e2eConfig';
 import { getPhysicsBodiesSnapshot } from './physicsBridge';
 import { getRenderSnapshot, type RenderSnapshot } from './renderBridge';
 import { isSatellite } from './moonSystem';
@@ -10,7 +10,7 @@ import { useStore } from './store';
 import type { UiMode } from './displayMode';
 import { getGridFrame } from './gridWells';
 
-export interface SerializedBody {
+interface SerializedBody {
   id: string;
   type: string;
   mass: number;
@@ -37,7 +37,7 @@ export interface StoreSnapshot {
   worldReadOnly: boolean;
 }
 
-export interface PhysicsEnergySample {
+interface PhysicsEnergySample {
   n: number;
   kinetic: number;
   potential: number;
@@ -45,7 +45,7 @@ export interface PhysicsEnergySample {
   driftPercent: number | null;
 }
 
-export interface PerfStats {
+interface PerfStats {
   avg: number;
   p50: number;
   p95: number;
@@ -67,7 +67,7 @@ export interface PerfReport {
   sampleCount: number;
 }
 
-export interface TestMetricsSnapshot {
+interface TestMetricsSnapshot {
   ready: boolean;
   canvasReady: boolean;
   contextLostCount: number;
@@ -79,7 +79,7 @@ export interface TestMetricsSnapshot {
 }
 
 /** The spacetime grid as drawn this frame (utils/gridWells.ts). */
-export interface GridSnapshot {
+interface GridSnapshot {
   mode: UiMode;
   /** Render-space centre of the primary lattice and the body it rides. */
   primary: { bodyId: string | null; x: number; z: number };
@@ -109,11 +109,6 @@ export interface AetherTestAPI {
   waitForReady: (timeoutMs?: number) => Promise<boolean>;
 }
 
-type MetricsCollector = {
-  pushFrame: (deltaMs: number) => void;
-};
-
-let metricsCollector: MetricsCollector | null = null;
 let appReady = false;
 let canvasReady = false;
 let contextLostCount = 0;
@@ -146,7 +141,6 @@ function computeStats(values: number[]): PerfStats {
     return { avg: 0, p50: 0, p95: 0, min: 0 };
   }
   const sorted = [...values].sort((a, b) => a - b);
-  const sum = sorted.reduce((a, b) => a + b, 0);
   const fpsValues = sorted.map((ms) => (ms > 0 ? 1000 / ms : 0)).sort((a, b) => a - b);
   return {
     avg: fpsValues.reduce((a, b) => a + b, 0) / fpsValues.length,
@@ -385,14 +379,6 @@ export function setTestBridgeGraphics(
 
 export function incrementTestBridgeContextLost(): void {
   contextLostCount += 1;
-}
-
-export function registerTestMetricsCollector(collector: MetricsCollector): void {
-  metricsCollector = collector;
-}
-
-export function unregisterTestMetricsCollector(): void {
-  metricsCollector = null;
 }
 
 export function recordTestFrame(deltaMs: number): void {

@@ -86,8 +86,6 @@ Moons are propagated on **analytic Kepler rails** relative to their parent inste
 
 ![A black hole created in-session, with a surviving planet on an eccentric orbit](docs/screenshots/black-hole.png)
 
-> **Historical note:** [`PHYSICS_AUDIT.md`](./PHYSICS_AUDIT.md) is the engineering audit that motivated this work. It describes the *earlier* engine — semi-implicit Euler, an inconsistent unit system, partly-random property generation — and is kept as a record of what was fixed. Read it as history, not as documentation of current behaviour.
-
 ---
 
 ## What you can build
@@ -233,7 +231,7 @@ cd aether-gravity
 npm install
 ```
 
-This also runs a `postinstall` step (`scripts/fix-proguard.js`) that patches the bundled Capacitor plugins to reference `proguard-android-optimize.txt`. It is harmless on a web-only checkout and relevant if native minification is enabled — see [`PROGUARD_FIX.md`](./PROGUARD_FIX.md).
+This also runs a `postinstall` step (`scripts/fix-proguard.js`) that patches the bundled Capacitor plugins to reference `proguard-android-optimize.txt`. It is harmless on a web-only checkout and relevant when native minification is enabled; the Android build guide documents the release setup.
 
 ### 3. Start the development server
 
@@ -250,6 +248,7 @@ Vite serves the app at **`http://127.0.0.1:3000`**.
 | `npm run dev` | Development server on `127.0.0.1:3000` |
 | `npm run build` | Type-check, then production build to `dist/` |
 | `npm run typecheck` | `tsc --noEmit` on its own |
+| `npm run lint:deadcode` | Fail on unused files, exports, types, or dependencies |
 | `npm run preview` | Serve the production build locally |
 | `npm test` | Vitest unit suites (`utils/**/*.test.ts`) |
 | `npm run test:e2e` | Playwright end-to-end suites (`e2e/`) |
@@ -283,7 +282,7 @@ The spec skips itself without that environment variable, so it stays out of the 
 
 ## Testing
 
-See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) for measured results and the current release gate. After `npm run build`, run `node scripts/production-smoke.mjs` and `npm run audit:gate`. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
+For a release candidate, run `npm run lint:deadcode`, `npm test`, `npm run build`, `node scripts/production-smoke.mjs`, and `npm run audit:gate`. Release builds include `THIRD_PARTY_NOTICES.txt` for bundled dependencies.
 
 - **Unit (Vitest, under `utils/`):** integrator fidelity and energy behaviour, unit-system self-consistency, orbital-element conversions, the Kepler solver, relativity formulas (Schwarzschild, Kerr, ISCO, photon sphere, disk efficiency, redshift), mass–radius and classification relations, habitability, all three real-system presets, input bounds, world storage and migration, display-mode gating, and onboarding state.
 - **End-to-end (Playwright, `e2e/`):** smoke, simulation controls with a bounded energy-drift assertion, layout across breakpoints including a ≥44 px touch-target check, main menu and world creation, onboarding, inspector edit-locking against the physics sync, shader compilation and WebGL context loss/restore, and an FPS soak across four scene profiles.

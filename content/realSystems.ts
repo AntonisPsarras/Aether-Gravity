@@ -18,7 +18,7 @@ import solarElements from './solarSatelliteElements.json';
 import { meanAnomalyFromTrueAnomaly } from '../utils/keplerOrbit';
 import { G_AETHER, distToAU, equilibriumTemperatureFromLuminosity } from '../utils/units';
 
-export interface RealOrbitSpec {
+interface RealOrbitSpec {
   /** Semi-major axis, in AU (planets) or km (satellites). Give exactly one. */
   aAU?: number;
   aKm?: number;
@@ -33,7 +33,7 @@ export interface RealOrbitSpec {
   mDeg: number;
 }
 
-export interface RealBodySpec {
+interface RealBodySpec {
   name: string;
   type: BodyType;
   /** Mass in Earth masses. */

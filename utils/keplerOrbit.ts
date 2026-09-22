@@ -65,7 +65,7 @@ export const trueAnomalyFromEccentric = (E: number, e: number): number =>
   2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
 
 /** Eccentric anomaly from true anomaly. */
-export const eccentricFromTrueAnomaly = (nu: number, e: number): number =>
+const eccentricFromTrueAnomaly = (nu: number, e: number): number =>
   2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2));
 
 /** Mean anomaly from true anomaly (the inverse of the propagation chain). */

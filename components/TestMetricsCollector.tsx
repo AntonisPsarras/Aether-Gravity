@@ -9,8 +9,6 @@ import { getRenderSnapshot } from '../utils/renderBridge';
 import {
   markTestBridgeCanvasReady,
   recordTestFrame,
-  registerTestMetricsCollector,
-  unregisterTestMetricsCollector,
 } from '../utils/testBridge';
 
 /**
@@ -118,12 +116,6 @@ export default function TestMetricsCollector(): null {
       delete (window as any).__AETHER_VISUAL_TEST__;
     };
   }, [enabled, scene, gl, camera, controls]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    registerTestMetricsCollector({ pushFrame: recordTestFrame });
-    return () => unregisterTestMetricsCollector();
-  }, [enabled]);
 
   useFrame((_state, delta) => {
     if (!enabled) return;

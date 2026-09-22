@@ -53,7 +53,7 @@ const MAX_LABEL: Record<MoonMaxReason, string> = {
   isolated: 'no primary star',
 };
 
-export const MoonCreatorPanel: React.FC<{
+const MoonCreatorPanel: React.FC<{
   onCreated: (snapshot: SimulationSnapshot, body: CelestialBody) => void;
   onCancel: () => void;
   onSwitchMode: (mode: BodyType) => void;

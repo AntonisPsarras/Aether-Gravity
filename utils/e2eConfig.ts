@@ -1,6 +1,6 @@
 import { isGraphicsMode, type GraphicsMode } from './graphicsQuality';
 
-export type DeviceTierOverride = 'low' | 'high';
+type DeviceTierOverride = 'low' | 'high';
 
 export interface E2EConfig {
   enabled: boolean;

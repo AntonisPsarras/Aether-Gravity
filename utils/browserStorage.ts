@@ -74,7 +74,7 @@ export const subscribeStorageIssues = (listener: StorageIssueListener): (() => v
   return () => listeners.delete(listener);
 };
 
-export const isQuotaError = (error: unknown): boolean => {
+const isQuotaError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
   const value = error as { name?: unknown; code?: unknown };
   return value.name === 'QuotaExceededError'

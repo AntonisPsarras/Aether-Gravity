@@ -7,7 +7,7 @@ import { useReducedMotion as useReducedMotionHook } from '../hooks/useReducedMot
 export { useReducedMotion } from '../hooks/useReducedMotion';
 
 /** Dim, already blurred radiance field, not a reflection probe or a body texture. */
-export function createEnvironmentTexture(width: number) {
+function createEnvironmentTexture(width: number) {
   const height = width / 2;
   const pixels = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {

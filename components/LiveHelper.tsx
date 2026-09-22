@@ -2,7 +2,7 @@ import React from 'react';
 import { Lightbulb, X } from 'lucide-react';
 import type { HelperDefinition } from '../utils/onboarding';
 
-export const LiveHelper: React.FC<{
+const LiveHelper: React.FC<{
   helper: HelperDefinition;
   onAcknowledge: () => void;
 }> = ({ helper, onAcknowledge }) => (

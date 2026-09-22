@@ -33,9 +33,6 @@ export const GRAPHICS_MODES: readonly GraphicsMode[] = ['quality', 'performance'
 export const isGraphicsMode = (v: unknown): v is GraphicsMode =>
   v === 'quality' || v === 'performance' || v === 'auto';
 
-export const isRenderProfile = (v: unknown): v is RenderProfile =>
-  v === 'quality' || v === 'performance';
-
 /**
  * Resolve the mode the user chose against what the frame-rate probe measured.
  *

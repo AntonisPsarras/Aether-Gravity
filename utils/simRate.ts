@@ -42,7 +42,7 @@ export const BASE_YEARS_PER_REAL_SECOND = 0.04;
 export const BEGINNER_TIME_SCALE = 0.35;
 
 /** Slider and mode rate before scientific encounter pacing is applied. */
-export const requestedSimYearsPerRealSecond = (speed: number, mode: UiMode): number => {
+const requestedSimYearsPerRealSecond = (speed: number, mode: UiMode): number => {
   if (!isFinite(speed)) return 0;
   return speed * BASE_YEARS_PER_REAL_SECOND * (mode === 'beginner' ? BEGINNER_TIME_SCALE : 1);
 };

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { CelestialBody, BodyType, WorldData } from '../types';
-import * as THREE from 'three';
 import {
   generateSystem,
   findDominantParent,

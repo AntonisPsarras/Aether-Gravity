@@ -1,8 +1,8 @@
-import { writeFile, readFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { PerfReport } from '../utils/testBridge';
 
-export const PERF_METRICS_PATH = path.join(process.cwd(), 'perf-metrics-report.json');
+const PERF_METRICS_PATH = path.join(process.cwd(), 'perf-metrics-report.json');
 
 export interface PerfRunMeta {
   testName: string;
@@ -11,12 +11,12 @@ export interface PerfRunMeta {
   profile?: string;
 }
 
-export interface PerfRunRecord extends PerfRunMeta {
+interface PerfRunRecord extends PerfRunMeta {
   recordedAt: string;
   report: PerfReport;
 }
 
-export interface PerfMetricsFile {
+interface PerfMetricsFile {
   generatedAt: string;
   soakMs: number;
   runs: PerfRunRecord[];
@@ -24,7 +24,7 @@ export interface PerfMetricsFile {
 
 const runBuffer: PerfRunRecord[] = [];
 
-export function formatPerfSummary(meta: PerfRunMeta, report: PerfReport): string {
+function formatPerfSummary(meta: PerfRunMeta, report: PerfReport): string {
   const lines = [
     '',
     '─'.repeat(60),
@@ -65,28 +65,6 @@ export async function flushPerfMetricsReport(soakMs: number): Promise<void> {
 
   await writeFile(PERF_METRICS_PATH, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   console.log(`\n[perf] Wrote metrics report → ${PERF_METRICS_PATH}\n`);
-}
-
-/** @deprecated Prefer buffer + flush in serial suite; kept for one-off writes. */
-export async function writePerfMetricsReport(
-  soakMs: number,
-  runs: PerfRunRecord[],
-): Promise<void> {
-  const payload: PerfMetricsFile = {
-    generatedAt: new Date().toISOString(),
-    soakMs,
-    runs,
-  };
-  await writeFile(PERF_METRICS_PATH, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-}
-
-export async function readPerfMetricsReport(): Promise<PerfMetricsFile | null> {
-  try {
-    const raw = await readFile(PERF_METRICS_PATH, 'utf8');
-    return JSON.parse(raw) as PerfMetricsFile;
-  } catch {
-    return null;
-  }
 }
 
 export function resetPerfRunBuffer(): void {

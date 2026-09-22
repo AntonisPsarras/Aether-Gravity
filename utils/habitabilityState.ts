@@ -1,5 +1,5 @@
 /** Bit flags for planet surface shader `uState` */
-export const PLANET_STATE = {
+const PLANET_STATE = {
   NONE: 0,
   HABITABLE: 1,
   FROZEN: 2,

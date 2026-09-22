@@ -110,14 +110,6 @@ export const checkHabitability = (planet: CelestialBody, star: CelestialBody): b
     return distAU >= hz.inner && distAU <= hz.outer;
 };
 
-/** As `checkHabitability`, but against the optimistic (Venus-Mars) boundaries. */
-export const checkOptimisticHabitability = (planet: CelestialBody, star: CelestialBody): boolean => {
-    if (!star || !planet) return false;
-    const hz = habitableZoneForStar(star);
-    const distAU = distToAU(planet.position.distanceTo(star.position));
-    return distAU >= hz.optimisticInner && distAU <= hz.optimisticOuter;
-};
-
 /** Habitable zone radii converted to simulation length units for rendering. */
 export const getHabitableZoneInGameUnits = (star: CelestialBody) => {
     const hz = habitableZoneForStar(star);

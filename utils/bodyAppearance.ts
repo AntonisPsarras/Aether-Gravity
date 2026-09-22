@@ -24,7 +24,7 @@ const smoothstep = (edge0: number, edge1: number, x: number): number => {
 };
 
 /** Default composition, matching `bodyDerivation.ts` and `physicsUtils.ts`. */
-export const DEFAULT_COMPOSITION = { iron: 0.3, silicates: 0.6, water: 0.1 } as const;
+const DEFAULT_COMPOSITION = { iron: 0.3, silicates: 0.6, water: 0.1 } as const;
 
 /** Normalised iron/silicate/water mass fractions, defaults filled in. */
 export const compositionOf = (body: CelestialBody) => {

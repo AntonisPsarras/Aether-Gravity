@@ -49,7 +49,7 @@ import { PHYSICS_LIMITS, clampMass } from './physicsBounds';
 /** Contact is declared inside this fraction of the summed visual radii. */
 export const CONTACT_FRACTION = 0.8;
 
-export type ImpactOutcome = 'merge' | 'shatter' | 'accrete' | 'collapse';
+type ImpactOutcome = 'merge' | 'shatter' | 'accrete' | 'collapse';
 
 export interface ImpactClassification {
   outcome: ImpactOutcome;
@@ -257,7 +257,7 @@ export interface FragmentPlan {
 }
 
 /** Hard ceiling on fragments from any one impact, independent of device tier. */
-export const ABSOLUTE_MAX_FRAGMENTS = 12;
+const ABSOLUTE_MAX_FRAGMENTS = 12;
 
 const _fragmentMasses = new Float64Array(ABSOLUTE_MAX_FRAGMENTS);
 const _plan: FragmentPlan = {

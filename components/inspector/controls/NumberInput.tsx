@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../../utils/store';
 
 /** Keep the draft as text so partial decimals/exponents survive telemetry refreshes. */

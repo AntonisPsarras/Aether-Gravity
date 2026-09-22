@@ -51,7 +51,8 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
-perf-metrics-report.json
+perf-metrics-report*.json
+/thumbnail.png
 
 # Android
 android/build

@@ -45,7 +45,7 @@ const SkillsRadar: React.FC<{ width: number; height: number }> = ({ width, heigh
                         strokeWidth={1}
                     />
                 ))}
-                {skillData.map((d, i) => {
+                {skillData.map((_, i) => {
                     const angle = (Math.PI * 2 * i) / skillData.length - Math.PI / 2;
                     return (
                         <line

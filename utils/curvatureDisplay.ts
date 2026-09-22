@@ -36,7 +36,7 @@
 import { GRID_RENDER_SAFETY_MAX_DEPTH, type WellParams } from './displayMode';
 
 /** Smallest display core, L*. Keeps a well finite; far below any lattice cell. */
-export const MIN_WELL_CORE = 1e-3;
+const MIN_WELL_CORE = 1e-3;
 
 /**
  * Peak (central) well depth for a body in Beginner Mode, L*. Power-law

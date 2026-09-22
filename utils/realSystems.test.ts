@@ -10,8 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { REAL_SYSTEMS, buildRealSystem, getRealSystem } from '../content/realSystems';
-import { M_SUN_IN_EARTH, distToAU, distToKm, orbitalPeriodYears } from './units';
-import { gravitationalParameter, periodFromElements } from './keplerOrbit';
+import { distToAU, orbitalPeriodYears } from './units';
 import { isSatellite, propagateSatellites, satellitePeriodYears } from './moonSystem';
 import { checkCollisions, getOrbitalElements } from './physicsUtils';
 import { verletStepInPlace, resetVerletCache } from './physicsSoA';

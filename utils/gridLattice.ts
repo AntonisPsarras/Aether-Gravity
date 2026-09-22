@@ -68,7 +68,7 @@ export interface GridLatticeBudget {
 }
 
 /** Scale c of r = c·sinh(u): the lattice is linear inside ~c and logarithmic outside, L*. */
-export const LATTICE_CORE_SCALE = 8;
+const LATTICE_CORE_SCALE = 8;
 /** Outer radius of the evenly spaced (in u) fine zone, L*. */
 export const LATTICE_FINE_RADIUS = 4000;
 /** Outer radius of the tail — past MAX_POSITION_ABS (5×10⁶) plus the horizon fade, L*. */
@@ -79,12 +79,12 @@ export const LATTICE_OUTER_RADIUS = 2e7;
  * At 2.5 the linearly interpolated surface stays within ~4% of the analytic
  * peak wherever the well centre falls inside a cell (see gridLattice.test.ts).
  */
-export const LOD_CELLS_PER_CORE = 2.5;
+const LOD_CELLS_PER_CORE = 2.5;
 
 /** Largest radius a secondary disc may claim, L*. */
-export const DISC_MAX_RADIUS = 4000;
+const DISC_MAX_RADIUS = 4000;
 /** Scale c of a disc lattice's own sinh ring profile, L* (capped at a quarter of the disc). */
-export const DISC_CORE_SCALE = 8;
+const DISC_CORE_SCALE = 8;
 
 /** A secondary must lose at least this much peak depth to resolution to earn a disc, L*. */
 const SECONDARY_MIN_LOSS = 0.5;
@@ -98,7 +98,7 @@ const SECONDARY_HYSTERESIS = 1.5;
 /** Secondaries are re-ranked at most this often unless the body set changes, s. */
 const RERANK_INTERVAL_S = 0.5;
 /** Width of the primary/secondary hand-off, in cells of the coarser lattice. */
-export const DISC_SEAM_GUARD_CELLS = 1.5;
+const DISC_SEAM_GUARD_CELLS = 1.5;
 /**
  * The primary grid never fully disappears below a detail disc. Keeping this
  * small fallback makes the surface coverage-safe on mobile GPUs even if a
@@ -215,7 +215,7 @@ export const discCoreScale = (outerRing: number): number =>
  * Disc cell size at distance `r` from the disc centre, L*. Rings are
  * r = c·sinh(t·U), t = k/rings, so dr/dt = U·√(c² + r²).
  */
-export function discCellSize(r: number, coreScale: number, u: number, rings: number, spokes: number): number {
+function discCellSize(r: number, coreScale: number, u: number, rings: number, spokes: number): number {
   const rr = r > 0 ? r : 0;
   const radial = (Math.sqrt(coreScale * coreScale + rr * rr) * u) / Math.max(1, rings);
   const tangential = (2 * Math.PI * (rr + radial)) / Math.max(3, spokes);

@@ -33,7 +33,7 @@ export const unregisterRenderObjects = (
   }
 };
 
-export interface RenderedBody {
+interface RenderedBody {
   id: string;
   /** Render-space position of the body's group, i.e. world minus floating origin. */
   position: { x: number; y: number; z: number };

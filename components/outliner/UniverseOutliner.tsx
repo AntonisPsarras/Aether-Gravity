@@ -30,7 +30,6 @@ const HIERARCHY_REFRESH_MS = 500;
 
 const UniverseOutliner: React.FC<{ onInteract?: () => void }> = ({ onInteract }) => {
   const breakpoint = useBreakpoint();
-  const isPhone = breakpoint === 'phone';
   const selectedId = useStore((s) => s.selectedId);
   const historyVersion = useStore((s) => s.historyVersion);
   const outlinerOpen = useStore((s) => s.outlinerOpen);

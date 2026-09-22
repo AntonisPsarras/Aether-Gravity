@@ -1,4 +1,3 @@
-import React from 'react';
 import { useStore } from '../../../utils/store';
 
 /** Labelled slider for a `properties.*` primary. See NumberInput on the

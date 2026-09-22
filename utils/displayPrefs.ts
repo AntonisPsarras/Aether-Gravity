@@ -91,7 +91,7 @@ export function getDisplayPrefs(): DisplayPrefs {
   return { ...memoryPrefs };
 }
 
-export function saveDisplayPrefs(prefs: DisplayPrefs): DisplayPrefs {
+function saveDisplayPrefs(prefs: DisplayPrefs): DisplayPrefs {
   memoryPrefs = parseDisplayPrefs(prefs) ?? defaultPrefs();
   try {
     if (typeof localStorage !== 'undefined') {

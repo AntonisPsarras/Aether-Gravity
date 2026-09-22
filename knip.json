@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "index.tsx",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "capacitor.config.ts",
+    "tailwind.config.js",
+    "postcss.config.js",
+    "scripts/*.{js,mjs}",
+    "e2e/**/*.spec.ts",
+    "e2e/globalTeardown.ts",
+    "utils/**/*.test.ts"
+  ],
+  "project": [
+    "**/*.{ts,tsx,js,mjs}"
+  ],
+  "ignoreDependencies": [
+    "@capacitor/keyboard"
+  ]
+}

@@ -1,4 +1,3 @@
-import React from 'react';
 import { useStore } from '../../../utils/store';
 
 /** Angle editor for a Keplerian element. See NumberInput on the edit-lock

@@ -27,7 +27,7 @@ export interface BodyTypeVisual {
   short: string;
 }
 
-export const BODY_TYPE_VISUALS: Record<BodyType, BodyTypeVisual> = {
+const BODY_TYPE_VISUALS: Record<BodyType, BodyTypeVisual> = {
   'Star':         { icon: Sun,        text: 'text-yellow-400',  bg: 'bg-yellow-500/20',  short: 'Star' },
   'Red Giant':    { icon: Flame,      text: 'text-red-500',     bg: 'bg-red-500/20',     short: 'Giant' },
   'Neutron Star': { icon: Zap,        text: 'text-cyan-300',    bg: 'bg-cyan-400/20',    short: 'Neutron' },
@@ -66,7 +66,7 @@ export const CREATION_ORDER: BodyType[] = [
 ];
 
 /** The types the creation toolbar offers, in display order. */
-export const CREATABLE_TYPES: BodyType[] = CREATION_ORDER.filter(
+const CREATABLE_TYPES: BodyType[] = CREATION_ORDER.filter(
   (t) => BODY_CONFIGS[t]?.creatable !== false,
 );
 

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import * as React from 'react';
 import { ThreeElements as R3FThreeElements } from '@react-three/fiber';
 
 declare global {

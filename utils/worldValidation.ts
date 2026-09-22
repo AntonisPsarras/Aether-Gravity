@@ -2,7 +2,7 @@ import { PHYSICS_LIMITS } from './physicsBounds';
 
 export const MAX_STORAGE_CHARS = 2 * 1024 * 1024;
 export const MAX_ARCHIVE_ENTRIES = 10_000;
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 export const validId = (value: unknown): value is string =>

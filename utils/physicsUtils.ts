@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { CelestialBody, BodyType, PhysicsEvent, WaveEvent } from '../types';
 import {
   G_CONSTANT,
-  COLLISION_PHYSICS,
   EVOLUTION_THRESHOLDS,
   BODY_CONFIGS,
   LUMINOUS_TYPES,
@@ -20,17 +19,13 @@ import {
   kmToDist,
   luminositySolarFromMass,
   M_SUN_IN_EARTH,
-  orbitalPeriodYears,
   R_EARTH_KM,
-  surfaceGravitySi,
   visualRadiusFromKm,
 } from './units';
 import {
   applyDerivedState,
   classifyBody,
   deriveBodyState,
-  mixtureDensity,
-  terrestrialRadiusKm,
 } from './bodyDerivation';
 import { isSatellite } from './moonSystem';
 import { scratchV2, scratchV3 } from './scratchVectors';
@@ -63,40 +58,8 @@ const isValidBody = (b: CelestialBody | null | undefined): b is CelestialBody =>
 // `utils/bodyDerivation.ts`; this module owns the dynamics and the
 // system-level passes that use them.
 
-/**
- * Full derived state for a terrestrial body from mass (M⊕) and composition.
- * Returns the physical radius in km alongside the visual radius, so callers
- * cannot accidentally mix the two.
- */
-export const calculatePlanetaryPhysics = (
-    type: BodyType,
-    mass: number,
-    compIron: number,
-    compSil: number,
-    compWater: number,
-) => {
-    const radiusKm = clampRadiusKm(terrestrialRadiusKm(mass, compIron, compSil, compWater));
-    return {
-        radiusKm,
-        radius: clampRadius(visualRadiusFromKm(type, radiusKm)),
-        bulkDensity: bulkDensityGcm3(mass, radiusKm),
-        surfaceGravity: surfaceGravitySi(mass, radiusKm),
-        escapeVelocity: escapeVelocityKms(mass, radiusKm),
-    };
-};
-
-/** Uncompressed mixture density (g/cm³) for a composition. */
-export const compositionDensity = mixtureDensity;
-
-/** Derived geophysics when the user pins a physical radius directly. */
-export const derivedPropertiesFromMassRadiusKm = (mass: number, radiusKm: number) => ({
-    bulkDensity: bulkDensityGcm3(mass, radiusKm),
-    surfaceGravity: surfaceGravitySi(mass, radiusKm),
-    escapeVelocity: escapeVelocityKms(mass, radiusKm),
-});
-
 /** Radius, temperature, colour and luminosity for a self-luminous body. */
-export const deriveStarProperties = (massEarth: number, type: BodyType = 'Star') => {
+const deriveStarProperties = (massEarth: number, type: BodyType = 'Star') => {
     const d = deriveBodyState(type, massEarth);
     const { r, g, b } = kelvinToRgb(d.temperature);
     return {
@@ -356,8 +319,6 @@ export const calculateOrbitalState = (
         // Step 1: Rotate by omega around Z
         const xw = vec.x * Math.cos(omega) - vec.y * Math.sin(omega);
         const yw = vec.x * Math.sin(omega) + vec.y * Math.cos(omega);
-        const zw = 0;
-        
         // Step 2: Rotate by i around X (Line of Nodes)
         const xi = xw;
         const yi = yw * Math.cos(i);
@@ -547,85 +508,6 @@ export const pairSofteningSq = (a: CelestialBody, b: CelestialBody): number => {
   return Number.isFinite(s) ? s * s + SOFTENING_FLOOR_SQ : SOFTENING_FLOOR_SQ;
 };
 
-// Reused acceleration buffer to avoid per-step allocations in the hot physics path.
-let gravityAccelBuffer = new Float32Array(0);
-
-const ensureGravityBufferSize = (bodyCount: number) => {
-  const required = bodyCount * 3;
-  if (gravityAccelBuffer.length < required) {
-    gravityAccelBuffer = new Float32Array(required);
-  } else {
-    gravityAccelBuffer.fill(0, 0, required);
-  }
-};
-
-export const calculateGravityInPlace = (bodies: CelestialBody[], Gt: number): CelestialBody[] => {
-  if (!bodies || bodies.length === 0) return [];
-  if (!isFinite(Gt) || Gt === 0) return bodies;
-
-  const validBodies = bodies.filter(isValidBody);
-  const len = validBodies.length;
-  if (len === 0) return validBodies;
-
-  ensureGravityBufferSize(len);
-
-  // Compute accelerations first, then apply to velocities/positions.
-  // This keeps integration stable while reusing one typed buffer per step.
-  for (let i = 0; i < len; i++) {
-    const b1 = validBodies[i];
-    const base = i * 3;
-    let ax = 0, ay = 0, az = 0;
-
-    for (let j = 0; j < len; j++) {
-      if (i === j) continue;
-      const b2 = validBodies[j];
-      const dx = b2.position.x - b1.position.x;
-      const dy = b2.position.y - b1.position.y;
-      const dz = b2.position.z - b1.position.z;
-      const distSq = dx * dx + dy * dy + dz * dz + pairSofteningSq(b1, b2);
-      const invDist = 1 / Math.sqrt(distSq);
-      const force = (G_CONSTANT * b2.mass) / distSq;
-
-      ax += dx * invDist * force;
-      ay += dy * invDist * force;
-      az += dz * invDist * force;
-    }
-
-    gravityAccelBuffer[base] = ax;
-    gravityAccelBuffer[base + 1] = ay;
-    gravityAccelBuffer[base + 2] = az;
-  }
-
-  for (let i = 0; i < len; i++) {
-    const b = validBodies[i];
-    const base = i * 3;
-    b.velocity.x += gravityAccelBuffer[base] * Gt;
-    b.velocity.y += gravityAccelBuffer[base + 1] * Gt;
-    b.velocity.z += gravityAccelBuffer[base + 2] * Gt;
-    b.position.addScaledVector(b.velocity, Gt);
-  }
-
-  return validBodies;
-};
-
-export const calculateGravity = (bodies: CelestialBody[],Gt: number): CelestialBody[] => {
-  if (!bodies || bodies.length === 0) return [];
-  if (!isFinite(Gt) || Gt === 0) return bodies;
-
-  // Clone to avoid mutation of current state during calculation
-  const nextState: CelestialBody[] = bodies
-    .filter(isValidBody)
-    .map(b => ({
-      ...b,
-      position: b.position.clone(),
-      velocity: b.velocity.clone()
-    }));
-
-  // Backward-compatible immutable wrapper for UI/state callers.
-  // The actual integration is delegated to the in-place optimized variant.
-  return calculateGravityInPlace(nextState, Gt);
-};
-
 const _collisionRemove = new Set<string>();
 /**
  * Fragments created during the current scan. They are appended to the live array
@@ -643,7 +525,7 @@ export const checkCollisions = (bodies: CelestialBody[], _time: number): { activ
 };
 
 /** Fragments per impact when the caller does not supply a device-tier budget. */
-export const DEFAULT_MAX_FRAGMENTS = 6;
+const DEFAULT_MAX_FRAGMENTS = 6;
 
 /**
  * Allocation-free collision scan when callers provide reusable event sinks.
@@ -660,7 +542,7 @@ export const DEFAULT_MAX_FRAGMENTS = 6;
 export const scanCollisionsInPlace = (
   bodies: CelestialBody[],
   events: PhysicsEvent[],
-  waveEvents: WaveEvent[],
+  _waveEvents: WaveEvent[],
   dt: number = 0,
   maxFragments: number = DEFAULT_MAX_FRAGMENTS,
 ): boolean => {
@@ -737,7 +619,7 @@ export const scanCollisionsInPlace = (
         : CONTACT_FRACTION * (b1.radius + b2.radius);
       if (minSepSq >= contactRadius * contactRadius) continue;
 
-      resolveContact(b1, b2, bodies, events, waveEvents, contactRadius, Math.hypot(rvx, rvy, rvz), maxFragments);
+      resolveContact(b1, b2, bodies, events, contactRadius, Math.hypot(rvx, rvy, rvz), maxFragments);
 
       // b1 is only tested for removal on entry to the outer loop. When b2 was the
       // heavier body, b1 is the one that just died — and continuing would keep
@@ -770,7 +652,7 @@ export const angularMomentumOf = (b: CelestialBody): THREE.Vector3 =>
   ));
 
 /** Cold contact resolution is separate so the pair scan can optimize independently. */
-const resolveContact = (b1: CelestialBody, b2: CelestialBody, bodies: CelestialBody[], events: PhysicsEvent[], waveEvents: WaveEvent[], contactRadius: number, relSpeed: number, maxFragments: number): void => {
+const resolveContact = (b1: CelestialBody, b2: CelestialBody, bodies: CelestialBody[], events: PhysicsEvent[], contactRadius: number, relSpeed: number, maxFragments: number): void => {
       const totalMass = b1.mass + b2.mass;
       if (totalMass <= 0 || !Number.isFinite(totalMass)) {
         // Degenerate pair. Removing a body with no event is what let one
@@ -981,18 +863,6 @@ const applyAccretionSpinUp = (hole: CelestialBody, consumedMass: number): void =
     spin + 0.15 * (consumedMass / hole.mass),
   );
   props.accretionRate = Math.min(1, (props.accretionRate ?? 0) + 0.4);
-};
-
-/**
- * Re-derive every body's classification against the real physical thresholds
- * (deuterium burning, hydrogen burning, Chandrasekhar, TOV) and raise an event
- * when one changes. A star above the core-collapse threshold additionally
- * undergoes a supernova, keeping only its remnant mass.
- */
-export const checkEvolution = (bodies: CelestialBody[]): { bodies: CelestialBody[], events: PhysicsEvent[] } => {
-  const events: PhysicsEvent[] = [];
-  checkEvolutionInPlace(bodies, events);
-  return { bodies, events };
 };
 
 /** Allocation-free evolution scan when the caller owns the event buffer. */
@@ -1254,9 +1124,4 @@ export const calculateRSI = (body: CelestialBody): number => {
     const compScore = (iron + sil) / (iron + sil + water + 0.001); 
 
     return Math.max(0, Math.min(1, tScore * compScore));
-};
-
-export const calculateDrakeRange = (body: CelestialBody, starType: string) => {
-  if (body.habitability === 'HABITABLE') return { low: 1, high: 10000 };
-  return { low: 0, high: 0 };
 };

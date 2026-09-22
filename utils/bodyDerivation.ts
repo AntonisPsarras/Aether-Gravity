@@ -19,11 +19,9 @@ import {
   TERRESTRIAL_TYPES,
 } from '../constants';
 import {
-  M_SUN_IN_EARTH,
   R_EARTH_KM,
   R_JUPITER_KM,
   R_SUN_KM,
-  T_SUN_EFF_K,
   bulkDensityGcm3,
   effectiveTemperatureK,
   escapeVelocityKms,
@@ -42,9 +40,9 @@ import { kerrOuterHorizonKm } from './relativity';
 // ---------------------------------------------------------------------------
 
 /** Zero-pressure densities of the three end-member components, g/cm³. */
-export const DENSITY_IRON = 7.8;
-export const DENSITY_SILICATE = 3.3;
-export const DENSITY_WATER = 1.0;
+const DENSITY_IRON = 7.8;
+const DENSITY_SILICATE = 3.3;
+const DENSITY_WATER = 1.0;
 
 /**
  * Uncompressed bulk density of an iron/silicate/water mixture.
@@ -144,7 +142,7 @@ export const mainSequenceRadiusKm = (massEarth: number): number =>
  * magnitude; `luminosityClass` (0 = giant, 1 = supergiant) selects where in the
  * observed 30–500 R☉ range it lands, with a weak mass dependence.
  */
-export const redGiantRadiusKm = (massEarth: number, luminosityClass = 0): number => {
+const redGiantRadiusKm = (massEarth: number, luminosityClass = 0): number => {
   const lc = Math.max(0, Math.min(1, luminosityClass));
   const base = 30 + lc * 470;
   return base * Math.pow(Math.max(massToSolar(massEarth), 0.1), 0.4) * R_SUN_KM;
@@ -237,7 +235,7 @@ export const radiusKmForType = (
  * the remnants use representative observed values, since their temperature is
  * set by cooling age rather than by mass.
  */
-export const defaultEffectiveTemperatureK = (
+const defaultEffectiveTemperatureK = (
   type: BodyType,
   massEarth: number,
   radiusKm: number,
@@ -264,7 +262,7 @@ export const defaultEffectiveTemperatureK = (
 };
 
 /** Luminosity in L☉ for any body that emits its own light. */
-export const derivedLuminositySolar = (
+const derivedLuminositySolar = (
   type: BodyType,
   massEarth: number,
   radiusKm: number,
@@ -410,8 +408,3 @@ export const applyDerivedState = (body: CelestialBody): BodyType => {
 
   return nextType;
 };
-
-/** Effective temperature of the Sun, for tests and UI reference. */
-export const SUN_T_EFF = T_SUN_EFF_K;
-/** One solar mass in simulation units, re-exported for convenience. */
-export const SOLAR_MASS = M_SUN_IN_EARTH;

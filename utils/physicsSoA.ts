@@ -232,7 +232,7 @@ export const FIXED_DT = 1 / 1024;
  */
 export const MAX_CATCHUP_STEPS = 8;
 export const LOW_TIER_FIXED_DT = 1 / 512;
-export const LOW_TIER_MAX_CATCHUP_STEPS = 6;
+const LOW_TIER_MAX_CATCHUP_STEPS = 6;
 
 const HIGH_STEP_POLICY = Object.freeze({ fixedDt: FIXED_DT, maxCatchupSteps: MAX_CATCHUP_STEPS });
 const LOW_STEP_POLICY = Object.freeze({ fixedDt: LOW_TIER_FIXED_DT, maxCatchupSteps: LOW_TIER_MAX_CATCHUP_STEPS });

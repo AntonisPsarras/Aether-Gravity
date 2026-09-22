@@ -1,4 +1,4 @@
-import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { reportDiagnostic } from '../utils/diagnostics';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 
@@ -13,7 +13,7 @@ type State = {
   error: Error | null;
 };
 
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {

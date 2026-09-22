@@ -60,16 +60,13 @@ export function hasSpinAxis(body: CelestialBody | null | undefined): boolean {
 }
 
 /** Types that get the habitability / tidal-evolution analysis tab. */
-export const ANALYSIS_TYPES: BodyType[] = ['Planet', 'Dwarf', 'Ice Giant'];
+const ANALYSIS_TYPES: BodyType[] = ['Planet', 'Dwarf', 'Ice Giant'];
 export function hasAnalysis(body: CelestialBody | null | undefined): boolean {
   return !!body && ANALYSIS_TYPES.includes(body.type);
 }
 
 /** Types with an atmosphere model worth charting. */
-export const ATMOSPHERE_TYPES: BodyType[] = ['Planet', 'Ice Giant', 'Gas Giant'];
-export function hasAtmosphere(body: CelestialBody | null | undefined): boolean {
-  return !!body && ATMOSPHERE_TYPES.includes(body.type);
-}
+const ATMOSPHERE_TYPES: BodyType[] = ['Planet', 'Ice Giant', 'Gas Giant'];
 
 /**
  * Roche limit in body radii for a loose ice aggregate. Ring debris cannot
@@ -118,10 +115,10 @@ export type SectionId =
  * contract of the physics model (see `utils/bodyDerivation.ts`) and the
  * Inspector renders the two tiers differently.
  */
-export type FieldTier = 'primary' | 'derived';
+type FieldTier = 'primary' | 'derived';
 
 /** Omitted means "every audience". `'advanced'` is hidden in Beginner Mode. */
-export type FieldAudience = 'advanced';
+type FieldAudience = 'advanced';
 
 export interface FieldMeta {
   /** Stable id — also the `data-testid` suffix. */

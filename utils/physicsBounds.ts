@@ -85,13 +85,13 @@ export const sanitizeName = (name: unknown): string => {
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 
-export const sanitizeColor = (color: unknown, fallback = '#ffffff'): string => {
+const sanitizeColor = (color: unknown, fallback = '#ffffff'): string => {
   if (typeof color !== 'string') return fallback;
   const trimmed = color.trim().slice(0, 32);
   return HEX_COLOR_RE.test(trimmed) ? trimmed : fallback;
 };
 
-export const sanitizeTexture = (texture: unknown): string => {
+const sanitizeTexture = (texture: unknown): string => {
   if (typeof texture !== 'string') return 'solid';
   return Object.hasOwn(TEXTURE_IDS, texture) ? texture : 'solid';
 };

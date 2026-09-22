@@ -27,7 +27,6 @@ export type MenuBlackHoleTheme = {
   /** Colour of the grid far from the well; the throat is always cyan. */
   gridFar: string;
 };
-
 type Mode = 'landing' | 'creator';
 
 const DISK_INNER = 3; // ISCO of a non-spinning hole: 6 r_g = 3 rs
@@ -60,7 +59,7 @@ const GRID_EXTRA_TILT = 0.2; // the grid is viewed a little more face-on than th
  * branch flattened the photon ring enough to read as a different image rather
  * than a cheaper one.
  */
-export function menuBlackHoleQuality(profile: RenderProfile) {
+function menuBlackHoleQuality(profile: RenderProfile) {
   if (profile === 'performance') {
     return { steps: 32, stepScale: 0.26, noiseOctaves: 1, maxHits: 2, ringWidth: 0.16, gridSegments: 72, dust: 1400 };
   }
@@ -538,5 +537,3 @@ export const MenuBlackHole: React.FC<{
     </group>
   );
 };
-
-export default MenuBlackHole;

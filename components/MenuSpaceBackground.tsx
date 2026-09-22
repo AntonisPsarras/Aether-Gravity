@@ -20,7 +20,7 @@ import { GasClouds } from './Environment/GasClouds';
 import { MenuBlackHole, type MenuBlackHoleTheme } from './MenuBlackHole';
 import { getE2EConfig } from '../utils/e2eConfig';
 
-export type MenuBackgroundMode = 'landing' | 'creator';
+type MenuBackgroundMode = 'landing' | 'creator';
 
 type MenuSpaceBackgroundProps = {
   mode?: MenuBackgroundMode;

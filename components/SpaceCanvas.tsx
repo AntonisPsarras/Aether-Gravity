@@ -14,7 +14,7 @@ import { createSandboxBody, sampleMassForType } from '../utils/bodyFactory';
 import { pickMoonParent } from '../utils/moonDraft';
 import { isOrbitControlsLike, setOrbitControlsEnabled, type OrbitControlsLike } from '../utils/orbitControls';
 import MoonCreator from './MoonCreator';
-import { TEXTURE_IDS, G_CONSTANT } from '../constants';
+import { TEXTURE_IDS } from '../constants';
 import {
   PHYSICS_LIMITS,
   clampLaunchVelocity,
@@ -36,7 +36,6 @@ import {
 import {
   DEPTH_TINT_BEGINNER, DEPTH_TINT_SCALE, TIDAL_LOG_MAX, TIDAL_LOG_MIN, TIDAL_TINT_BEGINNER,
   depthTintFor, tidalTintFor,
-  visualScaleFor,
   type UiMode,
 } from '../utils/displayMode';
 import { simElapsedForFrame, simulationPacingScale } from '../utils/simRate';
@@ -119,8 +118,6 @@ const MAX_BODIES = PHYSICS_LIMITS.MAX_BODIES;
 
 /** Module-scope constants — reused across renders to avoid GC pressure. */
 const _UNIT_SCALE = new THREE.Vector3(1, 1, 1);
-const _SHOCKWAVE_COLOR = new THREE.Color(1, 1, 1);
-const _SUPERNOVA_COLOR = new THREE.Color(1, 0.8, 0.4);
 
 /**
  * Slingshot drag — velocity gain per unit of pull-back distance.
@@ -713,7 +710,7 @@ const CameraFlyTo = ({
 
 /** Snap orbit camera to the primary star after generate / new universe only. */
 /** Camera position and orbit target, carried across a WebGL context rebuild. */
-export interface CameraPose {
+interface CameraPose {
   position: [number, number, number];
   target: [number, number, number];
 }
@@ -1065,11 +1062,8 @@ const PhysicsEngine = ({
   const gridFrame = useMemo(() => new GridFrameBuilder(), []);
 
   const syncBodiesFromPhysics = useStore((s) => s.syncBodiesFromPhysics);
-  const paused = useStore((s) => s.paused);
-  const speed = useStore((s) => s.speed);
   const cameraLockedId = useStore((s) => s.cameraLockedId);
   const showGrid = useStore((s) => s.showGrid);
-  const uiMode = useStore((s) => s.uiMode);
   const eventBufferRef = useRef<PhysicsEvent[]>([]);
   const waveEventBufferRef = useRef<WaveEvent[]>([]);
   const stepStateRef = useRef({ collisionOccurred: false });
@@ -1873,14 +1867,12 @@ const BlackHoleBody = ({
   spin,
   accretion,
   mass,
-  renderProfile,
 }: {
   visualRadius: number;
   eventHorizonScale: number;
   spin: number;
   accretion: number;
   mass: number;
-  renderProfile: RenderProfile;
 }) => {
   const lensTexture = useBlackHoleLensTexture();
   return (
@@ -1890,7 +1882,6 @@ const BlackHoleBody = ({
       accretion={accretion}
       mass={mass}
       lensTexture={lensTexture}
-      profile={renderProfile}
       interactive={false}
       onSelect={() => {}}
     />
@@ -1961,8 +1952,6 @@ const BodyMesh = React.memo(({
    * into `data.radius`: collision detection reads the visual radius on purpose
    * (utils/physicsUtils.ts), so leaking it here would change the physics.
    */
-  const modeScale = visualScaleFor(uiMode, data.type);
-
   let visualRadius = bodyVisualRadius(data, uiMode);
   let eventHorizonScale = 1.0;
 
@@ -2574,7 +2563,6 @@ const BodyMesh = React.memo(({
           spin={props.spinParameter ?? 0}
           accretion={props.accretionRate ?? 0.5}
           mass={data.mass}
-          renderProfile={profileForTier(deviceTier)}
         />
         </group>
       )}

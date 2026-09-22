@@ -58,7 +58,7 @@ describe('asynchronous native ownership', () => {
     expect((await acquireWorld('w')).writable).toBe(false);
     await expect(mutateArchive(() => 1)).rejects.toThrow();
     const held = new Set<string>();
-    vi.stubGlobal('navigator', { locks: { async request(name: string, options: unknown, callback: (lock: object | null) => Promise<void>) {
+    vi.stubGlobal('navigator', { locks: { async request(name: string, _options: unknown, callback: (lock: object | null) => Promise<void>) {
       if (held.has(name)) return callback(null);
       held.add(name); try { await callback({}); } finally { held.delete(name); }
     } } });

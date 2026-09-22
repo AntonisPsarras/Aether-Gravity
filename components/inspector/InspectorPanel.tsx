@@ -34,7 +34,6 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   settings: Settings, thermometer: Thermometer, layers: Layers, wind: Wind,
   disc: Disc, activity: Activity, aperture: Aperture, orbit: Orbit, microscope: Microscope,
 };
-
 const TAB_LABELS: Record<InspectorTab, string> = {
   props: 'Properties',
   orbit: 'Orbit',
@@ -332,5 +331,3 @@ export const InspectorPanel: React.FC<{
     </>
   );
 };
-
-export default InspectorPanel;

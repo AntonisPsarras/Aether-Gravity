@@ -20,7 +20,6 @@ import { M_SUN_IN_EARTH, auToDist } from './units';
 
 export type UiMode = 'beginner' | 'advanced';
 
-export const UI_MODES: readonly UiMode[] = ['beginner', 'advanced'];
 
 export const isUiMode = (v: unknown): v is UiMode =>
   v === 'beginner' || v === 'advanced';
@@ -149,7 +148,7 @@ export const wellParamsFor = (mode: UiMode): WellParams =>
  * displacement is invisible. Strong in Beginner, a hint in Advanced.
  */
 export const DEPTH_TINT_BEGINNER = 1.0;
-export const DEPTH_TINT_ADVANCED = 0.35;
+const DEPTH_TINT_ADVANCED = 0.35;
 
 /** Depth, L*, at which the tint reaches ~63% of full strength. */
 export const DEPTH_TINT_SCALE = 45;
@@ -175,7 +174,7 @@ export const GRID_RENDER_SAFETY_MAX_DEPTH = 20000;
 export const TIDAL_LOG_MIN = -4;
 export const TIDAL_LOG_MAX = 3;
 export const TIDAL_TINT_BEGINNER = 0.25;
-export const TIDAL_TINT_ADVANCED = 0.5;
+const TIDAL_TINT_ADVANCED = 0.5;
 
 export const tidalTintFor = (mode: UiMode): number =>
   mode === 'beginner' ? TIDAL_TINT_BEGINNER : TIDAL_TINT_ADVANCED;

@@ -502,7 +502,7 @@ const defaultPresetId: string | null = null;
 // silently stale.
 const ALL_BODY_TYPES: readonly string[] = CREATION_ORDER;
 
-export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id: string, presetId?: string) => void; }> = ({ onOpenWorld, onCreateWorld }) => {
+const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWorld: (id: string, presetId?: string) => void; }> = ({ onOpenWorld, onCreateWorld }) => {
     const [worlds, setWorlds] = useState<WorldMeta[]>([]);
     const [folders, setFolders] = useState<FolderMeta[]>([]);
     const [showCredits, setShowCredits] = useState(false);

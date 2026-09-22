@@ -108,10 +108,10 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-export type PanelHelperId =
+type PanelHelperId =
   | 'panel:creation' | 'panel:moon' | 'panel:outliner' | 'panel:inspector'
   | 'panel:orbit' | 'panel:analysis' | 'panel:grid';
-export type BodyHelperId = `body:${BodyType}`;
+type BodyHelperId = `body:${BodyType}`;
 export type HelperId = PanelHelperId | BodyHelperId;
 
 export type HelperTrigger =
@@ -196,7 +196,7 @@ export function getOnboardingProgress(): OnboardingProgress {
   return { ...memoryProgress, seenHelperIds: [...memoryProgress.seenHelperIds] };
 }
 
-export function saveOnboardingProgress(progress: OnboardingProgress): OnboardingProgress {
+function saveOnboardingProgress(progress: OnboardingProgress): OnboardingProgress {
   memoryProgress = parseOnboardingProgress(progress);
   try {
     if (typeof localStorage !== 'undefined') {

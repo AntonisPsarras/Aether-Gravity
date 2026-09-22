@@ -63,12 +63,12 @@ import { M_EARTH_KG, bulkDensityGcm3, kmToDist, rigidRocheLimitRadii, rocheLimit
 export const MOON_HOST_TYPES: readonly BodyType[] = ['Planet', 'Dwarf', 'Ice Giant', 'Gas Giant'];
 
 /** Largest eccentricity the creator produces. Keeps rings legible and far from parabolic. */
-export const MOON_MAX_ECCENTRICITY = 0.9;
-export const MOON_SPEED_MIN = Math.sqrt(1 - MOON_MAX_ECCENTRICITY);
-export const MOON_SPEED_MAX = Math.sqrt(1 + MOON_MAX_ECCENTRICITY);
+const MOON_MAX_ECCENTRICITY = 0.9;
+const MOON_SPEED_MIN = Math.sqrt(1 - MOON_MAX_ECCENTRICITY);
+const MOON_SPEED_MAX = Math.sqrt(1 + MOON_MAX_ECCENTRICITY);
 
 /** Default start distance, parent radii — Europa sits at 9.4 R♃, Titan at 20 R♄. */
-export const DEFAULT_MOON_DISTANCE_RADII = 10;
+const DEFAULT_MOON_DISTANCE_RADII = 10;
 
 /** Apoapsis ceiling as a fraction of the instantaneous Hill radius. */
 const HILL_RELEASE_MARGIN = 0.95;
@@ -254,7 +254,7 @@ export const moonInclinationRad = (tiltDeg: number, retrograde: boolean): number
   ((retrograde ? 180 - tiltDeg : tiltDeg) * Math.PI) / 180;
 
 /** Unit vector at in-plane angle `u` from the ascending node. */
-export const orbitPlanePoint = (u: number, iRad: number, out: THREE.Vector3): THREE.Vector3 =>
+const orbitPlanePoint = (u: number, iRad: number, out: THREE.Vector3): THREE.Vector3 =>
   out.set(Math.cos(u), Math.sin(u) * Math.sin(iRad), -Math.sin(u) * Math.cos(iRad));
 
 /** Orbit normal (direction of the angular momentum). */
@@ -341,7 +341,7 @@ export const moonMassFor = (parent: CelestialBody, requested: number | null): nu
 export const moonRadiusKm = (mass: number): number => radiusKmForType('Moon', mass);
 
 /** Real moons spanning the range, for a human-scale size read-out. Masses from JPL. */
-export const REFERENCE_MOONS: ReadonlyArray<{ name: string; mass: number }> = ([
+const REFERENCE_MOONS: ReadonlyArray<{ name: string; mass: number }> = ([
   ['Deimos', 1.4762e15],
   ['Phobos', 1.0659e16],
   ['Mimas', 3.7493e19],

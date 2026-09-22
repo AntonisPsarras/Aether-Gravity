@@ -38,7 +38,7 @@ import type { BodyType } from '../types';
 /** Newtonian gravitational constant (CODATA 2018), m³·kg⁻¹·s⁻². */
 export const G_SI = 6.67430e-11;
 /** Stefan-Boltzmann constant, W·m⁻²·K⁻⁴. */
-export const STEFAN_BOLTZMANN = 5.670374419e-8;
+const STEFAN_BOLTZMANN = 5.670374419e-8;
 /** Speed of light in vacuum, km/s (exact by definition). */
 export const C_KM_S = 299792.458;
 
@@ -48,35 +48,33 @@ export const C_KM_S = 299792.458;
  * the measured GM exactly, and M☉/M⊕ is the IAU ratio, 332 946.
  */
 /** Earth mass parameter including the atmosphere (JPL), m³·s⁻². */
-export const GM_EARTH_SI = 3.986004418e14;
+const GM_EARTH_SI = 3.986004418e14;
 /** IAU 2015 nominal solar mass parameter (GM)☉, m³·s⁻². */
-export const GM_SUN_SI = 1.3271244e20;
+const GM_SUN_SI = 1.3271244e20;
 export const M_EARTH_KG = GM_EARTH_SI / G_SI;     // 5.97217 × 10²⁴
 export const R_EARTH_KM = 6371.0;                 // volumetric mean radius
-export const M_SUN_KG = GM_SUN_SI / G_SI;         // 1.98841 × 10³⁰
+const M_SUN_KG = GM_SUN_SI / G_SI;         // 1.98841 × 10³⁰
 export const R_SUN_KM = 695700;                   // IAU 2015 nominal
-export const L_SUN_W = 3.828e26;                  // IAU 2015 nominal
-export const T_SUN_EFF_K = 5772;
-export const M_JUPITER_KG = 1.89813e27;
+const L_SUN_W = 3.828e26;                  // IAU 2015 nominal
+const T_SUN_EFF_K = 5772;
+const M_JUPITER_KG = 1.89813e27;
 export const R_JUPITER_KM = 69911;                // volumetric mean
-export const AU_KM = 1.495978707e8;               // exact by definition
-export const JULIAN_YEAR_S = 3.15576e7;           // exact by definition
+const AU_KM = 1.495978707e8;               // exact by definition
+const JULIAN_YEAR_S = 3.15576e7;           // exact by definition
 
 export const M_SUN_IN_EARTH = M_SUN_KG / M_EARTH_KG;       // ≈ 332 946
 export const M_JUPITER_IN_EARTH = M_JUPITER_KG / M_EARTH_KG; // ≈ 317.83
-export const R_SUN_IN_EARTH = R_SUN_KM / R_EARTH_KM;       // ≈ 109.2
-export const R_JUPITER_IN_EARTH = R_JUPITER_KM / R_EARTH_KM; // ≈ 10.97
 
 // ---------------------------------------------------------------------------
 // Aether unit definitions
 // ---------------------------------------------------------------------------
 
 /** 1 length unit expressed in AU. Unchanged from the legacy scene scale. */
-export const GAME_DIST_TO_AU = 1 / 40;
-export const LENGTH_UNIT_KM = AU_KM * GAME_DIST_TO_AU;   // 3.7399 × 10⁶ km
-export const LENGTH_UNIT_M = LENGTH_UNIT_KM * 1000;
-export const MASS_UNIT_KG = M_EARTH_KG;
-export const TIME_UNIT_S = JULIAN_YEAR_S;
+const GAME_DIST_TO_AU = 1 / 40;
+const LENGTH_UNIT_KM = AU_KM * GAME_DIST_TO_AU;   // 3.7399 × 10⁶ km
+const LENGTH_UNIT_M = LENGTH_UNIT_KM * 1000;
+const MASS_UNIT_KG = M_EARTH_KG;
+const TIME_UNIT_S = JULIAN_YEAR_S;
 
 /**
  * Gravitational constant in Aether units, G* = G·M*·T*² / L*³ ≈ 7.5883.
@@ -86,34 +84,28 @@ export const G_AETHER =
   (G_SI * MASS_UNIT_KG * TIME_UNIT_S * TIME_UNIT_S) /
   (LENGTH_UNIT_M * LENGTH_UNIT_M * LENGTH_UNIT_M);
 
-/** Speed of light in Aether units, ≈ 2.5298 × 10⁶ L*·T*⁻¹. */
-export const C_AETHER = (C_KM_S * TIME_UNIT_S) / LENGTH_UNIT_KM;
-
 /** 1 L*·T*⁻¹ expressed in km/s (≈ 0.1185). */
-export const VELOCITY_UNIT_KM_S = LENGTH_UNIT_KM / TIME_UNIT_S;
+const VELOCITY_UNIT_KM_S = LENGTH_UNIT_KM / TIME_UNIT_S;
 
 // ---------------------------------------------------------------------------
 // Conversions
 // ---------------------------------------------------------------------------
 
 export const massToEarth = (m: number) => m;                        // mass unit IS M⊕
-export const massToJupiter = (m: number) => m / M_JUPITER_IN_EARTH;
+const massToJupiter = (m: number) => m / M_JUPITER_IN_EARTH;
 export const massToSolar = (m: number) => m / M_SUN_IN_EARTH;
 export const massToKg = (m: number) => m * M_EARTH_KG;
-export const solarMassToUnits = (mSun: number) => mSun * M_SUN_IN_EARTH;
-export const jupiterMassToUnits = (mJup: number) => mJup * M_JUPITER_IN_EARTH;
 
 export const distToAU = (d: number) => d * GAME_DIST_TO_AU;
 export const distToKm = (d: number) => d * LENGTH_UNIT_KM;
 export const auToDist = (au: number) => au / GAME_DIST_TO_AU;
 export const kmToDist = (km: number) => km / LENGTH_UNIT_KM;
 
-export const radiusKmToEarth = (km: number) => km / R_EARTH_KM;
-export const radiusKmToSolar = (km: number) => km / R_SUN_KM;
-export const radiusKmToJupiter = (km: number) => km / R_JUPITER_KM;
+const radiusKmToEarth = (km: number) => km / R_EARTH_KM;
+const radiusKmToSolar = (km: number) => km / R_SUN_KM;
+const radiusKmToJupiter = (km: number) => km / R_JUPITER_KM;
 
 export const velocityToKmS = (v: number) => v * VELOCITY_UNIT_KM_S;
-export const kmSToVelocity = (kms: number) => kms / VELOCITY_UNIT_KM_S;
 
 // ---------------------------------------------------------------------------
 // Visual radius mapping (rendering only — never feed back into physics)
@@ -314,7 +306,7 @@ export const luminositySolarFromRadiusTemp = (radiusKm: number, tEffK: number): 
  * Equilibrium temperature of Earth at 1 AU under 1 L☉ with zero albedo,
  * T = (L☉ / (16πσ·d²))^¼ ≈ 278.3 K. Derived, not hardcoded.
  */
-export const T_EARTH_EQ_K = Math.pow(
+const T_EARTH_EQ_K = Math.pow(
   L_SUN_W / (16 * Math.PI * STEFAN_BOLTZMANN * Math.pow(AU_KM * 1000, 2)),
   0.25,
 );
@@ -339,17 +331,6 @@ export const greenhouseFactor = (atmosphereDensity: number): number => {
  * T_eq = T⊕ · L^¼ · (1−α)^¼ / √d_AU, which is the Stefan-Boltzmann balance
  * L(1−α)/(16πσd²) written relative to Earth.
  */
-export const equilibriumTemperatureK = (
-  starMassEarth: number,
-  distanceUnits: number,
-  albedo = 0.3,
-  greenhouseDensity = 0,
-): number => {
-  const distAU = Math.max(1e-4, distToAU(distanceUnits));
-  const L = luminositySolarFromMass(starMassEarth);
-  return equilibriumTemperatureFromLuminosity(L, distAU, albedo, greenhouseDensity);
-};
-
 /** As above, but taking luminosity (L☉) and distance (AU) directly. */
 export const equilibriumTemperatureFromLuminosity = (
   lumSolar: number,
@@ -447,10 +428,6 @@ export const fmtLuminositySolar = (L: number): string => {
   if (L >= 1e-5) return `${(L * 1000).toFixed(2)} mL☉`;
   return `${L.toExponential(1)} L☉`;
 };
-
-/** Luminosity of a star given its mass in simulation units. */
-export const fmtLuminosity = (massEarth: number): string =>
-  fmtLuminositySolar(luminositySolarFromMass(massEarth));
 
 export const fmtPeriod = (years: number): string => {
   if (!Number.isFinite(years) || years <= 0) return '—';

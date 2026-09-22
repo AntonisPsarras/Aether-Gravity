@@ -18,7 +18,7 @@ type PointerExtras = {
 };
 
 function makePointerEvent(
-  type: 'down' | 'move' | 'up' | 'out' | 'leave' | 'cancel',
+  _type: 'down' | 'move' | 'up' | 'out' | 'leave' | 'cancel',
   clientX: number,
   clientY: number,
   buttons = 0,

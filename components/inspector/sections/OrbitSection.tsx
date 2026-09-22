@@ -10,7 +10,7 @@ import { DerivedRow, DerivedGroup } from '../controls/DerivedRow';
 import { useInspectorCtx, LOCK_SETS } from '../InspectorContext';
 import { cn } from '../../ui/cn';
 
-export interface OrbitElements {
+interface OrbitElements {
   a: number; e: number; i: number; Omega: number; omega: number; nu: number;
 }
 

@@ -72,10 +72,6 @@ export const ergosphereRadiusKm = (
   return gravitationalRadiusKm(massEarth) * (1 + Math.sqrt(Math.max(0, 1 - a * a * c * c)));
 };
 
-/** Equatorial ergosphere extent, always exactly R_s regardless of spin. */
-export const ergosphereEquatorialKm = (massEarth: number): number =>
-  schwarzschildRadiusKm(massEarth);
-
 /**
  * ISCO radius in units of r_g (Bardeen, Press & Teukolsky 1972, eq. 2.21):
  *   Z₁ = 1 + (1−a²)^⅓[(1+a)^⅓ + (1−a)^⅓]
@@ -150,31 +146,6 @@ export const gravitationalRedshiftFactor = (massEarth: number, rKm: number): num
   const rs = schwarzschildRadiusKm(massEarth);
   if (!(rKm > rs)) return 0;
   return Math.sqrt(1 - rs / rKm);
-};
-
-/**
- * Relativistic Doppler + beaming factor for disk material moving at orbital
- * speed β at angle φ to the line of sight (φ = 0 approaching).
- * Observed intensity scales as δ³ for a thin disk (δ⁴ for the flux of a
- * moving point source, one power removed by integrating over the line profile).
- */
-export const dopplerBoost = (beta: number, cosPhi: number): number => {
-  const b = Math.max(0, Math.min(0.999999, beta));
-  const gamma = 1 / Math.sqrt(1 - b * b);
-  const delta = 1 / (gamma * (1 - b * cosPhi));
-  return delta * delta * delta;
-};
-
-/**
- * Orbital speed as a fraction of c for a circular equatorial Kerr orbit at
- * radius r (in r_g), used to drive the disk's Doppler asymmetry.
- * Reduces to the Schwarzschild v/c = 1/√(r−2) ... expressed here via the
- * Newtonian-limit-corrected 1/√r which is accurate to a few percent down to
- * the ISCO and is what the shader needs.
- */
-export const orbitalBetaAtRg = (rRg: number): number => {
-  if (!(rRg > 0)) return 0;
-  return Math.min(0.9, 1 / Math.sqrt(Math.max(1, rRg)));
 };
 
 /**
