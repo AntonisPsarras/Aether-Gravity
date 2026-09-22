@@ -2,9 +2,12 @@ package com.aethergravity.app;
 
 import android.os.Build;
 import android.os.Bundle;
+import android.view.Window;
 import android.view.WindowManager;
 
 import androidx.activity.EdgeToEdge;
+import androidx.appcompat.app.ActionBar;
+import androidx.core.splashscreen.SplashScreen;
 import androidx.core.view.WindowCompat;
 
 import com.getcapacitor.BridgeActivity;
@@ -44,8 +47,14 @@ public class MainActivity extends BridgeActivity {
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Apply postSplashScreenTheme before AppCompat inflates the window.
+        // Without this, Theme.SplashScreen can dismiss into a titled decor and
+        // leave the truncated "Aether Gravity" ActionBar over the WebView.
+        SplashScreen.installSplashScreen(this);
+        supportRequestWindowFeature(Window.FEATURE_NO_TITLE);
         EdgeToEdge.enable(this);
         super.onCreate(savedInstanceState);
+        hideTitleBar();
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
@@ -55,6 +64,25 @@ public class MainActivity extends BridgeActivity {
             attrs.layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             getWindow().setAttributes(attrs);
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // BridgeActivity.setTheme runs after super.onCreate and can rebuild
+        // window chrome; hide again once the activity is in the foreground.
+        hideTitleBar();
+    }
+
+    private void hideTitleBar() {
+        ActionBar bar = getSupportActionBar();
+        if (bar != null) {
+            bar.hide();
+        }
+        android.app.ActionBar nativeBar = getActionBar();
+        if (nativeBar != null) {
+            nativeBar.hide();
         }
     }
 }

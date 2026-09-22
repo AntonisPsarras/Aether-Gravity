@@ -6,11 +6,9 @@ import * as THREE from 'three';
 
 import {
   AdaptivePostFX,
-  DeviceCapabilityProbe,
   exposureForTier,
   profileForTier,
   RendererConfig,
-  type DeviceTier,
   useDeviceTier,
 } from './CanvasSetup';
 import { resolveRenderProfile, type RenderProfile } from '../utils/graphicsQuality';
@@ -102,24 +100,24 @@ const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landi
   const e2eConfig = getE2EConfig();
   const storedGraphicsMode = useStore((s) => s.graphicsMode);
   const graphicsMode = e2eConfig.graphics ?? storedGraphicsMode;
-  const [hardwareTier, setHardwareTier] = useState<DeviceTier>(detectedTier);
   const [gpuEffectsOk, setGpuEffectsOk] = useState(true);
   /**
-   * The menu honours the same preference as the simulation, but never runs the
-   * live frame-time controller: the menu is transient, and a profile pop while
-   * someone reads the title screen is pure noise. In Auto it simply uses the
-   * hardware seed.
+   * Seed the menu from the first hardware guess and leave it there. A later
+   * DeviceCapabilityProbe refinement used to flip `profile`, remount this
+   * Canvas (`key={profile}`), fire webglcontextlost on the disposed renderer,
+   * and permanently swap the real hole for the CSS stand-in — the Saturn-ring
+   * fallback phones were seeing after splash.
    */
   const profile: RenderProfile = !gpuEffectsOk
     ? 'performance'
     : e2eConfig.tier
       ? profileForTier(e2eConfig.tier)
-      : resolveRenderProfile(graphicsMode, profileForTier(hardwareTier));
-  const handleHardwareTier = useCallback((tier: DeviceTier) => {
-    if (!e2eConfig.tier) setHardwareTier(tier);
-  }, [e2eConfig.tier]);
+      : resolveRenderProfile(graphicsMode, profileForTier(detectedTier));
   const theme = THEMES[presetId ?? 'procedural'] ?? THEMES.procedural;
   const themeVars = { '--menu-accent': theme.accent, '--menu-secondary': theme.secondary } as React.CSSProperties;
+  const loseGpuEffects = useCallback(() => {
+    flushSync(() => setGpuEffectsOk(false));
+  }, []);
 
   return (
     <div className="menu-space-background fixed inset-0 z-0 overflow-hidden pointer-events-none" aria-hidden data-gpu-effects={gpuEffectsOk ? 'on' : 'fallback'}>
@@ -128,26 +126,22 @@ const MenuSpaceBackground: React.FC<MenuSpaceBackgroundProps> = ({ mode = 'landi
         <Canvas
           className="!absolute inset-0"
           camera={{ position: [0, 1, 13], fov: 47, near: 0.1, far: 220 }}
-          key={profile}
           dpr={profile === 'quality' ? [1, 1.5] : 1}
-          gl={{ antialias: profile === 'quality', alpha: true, powerPreference: 'high-performance' }}
+          gl={{ antialias: profile === 'quality', alpha: false, powerPreference: 'default' }}
           onCreated={({ gl }) => {
-            // Run before Three's own target listeners. Unmounting synchronously
-            // prevents a lost context from being rendered for one more frame.
             gl.domElement.addEventListener('webglcontextlost', (event) => {
               event.preventDefault();
-              flushSync(() => setGpuEffectsOk(false));
+              loseGpuEffects();
             }, { capture: true, once: true });
           }}
         >
           <EnvironmentProvider profile={profile}>
-            {!e2eConfig.tier && <DeviceCapabilityProbe initialTier={detectedTier} onHardwareTier={handleHardwareTier} />}
             <MenuScene
               mode={mode}
               presetId={presetId}
               profile={profile}
               gpuEffectsOk
-              onContextLost={() => setGpuEffectsOk(false)}
+              onContextLost={loseGpuEffects}
               onContextRestored={() => setGpuEffectsOk(true)}
             />
           </EnvironmentProvider>

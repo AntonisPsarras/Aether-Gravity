@@ -4,4 +4,7 @@
     <color name="colorPrimaryDark">#000000</color>
     <color name="colorAccent">#22d3ee</color>
     <color name="splashBackgroundColor">#0a0a0a</color>
+    <!-- Void Navy — matches theme-color / StatusBar chrome so the post-splash
+         window never flashes a DayNight light surface behind the WebView. -->
+    <color name="voidNavy">#10141C</color>
 </resources>
