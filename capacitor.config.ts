@@ -23,8 +23,8 @@ const config: CapacitorConfig = {
             androidSpinnerStyle: "large",
             iosSpinnerStyle: "small",
             spinnerColor: "#22d3ee",
-            splashFullScreen: true,
-            splashImmersive: true,
+            splashFullScreen: false,
+            splashImmersive: false,
         },
         StatusBar: {
             style: 'DARK',
@@ -35,7 +35,7 @@ const config: CapacitorConfig = {
         Keyboard: {
             resize: 'body',
             style: 'DARK',
-            resizeOnFullScreen: true,
+            resizeOnFullScreen: false,
         }
     }
 };

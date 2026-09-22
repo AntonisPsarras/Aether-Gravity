@@ -27,6 +27,7 @@ export interface StoreSnapshot {
   speed: number;
   bodyCount: number;
   selectedId: string | null;
+  guidedView: string | null;
   showGrid: boolean;
   showDust: boolean;
   showHabitable: boolean;
@@ -224,6 +225,7 @@ function buildApi(): AetherTestAPI {
         speed: s.speed,
         bodyCount: s.bodies.length,
         selectedId: s.selectedId,
+        guidedView: s.guidedView,
         showGrid: s.showGrid,
         showDust: s.showDust,
         showHabitable: s.showHabitable,

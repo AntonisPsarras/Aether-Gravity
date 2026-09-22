@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { e2eUrl, waitForSimulationReady } from './helpers';
+import { activateControl, e2eUrl, waitForSimulationReady } from './helpers';
 
 for (const width of [1280, 390]) {
   for (const [id, count, views] of [
@@ -8,6 +8,7 @@ for (const width of [1280, 390]) {
   ] as const) {
     test(`${id} guided views and both modes at ${width}px`, async ({ page }, info) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
       const errors: string[] = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.goto(e2eUrl(`preset:${id}`, { tier: width === 390 ? 'low' : 'high' }));
@@ -17,14 +18,20 @@ for (const width of [1280, 390]) {
       const initial = await page.evaluate(() => window.__AETHER_TEST__!.getPhysicsSnapshot());
       expect(initial).toHaveLength(count);
       for (const mode of ['beginner', 'advanced']) {
-        await page.getByTestId('open-settings').click();
-        await page.getByTestId(`ui-mode-${mode}`).click();
+        await activateControl(page.getByTestId('open-settings'));
+        await expect(page.getByTestId('settings-panel')).toBeVisible();
+        const modeControl = page.getByTestId(`ui-mode-${mode}`);
+        await activateControl(modeControl);
+        await expect(modeControl).toHaveAttribute('aria-checked', 'true');
         await expect(page.getByTestId('preset-science')).toContainText('Physical distances');
-        await page.getByTestId('settings-close').click();
+        await activateControl(page.getByTestId('settings-close'));
+        await expect(page.getByTestId('settings-panel')).toHaveCount(0);
         for (const view of views) {
-          await page.getByTestId('open-settings').click();
-          await page.getByRole('button', { name: view, exact: true }).click();
-          await page.waitForTimeout(350);
+          await activateControl(page.getByTestId('open-settings'));
+          await expect(page.getByTestId('settings-panel')).toBeVisible();
+          await activateControl(page.getByRole('button', { name: view, exact: true }));
+          await expect(page.getByTestId('settings-panel')).toHaveCount(0);
+          await expect.poll(() => page.evaluate(() => window.__AETHER_TEST__!.getStore().guidedView)).toBe(view);
           const drawn = await page.evaluate(() => window.__AETHER_TEST__!.getRenderSnapshot());
           expect(drawn.bodies).toHaveLength(count);
           expect(drawn.bodies.every(b => Object.values(b.position).every(Number.isFinite))).toBe(true);

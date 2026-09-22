@@ -1,6 +1,6 @@
 # Publisher release checklist
 
-The in-repo production work for 1.6.0 is in `docs/PRODUCTION_READINESS.md`. This file is only the remaining **console and device** steps that cannot be completed from source.
+The in-repo production work for 2.0.0 is in `docs/PRODUCTION_READINESS.md`. This file is only the remaining **console and device** steps that cannot be completed from source.
 
 ## GitHub (repository Settings)
 
@@ -12,7 +12,7 @@ The in-repo production work for 1.6.0 is in `docs/PRODUCTION_READINESS.md`. This
 ## Play Console
 
 - Sign the AAB from `:app:bundleRelease` with the existing upload key (outside this repo).
-- Upload versionCode **5** / versionName **1.6.0**.
+- Upload versionCode **6** / versionName **2.0.0**.
 - Fill Data safety using the sheet in `ANDROID_BUILD.md`.
 - Confirm the hosted privacy policy URL still matches `content/privacyPolicy.ts`.
 - Supply Play listing assets (feature graphic is not in this repo).

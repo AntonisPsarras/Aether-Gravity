@@ -1,12 +1,12 @@
 # Android build and release
 
-The Android project wraps the production Vite assets using Capacitor 8. The package is `com.aethergravity.app`, minSdk 24, compile/target SDK 36. Native **versionCode is 5** and **versionName is 1.6.0**, matching the npm package version. Bump both native fields together for every Play upload (`versionCode` must increase).
+The Android project wraps the production Vite assets using Capacitor 8. The package is `com.aethergravity.app`, minSdk 24, compile/target SDK 36. Native **versionCode is 6** and **versionName is 2.0.0**, matching the npm package version. Bump both native fields together for every Play upload (`versionCode` must increase).
 
 ## Toolchain
 
 Use Node 22 or newer, JDK 21, Android SDK 36 and the checked-in Gradle wrapper. Set JAVA_HOME to the local JDK installation. Keep SDK paths in ignored `android/local.properties` or user configuration. WebGL2 / OpenGL ES 3.0 is required.
 
-`npm ci` / `npm install` are allowed for this release line. Install with a reviewed lockfile; CI re-checks that every `resolved` URL is the npm registry, integrity hashes are present, `@capacitor/assets` / `sharp` stay absent, and remaining advisories match `scripts/audit-allowlist.json`. Do not add `@capacitor/assets` back — regenerate icons by hand ([ICONS_README.md](./ICONS_README.md)). Release minification is currently disabled, so ProGuard shrinking has not been validated.
+`npm ci` / `npm install` are allowed for this release line. Install with a reviewed lockfile; CI re-checks that every `resolved` URL is the npm registry, integrity hashes are present, `@capacitor/assets` / `sharp` stay absent, and remaining advisories match `scripts/audit-allowlist.json`. Do not add `@capacitor/assets` back — regenerate icons by hand ([ICONS_README.md](./ICONS_README.md)). Release builds enable R8 (`minifyEnabled` and `shrinkResources`). Keep rules live in `android/app/proguard-rules.pro`. `scripts/fix-proguard.js` still rewrites plugin `proguard-android.txt` references to `proguard-android-optimize.txt` on install.
 
 ## Build with the installed toolchain
 

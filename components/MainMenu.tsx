@@ -1,6 +1,6 @@
 import { mutateArchive, mutateClosedWorld } from '../utils/worldOwnership';
 import { StorageOperationError, storageIssueMessage } from '../utils/browserStorage';
-import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Info, Sparkles, Globe2, Play, Pencil, Trash2, Check, X, Calendar, Clock, Folder, ChevronRight, ChevronDown, FolderInput, MoreVertical, Shield, ArrowDown, ArrowRight, Orbit, Dices, Rocket, Star, GripVertical } from 'lucide-react';
 import { WorldMeta, FolderMeta } from '../types';
@@ -518,6 +518,15 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
     const libraryRef = useRef<HTMLElement | null>(null);
     const draggedWorldRef = useRef<string | null>(null);
 
+    useLayoutEffect(() => {
+        if (isCreating) {
+            // Replacing the landing content with the taller composer can make
+            // Chromium preserve the removed button as a scroll anchor. Reset
+            // after the creator has committed so it always opens in the hero.
+            scrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+        }
+    }, [isCreating]);
+
     useEffect(() => {
         const refresh = () => { setWorlds(getWorldList()); setFolders(getFolderList()); };
         const changed = (event: StorageEvent) => {
@@ -546,8 +555,6 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
         setNewWorldName('');
         setError(null);
     };
-    const scrollToHero = () => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-
     const handleCreateWorld = async () => {
         try {
             const name = newWorldName.trim() || `${selectedSystem?.name ?? 'Uncharted'} Universe`;
@@ -765,8 +772,8 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                         <header className="menu-library-header">
                             <div><span className="menu-section-label">Local archive</span><h2>Your universes</h2><p>Saved on this device. Ready when you are.</p></div>
                             <div className="flex flex-wrap gap-2">
-                                <button onClick={() => { setNewWorldName(''); setError(null); setIsCreating('folder'); scrollToHero(); }} className="menu-ghost-button touch-target"><Folder size={16} /> New collection</button>
-                                <button onClick={() => { openCreator(); scrollToHero(); }} className="menu-secondary-button touch-target px-4"><Plus size={17} /> New universe</button>
+                                <button onClick={() => { setNewWorldName(''); setError(null); setIsCreating('folder'); }} className="menu-ghost-button touch-target"><Folder size={16} /> New collection</button>
+                                <button onClick={openCreator} className="menu-secondary-button touch-target px-4"><Plus size={17} /> New universe</button>
                             </div>
                         </header>
 
@@ -778,7 +785,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                         )}
 
                         {worlds.length === 0 && folders.length === 0 ? (
-                            <div className="menu-empty-state"><div className="menu-empty-orbit"><Globe2 size={34} /></div><h3>Your first universe is waiting</h3><p>Launch a measured system or generate something no one has seen before.</p><button onClick={() => { openCreator(); scrollToHero(); }} className="menu-primary-button touch-target"><Sparkles size={17} /> Begin creating</button></div>
+                            <div className="menu-empty-state"><div className="menu-empty-orbit"><Globe2 size={34} /></div><h3>Your first universe is waiting</h3><p>Launch a measured system or generate something no one has seen before.</p><button onClick={openCreator} className="menu-primary-button touch-target"><Sparkles size={17} /> Begin creating</button></div>
                         ) : (
                             <div className="space-y-10">
                                 {folders.map((folder) => <FolderSection key={folder.id} folder={folder} worlds={worlds.filter((world) => world.folderId === folder.id)} folders={folders} onOpen={onOpenWorld} onRenameWorld={handleRename} onDeleteWorld={handleDelete} onRenameFolder={handleRenameFolder} onDeleteFolder={handleDeleteFolder} onMoveWorld={handleMoveWorld} draggedWorldId={draggedWorldId} onWorldDragStart={handleWorldDragStart} onWorldDragEnd={handleWorldDragEnd} onTouchDragStart={handleWorldDragStart} onTouchDragEnd={handleTouchDragEnd} onDropWorld={handleDropWorld} />)}

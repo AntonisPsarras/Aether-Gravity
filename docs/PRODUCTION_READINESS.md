@@ -2,7 +2,7 @@
 
 ## Release status
 
-**READY WITH DOCUMENTED NON-BLOCKING RISKS.** The 14–19 September frozen-dependency blockers (nested tar/sharp via unused `@capacitor/assets`, Vite 6.4.2) are remediated. Remaining items are publisher console/device steps and accepted build-only advisories in `scripts/audit-allowlist.json`. This is not a signed Play or physical-device certificate.
+**READY WITH DOCUMENTED NON-BLOCKING RISKS.** Current Play target is **versionName 2.0.0 / versionCode 6** (see the 22 September section). The 14–19 September frozen-dependency blockers (nested tar/sharp via unused `@capacitor/assets`, Vite 6.4.2) are remediated. Remaining items are publisher console/device steps and accepted build-only advisories in `scripts/audit-allowlist.json`. This is not a signed Play or physical-device certificate. The 20 September measurements below (versionCode 5 / 1.6.0, `minifyEnabled false`, those APK/AAB hashes) are that day's record and are superseded for the upload target.
 
 ## Executive evidence
 
@@ -555,7 +555,7 @@ CI freeze-diff replaced with the audit gate, Dependabot (majors ignored for Reac
 ### Android / Play packaging
 
 - Adaptive monochrome vector added; lint warnings **20 → 18** (the two monochrome omissions are gone). Unused Cordova strings and launcher-shape/density warnings kept.
-- `minifyEnabled false` unchanged.
+- `minifyEnabled false` on this 20 September artifact. Superseded: 2.0.0 enables R8 (`minifyEnabled` and `shrinkResources`).
 - Data safety sheet in [ANDROID_BUILD.md](../ANDROID_BUILD.md). Publisher checklist in [docs/NEXT_CHAT_PROMPT.md](NEXT_CHAT_PROMPT.md).
 
 ### 20 September validation
@@ -590,3 +590,22 @@ Unverified external checks remain assumptions. In-repo status: **READY WITH DOCU
 - [x] `scripts/audit-gate.mjs`, `scripts/audit-allowlist.json`, `scripts/android-manifest-gate.mjs`.
 - [x] `utils/storeReadOnly.test.ts`.
 - [x] `android/app/src/main/res/drawable/ic_launcher_monochrome.xml`.
+
+## Continuation — 22 September 2026
+
+Play target moved to **versionName 2.0.0 / versionCode 6**. Unsigned only; the publisher still signs outside the repo.
+
+- Splash fullscreen flags are off (`splashFullScreen`, `splashImmersive`, `Keyboard.resizeOnFullScreen`). The Android 12 splash theme and `SplashScreen.hide()` stay. `StatusBar.setOverlaysWebView({ overlay: true })` stays.
+- `MainActivity` calls `EdgeToEdge.enable` and keeps `setDecorFitsSystemWindows(false)` plus `LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES` on API 28+. No `FLAG_FULLSCREEN` or `SYSTEM_UI_FLAG_IMMERSIVE*` in app code. CSS safe-area floors are unchanged.
+- Release R8 is on (`minifyEnabled`, `shrinkResources`) with Capacitor, Cordova, app, and WebView keep rules in `android/app/proguard-rules.pro`. An `-assumevalues` rule treats splash `isFullScreen()` / `isImmersive()` as false so R8 drops `legacyFullscreen` / `legacyImmersive` and the unused `windowFullscreen` styles. The splash package is not a keep entry point. `scripts/fix-proguard.js` is unchanged. WebGL2 / OpenGL ES 3.0 is still required. No INTERNET permission was added.
+
+### 22 September validation
+
+- `npx vitest run`: **577 tests / 42 files PASS**.
+- `npm run build`: PASS.
+- `cap copy android` via the root Capacitor CLI: PASS. Copied config has `splashFullScreen`, `splashImmersive`, and `resizeOnFullScreen` false.
+- `npx playwright test e2e/layout.spec.ts --project=mobile-chrome`: **19 passed / 4 skipped** (desktop rail tests skip on the phone project). The notchless control-bar floor (`box.y >= 36`) passed.
+- Offline Gradle `:app:assembleRelease :app:bundleRelease :app:lintRelease`: PASS. `minifyReleaseWithR8` ran. Mapping file: `android/app/build/outputs/mapping/release/mapping.txt`. Lint **0 errors / 18 warnings**.
+- `node scripts/android-manifest-gate.mjs`: PASS (no INTERNET, no cleartext). Merged release manifest: versionCode **6** / **2.0.0**, ES 3.0 required, VIBRATE, cleartext false, backup false, not debuggable.
+- Release DEX has no `legacyFullscreen`, `legacyImmersive`, `FLAG_FULLSCREEN`, or `SYSTEM_UI_FLAG_IMMERSIVE` symbols. `capacitor_full_screen_style` and `capacitor_immersive_style` are not reachable.
+- Artifact is unsigned. This is not a signed Play upload.

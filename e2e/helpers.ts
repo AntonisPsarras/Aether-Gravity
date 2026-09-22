@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { AetherTestAPI, PerfReport, StoreSnapshot } from '../utils/testBridge';
 
 export const FIXTURE_MINIMAL = 'minimal-3body';
@@ -35,6 +35,24 @@ export async function waitForSimulationReady(page: Page, timeoutMs = 30_000): Pr
 
 export async function readStore(page: Page): Promise<StoreSnapshot> {
   return page.evaluate(() => window.__AETHER_TEST__!.getStore());
+}
+
+/**
+ * Activate a React control without Playwright's two-frame stability gate.
+ *
+ * GitHub's software WebGL renderer can run below 3 FPS. At that rate a normal
+ * locator click may spend the whole test waiting for two stable animation
+ * frames even though the control is already visible and enabled. Native click
+ * still exercises the control's real handler after bringing it into view.
+ */
+export async function activateControl(control: Locator): Promise<void> {
+  await expect(control).toBeVisible();
+  await expect(control).toBeEnabled();
+  await control.evaluate((element) => {
+    element.scrollIntoView({ block: 'center', inline: 'center' });
+    if (!(element instanceof HTMLElement)) throw new Error('Control is not an HTMLElement');
+    element.click();
+  });
 }
 
 /**

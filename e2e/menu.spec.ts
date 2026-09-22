@@ -143,13 +143,18 @@ test.describe('premium main menu', () => {
     await expect(page.getByTestId('menu-preset-trappist-1')).toBeVisible();
     await expect(page.getByTestId('menu-preset-procedural')).toBeVisible();
     await expect(page.getByText('Black Hole', { exact: true })).toBeVisible();
-    const creatorGeometry = await page.getByTestId('menu-composer').evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return { center: rect.top + rect.height / 2, viewportCenter: window.innerHeight / 2 };
-    });
+    const mainMenu = page.getByTestId('main-menu');
+    const composer = page.getByTestId('menu-composer');
+    await expect.poll(() => mainMenu.evaluate((element) => element.scrollTop)).toBe(0);
+    await expect.poll(() => composer.evaluate((element) =>
+      element.getAnimations().every((animation) => animation.playState === 'finished'),
+    )).toBe(true);
     // The composer remains centered when it fits; on compact screens its
     // content can be taller than the available area, so allow its safe inset.
-    expect(Math.abs(creatorGeometry.center - creatorGeometry.viewportCenter)).toBeLessThanOrEqual(40);
+    await expect.poll(() => composer.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2);
+    })).toBeLessThanOrEqual(40);
     await page.screenshot({ path: testInfo.outputPath('universe-creator.png'), fullPage: false });
 
     for (const id of ['trappist-1', 'procedural']) {
