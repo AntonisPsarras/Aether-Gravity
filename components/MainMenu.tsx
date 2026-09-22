@@ -647,7 +647,7 @@ export const MainMenu: React.FC<{ onOpenWorld: (id: string) => void; onCreateWor
                         <div className="menu-brand-block">
                             <div className="menu-eyebrow"><Star size={12} fill="currentColor" /> Orbital sandbox · Local first</div>
                             <div className="menu-mark" aria-hidden><span /><Orbit size={28} /></div>
-                            <h1 className="menu-title"><span>AETHER</span><span>GRAVITY</span></h1>
+                            <h1 className="menu-title" aria-label="AETHER GRAVITY"><span>AETHER</span><span>GRAVITY</span></h1>
                             <p className="menu-kicker">Shape the impossible.</p>
                             <p className="menu-intro">Build living star systems, bend spacetime, and watch worlds find their orbit in a simulation that stays entirely yours.</p>
 

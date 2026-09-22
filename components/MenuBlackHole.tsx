@@ -366,8 +366,8 @@ function layoutFor(vw: number, vh: number, mode: Mode) {
     const s = Math.min(vw * 1.28, vh * 0.62);
     return mode === 'creator' ? { x: vw * 0.08, y: vh * 0.36, s: s * 0.7 } : { x: vw * 0.05, y: vh * 0.31, s };
   }
-  const s = Math.min(vh * 1.15, vw * 0.62);
-  return mode === 'creator' ? { x: vw * 0.27, y: vh * 0.14, s: s * 0.72 } : { x: vw * 0.2, y: vh * 0.02, s };
+  const s = Math.min(vh * 1.05, vw * 0.55);
+  return mode === 'creator' ? { x: vw * 0.32, y: vh * 0.14, s: s * 0.72 } : { x: vw * 0.28, y: vh * 0.02, s };
 }
 
 const UP = new THREE.Vector3(0, 1, 0);

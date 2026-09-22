@@ -362,7 +362,13 @@ describe('createBodyGestureController', () => {
 
 describe('createDomTapLongPress', () => {
   beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
+
+  let created: Array<{ resetGesture: () => void }> = [];
+  afterEach(() => {
+    created.forEach((c) => c.resetGesture());
+    created = [];
+    vi.useRealTimers();
+  });
 
   const run = () => {
     const gestures: BodyGestureKind[] = [];
@@ -370,6 +376,7 @@ describe('createDomTapLongPress', () => {
       getBodyId: () => 'row-1',
       onGesture: (_id, kind) => gestures.push(kind),
     });
+    created.push(c);
     return { c, gestures };
   };
 
@@ -448,5 +455,29 @@ describe('createDomTapLongPress', () => {
     c.onPointerMove({ clientX: 0, clientY: 1 });
     c.onPointerUp({ clientX: 0, clientY: 1 });
     expect(gestures).toEqual([]);
+  });
+
+  it('hasActiveBodyPointerGesture reflects an in-flight row press', () => {
+    const { c } = run();
+    expect(hasActiveBodyPointerGesture()).toBe(false);
+    c.onPointerDown({ clientX: 0, clientY: 0 });
+    expect(hasActiveBodyPointerGesture()).toBe(true);
+    c.onPointerUp({ clientX: 0, clientY: 0 });
+    expect(hasActiveBodyPointerGesture()).toBe(false);
+  });
+
+  it('wasBodyGestureJustReleased covers a row press that ends on empty canvas', async () => {
+    const { c } = run();
+    c.onPointerDown({ clientX: 0, clientY: 0 });
+    vi.advanceTimersByTime(BODY_LONG_PRESS_MS);
+    // Phone: opening the inspector unmounts the row before pointerup, which
+    // is resetGesture from the hook cleanup — the same path a canvas miss then
+    // races. The just-released flag must survive that handoff.
+    c.resetGesture();
+    expect(hasActiveBodyPointerGesture()).toBe(false);
+    expect(wasBodyGestureJustReleased()).toBe(true);
+
+    await Promise.resolve();
+    expect(wasBodyGestureJustReleased()).toBe(false);
   });
 });

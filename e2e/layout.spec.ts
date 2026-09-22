@@ -1,35 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { e2eUrl, waitForSimulationReady, FIXTURE_MINIMAL } from './helpers';
+import { e2eUrl, waitForSimulationReady, FIXTURE_MINIMAL, openInspectorFromOutliner } from './helpers';
 
 const PHONE_MAX = 767;
 const DESKTOP_MIN = 1280;
 
 async function viewportWidth(page: Page): Promise<number> {
   return page.viewportSize()?.width ?? 0;
-}
-
-/**
- * Long-press an outliner row, which selects the body and opens the inspector.
- * Defaults to the first row (the primary star in every fixture); pass `last`
- * when the test needs a body that actually orbits something.
- */
-async function openInspectorFromOutliner(page: Page, which: 'first' | 'last' = 'first'): Promise<void> {
-  const rows = page.locator('[data-testid^="outliner-row-"]');
-  const row = which === 'last' ? rows.last() : rows.first();
-  await row.waitFor();
-  // The phone outliner is a short scroller; a row below the fold would
-  // otherwise be long-pressed at an off-screen coordinate.
-  await row.scrollIntoViewIfNeeded();
-  const box = (await row.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.waitForTimeout(700); // > BODY_LONG_PRESS_MS
-  await page.mouse.up();
-  const panel = page.locator('[data-testid="inspector-panel"]');
-  await panel.waitFor();
-  // Let the entrance animation finish, otherwise geometry and transform
-  // assertions sample a frame mid-flight.
-  await panel.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
 }
 
 test.beforeEach(async ({ page }) => {

@@ -37,6 +37,55 @@ export async function readStore(page: Page): Promise<StoreSnapshot> {
   return page.evaluate(() => window.__AETHER_TEST__!.getStore());
 }
 
+/**
+ * Long-press an outliner row, which selects the body and opens the inspector.
+ * Defaults to the first row (the primary star in every fixture); pass `last`
+ * when the test needs a body that actually orbits something.
+ *
+ * Waits for the panel *while the press is still held* so a hitching main
+ * thread cannot have pointer-up cancel the 400ms timer. Releases on
+ * `document` because on phone, opening the inspector unmounts the row
+ * before pointer-up.
+ */
+export async function openInspectorFromOutliner(
+  page: Page,
+  which: 'first' | 'last' = 'first',
+): Promise<void> {
+  const rows = page.locator('[data-testid^="outliner-row-"]');
+  const row = which === 'last' ? rows.last() : rows.first();
+  await row.waitFor();
+  // The phone outliner is a short scroller; a row below the fold would
+  // otherwise be long-pressed at an off-screen coordinate.
+  await row.scrollIntoViewIfNeeded();
+  const box = (await row.boundingBox())!;
+  const point = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
+  await row.dispatchEvent('pointerdown', {
+    ...point,
+    pointerId: 1,
+    pointerType: 'touch',
+    buttons: 1,
+  });
+  const panel = page.locator('[data-testid="inspector-panel"]');
+  await panel.waitFor();
+  if (await row.count()) {
+    await row.dispatchEvent('pointerup', {
+      ...point,
+      pointerId: 1,
+      pointerType: 'touch',
+      buttons: 0,
+    });
+  } else {
+    await page.evaluate(({ clientX, clientY }) => {
+      document.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true, pointerId: 1, pointerType: 'touch', buttons: 0, clientX, clientY,
+      }));
+    }, point);
+  }
+  // Let the entrance animation finish, otherwise geometry and transform
+  // assertions sample a frame mid-flight.
+  await panel.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+}
+
 export async function runPerfSoak(
   page: Page,
   durationMs: number,

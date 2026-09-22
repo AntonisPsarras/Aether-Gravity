@@ -38,6 +38,47 @@ test.describe('premium main menu', () => {
     expect(spacing).toBeGreaterThanOrEqual(16);
   });
 
+  test('keeps both wordmark lines fully visible across viewports', async ({ page }) => {
+    const viewports = [
+      { width: 390, height: 844 },
+      { width: 430, height: 932 },
+      { width: 768, height: 1024 },
+      { width: 900, height: 600 },
+      { width: 1024, height: 768 },
+      { width: 1280, height: 720 },
+      { width: 1440, height: 900 },
+    ] as const;
+
+    await page.goto(menuUrl('low'));
+    const heading = page.getByRole('heading', { name: 'AETHER GRAVITY' });
+
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await expect(heading).toBeVisible();
+      const label = `${viewport.width}x${viewport.height}`;
+      const geometry = await heading.evaluate((element) => {
+        const spans = [...element.querySelectorAll('span')].map((span) => {
+          const rect = span.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+        });
+        return { spans, vw: window.innerWidth, vh: window.innerHeight };
+      });
+      expect(geometry.spans, label).toHaveLength(2);
+      const landscape = viewport.width / viewport.height >= 0.85;
+      for (const span of geometry.spans) {
+        expect(span.width, label).toBeGreaterThan(8);
+        expect(span.height, label).toBeGreaterThan(8);
+        expect(span.left, label).toBeGreaterThanOrEqual(-1);
+        expect(span.top, label).toBeGreaterThanOrEqual(-1);
+        expect(span.right, label).toBeLessThanOrEqual(geometry.vw + 1);
+        expect(span.bottom, label).toBeLessThanOrEqual(geometry.vh + 1);
+        if (landscape) {
+          expect(span.right, label).toBeLessThanOrEqual(geometry.vw * 0.52 + 1);
+        }
+      }
+    }
+  });
+
   test('centers archive links above the footer wordmark', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(menuUrl('low'));

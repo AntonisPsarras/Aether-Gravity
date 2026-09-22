@@ -589,11 +589,11 @@ canvas {
 /* CSS-only impression of the WebGL black hole, anchored where MenuBlackHole
    places it (layoutFor), for the lazy-load frame and after a lost context. */
 .menu-space-fallback {
-  --bh-x: 70%;
+  --bh-x: 76%;
   --bh-y: 48%;
   --bh-shadow: 10vmin;
-  --bh-disk-w: 46vmin;
-  --bh-disk-h: 13vmin;
+  --bh-disk-w: 42vmin;
+  --bh-disk-h: 12vmin;
   position: absolute;
   inset: 0;
   background-color: #04060c;
@@ -618,8 +618,8 @@ canvas {
   inset: 0;
   opacity: 0.42;
   background:
-    radial-gradient(ellipse 34% 26% at 70% 48%, color-mix(in srgb, var(--menu-accent) 11%, transparent), transparent 72%),
-    radial-gradient(ellipse 52% 40% at 70% 52%, color-mix(in srgb, var(--menu-secondary) 10%, transparent), transparent 75%);
+    radial-gradient(ellipse 34% 26% at 76% 48%, color-mix(in srgb, var(--menu-accent) 11%, transparent), transparent 72%),
+    radial-gradient(ellipse 52% 40% at 76% 52%, color-mix(in srgb, var(--menu-secondary) 10%, transparent), transparent 75%);
   transition: background 700ms var(--ease-panel), opacity 400ms ease;
 }
 
@@ -642,7 +642,8 @@ canvas {
 }
 
 .menu-brand-block {
-  width: min(37rem, 100%);
+  width: min(34rem, 100%);
+  container-type: inline-size;
   animation: menu-rise 850ms var(--ease-panel) both;
 }
 
@@ -679,16 +680,26 @@ canvas {
 
 .menu-title {
   margin: 0;
+  display: flex;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.06em;
   color: transparent;
   background: linear-gradient(180deg, #fff 16%, #dce6f5 60%, rgba(169, 186, 211, 0.65) 100%);
   background-clip: text;
   -webkit-background-clip: text;
-  font-size: clamp(3.9rem, 10vw, 7.8rem);
+  /* Sized to the brand column so GRAVITY (the longer word) always fits
+     instead of overflowing into the black-hole zone. 16cqi ≈ 5.6em of
+     tracked caps inside 100% of the container. */
+  font-size: clamp(2.75rem, 16cqi, 6.25rem);
   font-weight: 760;
-  letter-spacing: 0.12em;
-  line-height: 0.82;
+  letter-spacing: 0.1em;
+  line-height: 0.9;
   text-shadow: 0 18px 70px rgba(113, 160, 224, 0.12);
 }
+
+.menu-title span { display: block; }
 
 /* The creator is a self-contained task, so keep its panel centered instead of
    pinning it below the hero branding. This also gives short mobile screens a
@@ -698,7 +709,9 @@ canvas {
 .menu-hero.is-composing .menu-brand-block { display: none; }
 .menu-hero.is-composing .menu-composer { margin-top: 0; }
 
-.menu-title span + span { margin-left: 0.24em; }
+@media (min-width: 641px) {
+  .menu-brand-block { width: min(34rem, 46vw, 100%); }
+}
 
 .menu-kicker {
   margin-top: 1.6rem;
@@ -914,9 +927,7 @@ canvas {
       radial-gradient(ellipse 90% 34% at 56% 26%, color-mix(in srgb, var(--menu-secondary) 10%, transparent), transparent 75%);
   }
   .menu-hero { align-items: flex-end; padding-bottom: max(7.5rem, calc(var(--safe-bottom) + 6rem)); }
-  .menu-title { font-size: clamp(3.4rem, 18vw, 5rem); }
-  .menu-title span { display: block; }
-  .menu-title span + span { margin-top: 0.1em; margin-left: 0; }
+  .menu-title { font-size: clamp(2.75rem, 16cqi, 5rem); }
   .menu-intro { max-width: 29rem; line-height: 1.6; }
   .menu-hero-actions { flex-direction: column; align-items: stretch; gap: 0.9rem; }
   .menu-primary-button, .menu-ghost-button { width: 100%; }

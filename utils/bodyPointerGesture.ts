@@ -328,7 +328,10 @@ export type DomPointerLike = { clientX: number; clientY: number };
  * timer, so a 600 ms hold that ended outside the row still counted as a long
  * press, and it never joined the cancel registry — meaning a canvas
  * pointer-missed could not cancel an in-flight row press. This shares the
- * thresholds, the timer semantics and the registry with the 3D hitbox path.
+ * thresholds, the timer semantics, the active-gesture set and the
+ * just-released flag with the 3D hitbox path, so a phone finger-up that lands
+ * on the canvas after the row unmounts cannot close the inspector the press
+ * just opened.
  */
 export function createDomTapLongPress({
   getBodyId,
@@ -338,6 +341,7 @@ export function createDomTapLongPress({
   onGesture: (bodyId: string, kind: BodyGestureKind) => void;
 }) {
   const state: GestureState = createInitialGestureState();
+  const token = {};
 
   const clearLongPressTimer = () => {
     if (state.timerId != null) {
@@ -348,11 +352,18 @@ export function createDomTapLongPress({
 
   const resetGesture = () => {
     clearLongPressTimer();
+    const wasActive = state.active;
+    activeGestures.delete(token);
     state.startX = 0;
     state.startY = 0;
     state.active = false;
     state.longPressFired = false;
     state.maxMovePx = 0;
+    // Row unmount (phone opens the inspector and drops the outliner) runs this
+    // from the hook's effect cleanup, in the same task as the pointerup that
+    // then hits the canvas. Marking here — not only on pointerup — is what
+    // covers that handoff.
+    if (wasActive) markJustReleased();
   };
 
   const onPointerDown = (e: DomPointerLike) => {
@@ -361,6 +372,7 @@ export function createDomTapLongPress({
     state.startX = e.clientX;
     state.startY = e.clientY;
     state.maxMovePx = 0;
+    activeGestures.add(token);
     state.timerId = setTimeout(() => {
       state.timerId = null;
       if (!state.active) return;

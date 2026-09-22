@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { e2eUrl, waitForSimulationReady, FIXTURE_SOLAR } from './helpers';
+import { e2eUrl, waitForSimulationReady, FIXTURE_SOLAR, openInspectorFromOutliner } from './helpers';
 
 /**
  * The edit-lock protocol: while a control is being dragged, the fields it owns
@@ -12,15 +12,7 @@ async function openBody(page: Page, name: string) {
   // Let the 120ms search debounce settle so the list has stopped re-laying out
   // before the long-press coordinates are measured.
   await page.waitForTimeout(500);
-  const row = page.locator('[data-testid^="outliner-row-"]').first();
-  await row.waitFor();
-  await row.scrollIntoViewIfNeeded();
-  const b = (await row.boundingBox())!;
-  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-  await page.mouse.down();
-  await page.waitForTimeout(700);
-  await page.mouse.up();
-  await page.locator('[data-testid="inspector-panel"]').waitFor();
+  await openInspectorFromOutliner(page);
   await page.waitForTimeout(500);
 }
 

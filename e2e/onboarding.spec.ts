@@ -1,22 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
-import { e2eUrl, FIXTURE_MINIMAL, waitForSimulationReady } from './helpers';
-
-async function longPressFirstOutlinerRow(page: Page): Promise<void> {
-  const row = page.locator('[data-testid^="outliner-row-"]').first();
-  await row.scrollIntoViewIfNeeded();
-  const box = (await row.boundingBox())!;
-  const point = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 };
-  await row.dispatchEvent('pointerdown', { ...point, pointerId: 1, pointerType: 'touch', buttons: 1 });
-  // Leave headroom for timer throttling while several WebGL projects run.
-  await page.waitForTimeout(700);
-  // Dispatch on the stable document: on phone, opening the Inspector
-  // intentionally unmounts the outliner row before pointer-up.
-  await page.evaluate(({ clientX, clientY }) => {
-    document.dispatchEvent(new PointerEvent('pointerup', {
-      bubbles: true, pointerId: 1, pointerType: 'touch', buttons: 0, clientX, clientY,
-    }));
-  }, point);
-}
+import { expect, test } from '@playwright/test';
+import { e2eUrl, FIXTURE_MINIMAL, openInspectorFromOutliner, waitForSimulationReady } from './helpers';
 
 test.describe('beginner tutorial', () => {
   test('opens once automatically and remains replayable', async ({ page }) => {
@@ -51,7 +34,7 @@ test.describe('contextual helpers', () => {
     await page.getByRole('button', { name: 'Got it' }).click();
     await outlinerToggle.click();
 
-    await longPressFirstOutlinerRow(page);
+    await openInspectorFromOutliner(page);
     await expect(page.getByTestId('inspector-panel')).toBeVisible();
     await expect(page.getByTestId('live-helper-panel:inspector')).toBeVisible();
     await page.getByRole('button', { name: 'Got it' }).click();
@@ -62,7 +45,7 @@ test.describe('contextual helpers', () => {
     if (await page.getByTestId('outliner-panel').getAttribute('data-open') === 'false') {
       await outlinerToggle.click();
     }
-    await longPressFirstOutlinerRow(page);
+    await openInspectorFromOutliner(page);
     await expect(page.locator('[data-testid^="live-helper-"]')).toHaveCount(0);
     await page.reload();
     await waitForSimulationReady(page);
@@ -123,7 +106,7 @@ test.describe('contextual helpers', () => {
       }],
     } as any), { settings });
     await expect(page.getByTestId('outliner-name').filter({ hasText: /^Kerr Lab$/ })).toBeVisible();
-    await longPressFirstOutlinerRow(page);
+    await openInspectorFromOutliner(page);
     const blackHoleTip = page.getByTestId('live-helper-body:Black Hole');
     await expect(blackHoleTip).toContainText('a* = 0.900');
     await expect(blackHoleTip).toContainText('ISCO');
