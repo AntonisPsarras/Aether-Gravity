@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
-import { extname } from 'node:path';
+import { extname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const allowName = new Set(['.env.example']);
 const skipContentExt = new Set([
@@ -9,6 +10,10 @@ const skipContentExt = new Set([
   '.mp4', '.webm', '.wasm', '.bin',
 ]);
 const skipContentName = new Set(['package-lock.json']);
+const skipDetectorSources = new Set([
+  'scripts/secret-scan.mjs',
+]);
+const thisScanner = relative(process.cwd(), fileURLToPath(import.meta.url)).replaceAll('\\', '/');
 const maxBytes = 1_000_000;
 
 const bannedNames = [
@@ -56,6 +61,7 @@ for (const file of tracked) {
 for (const file of tracked) {
   const base = basename(file);
   if (allowName.has(base) || skipContentName.has(base) || skipContentName.has(file)) continue;
+  if (file === thisScanner || skipDetectorSources.has(file)) continue;
   if (skipContentExt.has(extname(file).toLowerCase())) continue;
   let size = 0;
   try {
